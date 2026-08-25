@@ -2,10 +2,21 @@ from __future__ import annotations
 
 from typing import Final
 
+DEFAULT_LANG = "en"
+
+
+def _normalize_lang(lang: str | None) -> str:
+    if not lang:
+        return DEFAULT_LANG
+    lang = lang.lower().strip()
+    return "pt" if lang.startswith("pt") else "en"
+
 
 SETTING_ENABLED: Final[str] = "on"
 SETTING_DISABLED: Final[str] = "off"
-TOGGLE_SETTING_VALUES: Final[frozenset[str]] = frozenset({SETTING_ENABLED, SETTING_DISABLED})
+TOGGLE_SETTING_VALUES: Final[frozenset[str]] = frozenset(
+    {SETTING_ENABLED, SETTING_DISABLED}
+)
 
 VIDEO_QUALITY_BEST: Final[str] = "best"
 VIDEO_QUALITY_BALANCED: Final[str] = "balanced"
@@ -37,7 +48,7 @@ SETTING_FIELDS: Final[tuple[str, ...]] = (
     "file_button",
 )
 
-SETTING_LABELS: Final[tuple[tuple[str, str], ...]] = (
+SETTING_LABELS_EN: Final[tuple[tuple[str, str], ...]] = (
     ("🎬 Video Quality", "video_quality"),
     ("📄 Send as File", "as_document"),
     ("🎵 Audio Format", "audio_format"),
@@ -48,6 +59,28 @@ SETTING_LABELS: Final[tuple[tuple[str, str], ...]] = (
     ("🔗 URL Button", "url_button"),
     ("🗑️ Delete Messages", "delete_message"),
 )
+
+SETTING_LABELS_PT: Final[tuple[tuple[str, str], ...]] = (
+    ("🎬 Qualidade do Vídeo", "video_quality"),
+    ("📄 Enviar como Arquivo", "as_document"),
+    ("🎵 Formato de Áudio", "audio_format"),
+    ("📝 Legendas", "captions"),
+    ("ℹ️ Botões de Informação", "info_buttons"),
+    ("🎧 Botão MP3", "audio_button"),
+    ("📄 Botão de Arquivo", "file_button"),
+    ("🔗 Botão de URL", "url_button"),
+    ("🗑️ Apagar Mensagens", "delete_message"),
+)
+
+SETTING_LABELS: Final[tuple[tuple[str, str], ...]] = SETTING_LABELS_EN
+
+
+def get_setting_labels(
+    lang: str = DEFAULT_LANG,
+) -> tuple[tuple[str, str], ...]:
+    if _normalize_lang(lang) == "pt":
+        return SETTING_LABELS_PT
+    return SETTING_LABELS_EN
 
 
 def is_valid_setting_field(field: str | None) -> bool:
@@ -72,7 +105,9 @@ def parse_settings_view_callback(data: str | None) -> str | None:
     return field
 
 
-def parse_setting_toggle_callback(data: str | None) -> tuple[str, str] | None:
+def parse_setting_toggle_callback(
+    data: str | None,
+) -> tuple[str, str] | None:
     if not isinstance(data, str) or not data.startswith("setting:"):
         return None
     parts = data.split(":", 2)
@@ -89,10 +124,10 @@ def parse_setting_toggle_callback(data: str | None) -> tuple[str, str] | None:
 def resolve_video_quality_format(video_quality: str | None) -> str:
     quality = normalize_setting_value(video_quality) or "best"
     if quality == "saver":
-        return "bestvideo[height<=480]+bestaudio/best[height<=480]/best"
+        return "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
     if quality == "balanced":
-        return "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
-    return "bestvideo+bestaudio/best"
+        return "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
+    return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best"
 
 
 def resolve_audio_format_codec(audio_format: str | None) -> str:
