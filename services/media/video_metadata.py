@@ -16,7 +16,7 @@ _FFPROBE_COMMAND = (
     "-select_streams",
     "v:0",
     "-show_entries",
-    "stream=width,height,sample_aspect_ratio,display_aspect_ratio",
+    "stream=width,height,duration,sample_aspect_ratio,display_aspect_ratio:format=duration",
     "-of",
     "json",
 )
@@ -26,6 +26,7 @@ _FFPROBE_COMMAND = (
 class TelegramVideoAttrs:
     width: Optional[int] = None
     height: Optional[int] = None
+    duration: Optional[int] = None
     supports_streaming: bool = True
 
 
@@ -57,6 +58,14 @@ def _coerce_dimension(value: object) -> Optional[int]:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _coerce_duration(value: object) -> Optional[int]:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(round(parsed)) if parsed > 0 else None
 
 
 def _normalize_display_dimensions(
@@ -124,12 +133,18 @@ async def probe_telegram_video_attrs(path: Optional[str]) -> TelegramVideoAttrs:
         return TelegramVideoAttrs()
 
     streams = payload.get("streams")
+    format_info = payload.get("format", {}) if isinstance(payload.get("format"), dict) else {}
+
     if not isinstance(streams, list) or not streams:
         return TelegramVideoAttrs()
 
     stream = streams[0] if isinstance(streams[0], dict) else {}
     width = _coerce_dimension(stream.get("width"))
     height = _coerce_dimension(stream.get("height"))
+
+    # Extrai a duração do stream ou do formato geral
+    duration = _coerce_duration(stream.get("duration")) or _coerce_duration(format_info.get("duration"))
+
     normalized_width, normalized_height = _normalize_display_dimensions(
         width,
         height,
@@ -150,6 +165,7 @@ async def probe_telegram_video_attrs(path: Optional[str]) -> TelegramVideoAttrs:
     return TelegramVideoAttrs(
         width=normalized_width,
         height=normalized_height,
+        duration=duration,
         supports_streaming=True,
     )
 
@@ -161,4 +177,6 @@ async def build_video_send_kwargs(path: Optional[str] = None) -> dict[str, objec
         kwargs["width"] = attrs.width
     if attrs.height:
         kwargs["height"] = attrs.height
+    if attrs.duration:
+        kwargs["duration"] = attrs.duration
     return kwargs
