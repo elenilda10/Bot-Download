@@ -26,7 +26,20 @@ from services.logger import logger as logging
 
 logging = logging.bind(service="antiflood")
 
-_FLOOD_MESSAGE = "Too many requests. Please slow down for a few seconds."
+DEFAULT_LANG = "en"
+
+
+def _normalize_lang(language_code: Optional[str]) -> str:
+    if not language_code:
+        return DEFAULT_LANG
+    lang = language_code.lower().strip()
+    return "pt" if lang.startswith("pt") else "en"
+
+
+def _flood_message(lang: str = DEFAULT_LANG) -> str:
+    if _normalize_lang(lang) == "pt":
+        return "Muitas requisições. Por favor, aguarde alguns segundos."
+    return "Too many requests. Please slow down for a few seconds."
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,12 +110,17 @@ class AntifloodMiddleware(BaseMiddleware):
         if event_kind is None or scope_key is None:
             return await handler(event, data)
 
+        # Recupera o idioma preferido do contexto ou do evento
+        from_user = getattr(event, "from_user", None)
+        lang_code = getattr(from_user, "language_code", None)
+        user_lang = data.get("user_lang") or _normalize_lang(lang_code)
+
         now = time.monotonic()
         state = self._get_or_create_state(scope_key, now)
         self._prune_user_events(state, now)
 
         if state.blocked_until > now:
-            await self._notify_flood_block(event, state, now)
+            await self._notify_flood_block(event, state, now, lang=user_lang)
             self._maybe_cleanup(now)
             return None
 
@@ -116,7 +134,7 @@ class AntifloodMiddleware(BaseMiddleware):
                 self._cooldown_seconds,
                 len(state.events),
             )
-            await self._notify_flood_block(event, state, now)
+            await self._notify_flood_block(event, state, now, lang=user_lang)
             self._maybe_cleanup(now)
             return None
 
@@ -188,10 +206,13 @@ class AntifloodMiddleware(BaseMiddleware):
             self._users.popitem(last=False)
             overflow -= 1
 
-    async def _notify_flood_block(self, event: Any, state: _UserFloodState, now: float) -> None:
+    async def _notify_flood_block(
+        self, event: Any, state: _UserFloodState, now: float, lang: str = DEFAULT_LANG
+    ) -> None:
         try:
+            msg = _flood_message(lang)
             if self._resolve_event_kind(event) == "callback":
-                await event.answer(_FLOOD_MESSAGE, show_alert=False)
+                await event.answer(msg, show_alert=False)
                 return
 
             if self._resolve_event_kind(event) == "inline":
@@ -202,7 +223,7 @@ class AntifloodMiddleware(BaseMiddleware):
                 if state.last_message_notice_at >= 0 and now - state.last_message_notice_at < self._message_notice_cooldown_seconds:
                     return
                 state.last_message_notice_at = now
-                await event.answer(_FLOOD_MESSAGE)
+                await event.answer(msg)
         except Exception as exc:
             logging.debug("Failed to notify flood block: error=%s", exc)
 
