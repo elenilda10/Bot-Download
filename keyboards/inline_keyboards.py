@@ -12,6 +12,29 @@ def _normalize_lang(lang: str | None) -> str:
     return "pt" if lang.startswith("pt") else "en"
 
 
+def language_keyboard(
+    current_lang: str = DEFAULT_LANG,
+) -> InlineKeyboardMarkup:
+    is_pt = _normalize_lang(current_lang) == "pt"
+
+    txt_pt = "✅ 🇧🇷 Português" if is_pt else "🇧🇷 Português"
+    txt_en = "🇺🇸 English" if is_pt else "✅ 🇺🇸 English"
+
+    buttons = [
+        [
+            InlineKeyboardButton(text=txt_pt, callback_data="setting:lang:pt"),
+            InlineKeyboardButton(text=txt_en, callback_data="setting:lang:en"),
+        ],
+        [
+            InlineKeyboardButton(
+                text="⬅️ Voltar às Configurações" if is_pt else "⬅️ Back to Settings",
+                callback_data="back_to_settings",
+            )
+        ],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def start_keyboard(
     bot_username: str | None = None,
     ref_user_id: int | None = None,
@@ -38,8 +61,12 @@ def start_keyboard(
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text=txt_inline, switch_inline_query_current_chat=""),
-                InlineKeyboardButton(text=txt_settings, callback_data="back_to_settings"),
+                InlineKeyboardButton(
+                    text=txt_inline, switch_inline_query_current_chat=""
+                ),
+                InlineKeyboardButton(
+                    text=txt_settings, callback_data="back_to_settings"
+                ),
             ],
             [
                 InlineKeyboardButton(text=txt_share, url=share_url),
@@ -53,7 +80,8 @@ def cancel_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
     is_pt = _normalize_lang(lang) == "pt"
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="❌ Cancelar" if is_pt else "❌ Cancel", callback_data="cancel_action"
+        text="❌ Cancelar" if is_pt else "❌ Cancel",
+        callback_data="cancel_action",
     )
     return builder.as_markup()
 
@@ -96,7 +124,9 @@ def return_settings_categories_keyboard(
         ],
         [
             InlineKeyboardButton(
-                text="🎨 Aparência & Botões" if is_pt else "🎨 Appearance & Buttons",
+                text="🎨 Aparência & Botões"
+                if is_pt
+                else "🎨 Appearance & Buttons",
                 callback_data="settings_cat:appearance",
             )
         ],
@@ -104,6 +134,12 @@ def return_settings_categories_keyboard(
             InlineKeyboardButton(
                 text="💬 Chat & Limpeza" if is_pt else "💬 Chat & Clean-up",
                 callback_data="settings_cat:chat",
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🌐 Idioma / Language",
+                callback_data="settings_lang",
             )
         ],
     ]
@@ -117,9 +153,18 @@ def return_category_settings_keyboard(
 
     if category == "media":
         fields = [
-            ("🎬 Qualidade do Vídeo" if is_pt else "🎬 Video Quality", "video_quality"),
-            ("📄 Enviar como Arquivo" if is_pt else "📄 Send as File", "as_document"),
-            ("🎵 Formato de Áudio" if is_pt else "🎵 Audio Format", "audio_format"),
+            (
+                "🎬 Qualidade do Vídeo" if is_pt else "🎬 Video Quality",
+                "video_quality",
+            ),
+            (
+                "📄 Enviar como Arquivo" if is_pt else "📄 Send as File",
+                "as_document",
+            ),
+            (
+                "🎵 Formato de Áudio" if is_pt else "🎵 Audio Format",
+                "audio_format",
+            ),
         ]
     elif category == "appearance":
         fields = [
@@ -131,7 +176,10 @@ def return_category_settings_keyboard(
         ]
     else:
         fields = [
-            ("🗑️ Apagar Mensagens" if is_pt else "🗑️ Delete Messages", "delete_message"),
+            (
+                "🗑️ Apagar Mensagens" if is_pt else "🗑️ Delete Messages",
+                "delete_message",
+            ),
         ]
 
     buttons = [
@@ -141,7 +189,8 @@ def return_category_settings_keyboard(
     buttons.append(
         [
             InlineKeyboardButton(
-                text="⬅️ Voltar às Categorias" if is_pt else "⬅️ Back to Categories",
+                text="⬅️ Voltar às Categorias"
+                if is_pt else "⬅️ Back to Categories",
                 callback_data="back_to_settings",
             )
         ]
@@ -149,7 +198,9 @@ def return_category_settings_keyboard(
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def return_field_keyboard(field: str, value: str | None, lang: str = DEFAULT_LANG):
+def return_field_keyboard(
+    field: str, value: str | None, lang: str = DEFAULT_LANG
+):
     val = (value or "").strip().lower()
     cat = FIELD_CATEGORY_MAP.get(field, "media")
     back_cb = f"settings_cat:{cat}"
@@ -167,9 +218,21 @@ def return_field_keyboard(field: str, value: str | None, lang: str = DEFAULT_LAN
         opt_saver = f"✅ ⚡ {lbl_sav}" if current == "saver" else f"⚡ {lbl_sav}"
 
         buttons = [
-            [InlineKeyboardButton(text=opt_best, callback_data="setting:video_quality:best")],
-            [InlineKeyboardButton(text=opt_bal, callback_data="setting:video_quality:balanced")],
-            [InlineKeyboardButton(text=opt_saver, callback_data="setting:video_quality:saver")],
+            [
+                InlineKeyboardButton(
+                    text=opt_best, callback_data="setting:video_quality:best"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=opt_bal, callback_data="setting:video_quality:balanced"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=opt_saver, callback_data="setting:video_quality:saver"
+                )
+            ],
             [InlineKeyboardButton(text=back_text, callback_data=back_cb)],
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -185,26 +248,46 @@ def return_field_keyboard(field: str, value: str | None, lang: str = DEFAULT_LAN
         opt_best = f"✅ 🎼 {lbl_flac}" if current == "best" else f"🎼 {lbl_flac}"
 
         buttons = [
-            [InlineKeyboardButton(text=opt_mp3, callback_data="setting:audio_format:mp3")],
-            [InlineKeyboardButton(text=opt_m4a, callback_data="setting:audio_format:m4a")],
-            [InlineKeyboardButton(text=opt_best, callback_data="setting:audio_format:best")],
+            [
+                InlineKeyboardButton(
+                    text=opt_mp3, callback_data="setting:audio_format:mp3"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=opt_m4a, callback_data="setting:audio_format:m4a"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=opt_best, callback_data="setting:audio_format:best"
+                )
+            ],
             [InlineKeyboardButton(text=back_text, callback_data=back_cb)],
         ]
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     is_enabled = val == "on"
     if is_pt:
-        status_text = "🟢 Atualmente ATIVADO" if is_enabled else "🔴 Atualmente DESATIVADO"
+        status_text = (
+            "🟢 Atualmente ATIVADO" if is_enabled else "🔴 Atualmente DESATIVADO"
+        )
         action_text = "🔴 DESATIVAR" if is_enabled else "🟢 ATIVAR"
     else:
-        status_text = "🟢 Currently ON" if is_enabled else "🔴 Currently OFF"
+        status_text = (
+            "🟢 Currently ON" if is_enabled else "🔴 Currently OFF"
+        )
         action_text = "🔴 Turn OFF" if is_enabled else "🟢 Turn ON"
 
     next_value = "off" if is_enabled else "on"
 
     buttons = [
         [InlineKeyboardButton(text=status_text, callback_data="noop")],
-        [InlineKeyboardButton(text=action_text, callback_data=f"setting:{field}:{next_value}")],
+        [
+            InlineKeyboardButton(
+                text=action_text, callback_data=f"setting:{field}:{next_value}"
+            )
+        ],
         [InlineKeyboardButton(text=back_text, callback_data=back_cb)],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -243,7 +326,12 @@ def stats_keyboard(
 
     buttons = [
         period_buttons,
-        [InlineKeyboardButton(text=toggle_label, callback_data=f"stats:{current_period}:{toggle_target}")],
+        [
+            InlineKeyboardButton(
+                text=toggle_label,
+                callback_data=f"stats:{current_period}:{toggle_target}",
+            )
+        ],
     ]
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -264,10 +352,16 @@ def admin_keyboard(lang: str = DEFAULT_LANG):
     buttons = [
         [
             InlineKeyboardButton(text=txt_health, callback_data="admin_ops"),
-            InlineKeyboardButton(text=txt_runtime, callback_data="admin_runtime_storage"),
+            InlineKeyboardButton(
+                text=txt_runtime, callback_data="admin_runtime_storage"
+            ),
         ],
         [InlineKeyboardButton(text=txt_refresh, callback_data="admin_refresh")],
-        [InlineKeyboardButton(text=txt_active_users, callback_data="check_active_users")],
+        [
+            InlineKeyboardButton(
+                text=txt_active_users, callback_data="check_active_users"
+            )
+        ],
         [InlineKeyboardButton(text=txt_mailing, callback_data="send_to_all")],
         [InlineKeyboardButton(text=txt_msg_chat, callback_data="message_chat_id")],
         [
@@ -351,7 +445,8 @@ def start_private_chat_keyboard(bot_username: str, lang: str = DEFAULT_LANG):
     button = [
         [
             InlineKeyboardButton(
-                text="💬 Abrir conversa com o bot" if is_pt else "💬 Open bot chat",
+                text="💬 Abrir conversa com o bot"
+                if is_pt else "💬 Open bot chat",
                 url=url,
             )
         ]
@@ -536,7 +631,12 @@ def _stats_keyboard_legacy_bottom(
 
     buttons = [
         period_buttons,
-        [InlineKeyboardButton(text=toggle_label, callback_data=f"stats:{current_period}:{toggle_target}")],
+        [
+            InlineKeyboardButton(
+                text=toggle_label,
+                callback_data=f"stats:{current_period}:{toggle_target}",
+            )
+        ],
     ]
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
