@@ -6,7 +6,7 @@ _user_names = {name for name in dir(_user_messages) if not name.startswith("_")}
 
 # Names deliberately defined in both modules; the user_messages variant wins in the
 # merged namespace. Import `messages.admin_messages` directly for the admin variant.
-_ALLOWED_SHADOWED_NAMES = {"something_went_wrong"}
+_ALLOWED_SHADOWED_NAMES = {"something_went_wrong", "DEFAULT_LANG"}
 
 _unexpected_collisions = (_admin_names & _user_names) - _ALLOWED_SHADOWED_NAMES
 if _unexpected_collisions:
