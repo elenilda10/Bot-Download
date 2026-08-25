@@ -178,7 +178,7 @@ def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
             cut = cut[:amp]
         return cut
 
-    footer = '<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji> Powered by <a href="{bot_url}">MaxLoad</a>'.format(bot_url=bot_url)
+    footer = '<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji> Powered by <a href="{bot_url}">Save Vídeo DL Bot</a>'.format(bot_url=bot_url)
 
     if user_captions == "on" and post_caption:
         body = html.escape(str(post_caption))
