@@ -1,5 +1,5 @@
-from typing import Any, Awaitable, Callable, Dict, Optional
 import time
+from typing import Any, Awaitable, Callable, Dict, Optional
 import uuid
 
 from aiogram import BaseMiddleware
@@ -11,12 +11,23 @@ from services.logger import logger as logging
 from services.storage.db import DataBase
 
 
+def _normalize_lang(language_code: Optional[str]) -> str:
+    if not language_code:
+        return "en"
+    lang = language_code.lower().strip()
+    return "pt" if lang.startswith("pt") else "en"
+
+
 class ChatTrackerMiddleware(BaseMiddleware):
     def __init__(self, database: Optional[DataBase] = None):
         super().__init__()
         self._db = database or db
-        self._user_touch_cache: dict[int, tuple[float, tuple[str, Optional[str], str, Optional[str]]]] = {}
-        self._group_touch_cache: dict[int, tuple[float, tuple[str, Optional[str], Optional[str]]]] = {}
+        self._user_touch_cache: dict[
+            int, tuple[float, tuple[str, Optional[str], str, Optional[str]]]
+        ] = {}
+        self._group_touch_cache: dict[
+            int, tuple[float, tuple[str, Optional[str], Optional[str]]]
+        ] = {}
         self._touch_ttl_seconds = 90.0
 
     async def __call__(
@@ -27,6 +38,10 @@ class ChatTrackerMiddleware(BaseMiddleware):
     ) -> Any:
         if isinstance(event, Message):
             await self._process_message(event)
+
+            # Injeta o idioma detectado no contexto para fácil acesso aos handlers
+            lang_code = event.from_user.language_code if event.from_user else None
+            data["user_lang"] = _normalize_lang(lang_code)
 
         request_id = str(uuid.uuid4())[:12]
         user_id = getattr(getattr(event, "from_user", None), "id", None)
@@ -62,12 +77,16 @@ class ChatTrackerMiddleware(BaseMiddleware):
         user_id = user.id
         full_name = user.full_name
         username = user.username
-        language = getattr(user, "language_code", None)
+        language = _normalize_lang(getattr(user, "language_code", None))
         signature = (full_name, username, chat_type_value, language)
 
         now = time.monotonic()
         cached = self._user_touch_cache.get(user_id)
-        if cached and now - cached[0] <= self._touch_ttl_seconds and cached[1] == signature:
+        if (
+            cached
+            and now - cached[0] <= self._touch_ttl_seconds
+            and cached[1] == signature
+        ):
             return
 
         await self._db.upsert_chat(
@@ -96,11 +115,18 @@ class ChatTrackerMiddleware(BaseMiddleware):
 
         username = getattr(chat, "username", None)
         language = getattr(chat, "language_code", None)
+        if language:
+            language = _normalize_lang(language)
+
         signature = (chat_name, username, language)
 
         now = time.monotonic()
         cached = self._group_touch_cache.get(chat_id)
-        if cached and now - cached[0] <= self._touch_ttl_seconds and cached[1] == signature:
+        if (
+            cached
+            and now - cached[0] <= self._touch_ttl_seconds
+            and cached[1] == signature
+        ):
             return
 
         await self._db.upsert_chat(
