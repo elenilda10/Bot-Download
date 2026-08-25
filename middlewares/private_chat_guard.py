@@ -1,3 +1,4 @@
+import time
 from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
@@ -42,7 +43,6 @@ class PrivateChatGuardMiddleware(BaseMiddleware):
         if not bot:
             return await handler(event, data)
 
-        import time
         now = time.monotonic()
         cached = _can_dm_cache.get(event.from_user.id)
         if cached is not None and now - cached[0] <= _CAN_DM_CACHE_TTL:
@@ -74,9 +74,16 @@ class PrivateChatGuardMiddleware(BaseMiddleware):
         if not _bot_username:
             bot_info = await bot.get_me()
             _bot_username = bot_info.username
+
+        # Recupera o idioma preferido do usuário das configurações ou do Telegram
+        user_settings = data.get("user_settings", {})
+        user_lang = user_settings.get("language") or (
+            event.from_user.language_code if event.from_user else "en"
+        )
+
         notice = await event.reply(
-            bm.dm_start_required(),
-            reply_markup=kb.start_private_chat_keyboard(_bot_username),
+            bm.dm_start_required(lang=user_lang),
+            reply_markup=kb.start_private_chat_keyboard(_bot_username, lang=user_lang),
         )
         set_pending(
             event.from_user.id,
