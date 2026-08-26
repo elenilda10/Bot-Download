@@ -25,11 +25,11 @@ from utils.download_manager import (
 logging = logging.bind(service="youtube_media")
 
 YTDLP_FORMAT_720 = (
-    "best[height<=720][ext=mp4][acodec!=none][vcodec!=none]/"
-    "best[height<=720][acodec!=none][vcodec!=none]/"
-    "bestvideo[height<=720][vcodec^=avc1]+bestaudio[ext=m4a]/"
-    "bestvideo[height<=720]+bestaudio/"
-    "best[height<=720]/best"
+    "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+    "bestvideo+bestaudio/"
+    "best[ext=mp4]/"
+    "best"
 )
 YTDLP_SPEED_OPTS: dict[str, Any] = {
     "quiet": True,
@@ -44,7 +44,12 @@ YTDLP_SPEED_OPTS: dict[str, Any] = {
     "fragment_retries": 2,
     "concurrent_fragment_downloads": 4,
 }
-DEFAULT_YOUTUBE_COOKIES_FILE = os.path.join("cookies", "youtube.txt")
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEFAULT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies", "youtube.txt")
+ALT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+DEFAULT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies", "youtube.txt")
+ALT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
 
 def _read_float_env(name: str) -> Optional[float]:
@@ -107,9 +112,10 @@ def build_ytdlp_youtube_options(**overrides: Any) -> dict[str, Any]:
     cookies_file = os.getenv("YTDLP_YOUTUBE_COOKIES_FILE")
     if cookies_file and cookies_file.strip():
         options["cookiefile"] = cookies_file.strip()
-    elif os.path.isfile(DEFAULT_YOUTUBE_COOKIES_FILE):
+    elif os.path.exists(DEFAULT_YOUTUBE_COOKIES_FILE) and os.path.getsize(DEFAULT_YOUTUBE_COOKIES_FILE) > 0:
         options["cookiefile"] = DEFAULT_YOUTUBE_COOKIES_FILE
-
+    elif os.path.exists(ALT_YOUTUBE_COOKIES_FILE) and os.path.getsize(ALT_YOUTUBE_COOKIES_FILE) > 0:
+        options["cookiefile"] = ALT_YOUTUBE_COOKIES_FILE
     cookies_from_browser = os.getenv("YTDLP_YOUTUBE_COOKIES_FROM_BROWSER")
     if cookies_from_browser and cookies_from_browser.strip():
         try:
@@ -338,7 +344,7 @@ class YouTubeMediaService:
         except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError):
             raise
         except Exception as exc:
-            logging.error("Failed to download stream: source=%s url=%s error=%s", source, url, exc)
+            logging.error("Falha ao baixar stream: source=%s url=%s error=%s", source, url, exc)
             return None
 
     async def download_with_ytdlp(self, url: str, filename: str) -> Optional[str]:

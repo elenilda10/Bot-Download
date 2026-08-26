@@ -1,10 +1,13 @@
 import asyncio
 import json
 import math
+import os
 from dataclasses import dataclass
 from fractions import Fraction
+from pathlib import Path
 from typing import Optional
 
+from aiogram.types import FSInputFile
 from services.logger import logger as logging
 
 logging = logging.bind(service="video_metadata")
@@ -27,6 +30,7 @@ class TelegramVideoAttrs:
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[int] = None
+    thumbnail_path: Optional[str] = None
     supports_streaming: bool = True
 
 
@@ -99,9 +103,44 @@ def _normalize_display_dimensions(
     return adjusted_width, height
 
 
+async def extract_video_thumbnail(path: str) -> Optional[str]:
+    """Gera um frame JPEG nitido aos 1.0s do video para exibicao de alta qualidade."""
+    if not path or not Path(path).exists():
+        return None
+    
+    thumb_path = f"{path}_thumb.jpg"
+    if Path(thumb_path).exists():
+        return thumb_path
+
+    # Pega o frame nos 3 segundos ou no meio do inicio para evitar tela preta de introducao
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss", "00:00:04",
+        "-i", path,
+        "-vframes", "1",
+        "-q:v", "2",
+        thumb_path,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate()
+        if Path(thumb_path).exists() and os.path.getsize(thumb_path) > 0:
+            return thumb_path
+    except Exception as exc:
+        logging.debug("Falha ao gerar thumbnail do video %s: %s", path, exc)
+    return None
+
+
 async def probe_telegram_video_attrs(path: Optional[str]) -> TelegramVideoAttrs:
     if not path:
         return TelegramVideoAttrs()
+
+    thumb_path = await extract_video_thumbnail(path)
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -110,39 +149,27 @@ async def probe_telegram_video_attrs(path: Optional[str]) -> TelegramVideoAttrs:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-    except FileNotFoundError:
-        logging.debug("ffprobe is not available; skipping video metadata probe")
-        return TelegramVideoAttrs()
-    except Exception as exc:
-        logging.debug("Failed to start ffprobe for %s: %s", path, exc)
-        return TelegramVideoAttrs()
+    except Exception:
+        return TelegramVideoAttrs(thumbnail_path=thumb_path)
 
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        logging.debug(
-            "ffprobe returned non-zero exit code for %s: %s",
-            path,
-            stderr.decode("utf-8", errors="ignore").strip(),
-        )
-        return TelegramVideoAttrs()
+        return TelegramVideoAttrs(thumbnail_path=thumb_path)
 
     try:
         payload = json.loads(stdout.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logging.debug("Failed to parse ffprobe payload for %s: %s", path, exc)
-        return TelegramVideoAttrs()
+    except Exception:
+        return TelegramVideoAttrs(thumbnail_path=thumb_path)
 
     streams = payload.get("streams")
     format_info = payload.get("format", {}) if isinstance(payload.get("format"), dict) else {}
 
     if not isinstance(streams, list) or not streams:
-        return TelegramVideoAttrs()
+        return TelegramVideoAttrs(thumbnail_path=thumb_path)
 
     stream = streams[0] if isinstance(streams[0], dict) else {}
     width = _coerce_dimension(stream.get("width"))
     height = _coerce_dimension(stream.get("height"))
-
-    # Extrai a duração do stream ou do formato geral
     duration = _coerce_duration(stream.get("duration")) or _coerce_duration(format_info.get("duration"))
 
     normalized_width, normalized_height = _normalize_display_dimensions(
@@ -152,25 +179,16 @@ async def probe_telegram_video_attrs(path: Optional[str]) -> TelegramVideoAttrs:
         display_aspect_ratio=_parse_ratio(stream.get("display_aspect_ratio")),
     )
 
-    if normalized_width != width or normalized_height != height:
-        logging.info(
-            "Adjusted Telegram video dimensions from probed aspect metadata: path=%s width=%s height=%s adjusted_width=%s adjusted_height=%s",
-            path,
-            width,
-            height,
-            normalized_width,
-            normalized_height,
-        )
-
     return TelegramVideoAttrs(
         width=normalized_width,
         height=normalized_height,
         duration=duration,
+        thumbnail_path=thumb_path,
         supports_streaming=True,
     )
 
 
-async def build_video_send_kwargs(path: Optional[str] = None) -> dict[str, object]:
+async def build_video_send_kwargs(path: Optional[str] = None) -> tuple[dict[str, object], Optional[str]]:
     attrs = await probe_telegram_video_attrs(path)
     kwargs: dict[str, object] = {"supports_streaming": attrs.supports_streaming}
     if attrs.width:
@@ -179,4 +197,6 @@ async def build_video_send_kwargs(path: Optional[str] = None) -> dict[str, objec
         kwargs["height"] = attrs.height
     if attrs.duration:
         kwargs["duration"] = attrs.duration
-    return kwargs
+    if attrs.thumbnail_path and Path(attrs.thumbnail_path).exists():
+        kwargs["thumbnail"] = FSInputFile(attrs.thumbnail_path)
+    return kwargs, attrs.thumbnail_path

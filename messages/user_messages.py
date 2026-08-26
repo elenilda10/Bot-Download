@@ -1,6 +1,6 @@
 import html
 
-DEFAULT_LANG = "en"
+DEFAULT_LANG = "pt"
 
 
 def _normalize_lang(lang: str | None) -> str:
@@ -17,7 +17,7 @@ def cancel(lang: str = DEFAULT_LANG):
 def welcome_message(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            '<b>Bem-vindo ao MaxLoad <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
+            '<b>Bem-vindo ao Save Vídeo DL Bot <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
             "Envie um link ou cole vários links em uma única mensagem e eu baixarei o que puder.\n\n"
             "<b>Plataformas suportadas</b>\n"
             '<tg-emoji emoji-id="5233671414023753035">📷</tg-emoji> Instagram\n'
@@ -31,7 +31,7 @@ def welcome_message(lang: str = DEFAULT_LANG):
             "Use os botões abaixo para testar o modo inline, ajustar configurações ou compartilhar o bot."
         )
     return (
-        '<b>Welcome to MaxLoad <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
+        '<b>Welcome to Save Vídeo DL Bot <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
         "Send one link, or paste several links in one message, and I'll download what I can.\n\n"
         "<b>Supported sites</b>\n"
         '<tg-emoji emoji-id="5233671414023753035">📷</tg-emoji> Instagram\n'
@@ -239,7 +239,7 @@ def settings_admin_only(lang: str = DEFAULT_LANG):
 
 
 def invalid_settings_option(lang: str = DEFAULT_LANG):
-    return "Opção de configuração inválida." if _normalize_lang(lang) == "pt" else "Invalid settings option."
+    return "Opção de configuração inválida." if _normalize_lang(lang) == "pt" else "Opção de configuração inválida."
 
 
 def join_group(chat_title: str, lang: str = DEFAULT_LANG) -> str:
@@ -351,7 +351,7 @@ def inline_photos_not_supported(service_name: str, lang: str = DEFAULT_LANG):
 
 
 def inline_send_video_button(lang: str = DEFAULT_LANG):
-    return "Enviar vídeo inline" if _normalize_lang(lang) == "pt" else "Send video inline"
+    return "Enviar vídeo inline" if _normalize_lang(lang) == "pt" else "Enviar vídeo inline"
 
 
 def inline_send_video_prompt(service_name: str, lang: str = DEFAULT_LANG):
@@ -387,7 +387,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Configure a resolução de vídeo, formato de arquivo e opções de áudio:"
             )
         return (
-            "<b>🎬 Media & Quality Settings</b>\n\n"
+            "<b>🎬 🎬 Mídia e Qualidade Settings</b>\n\n"
             "Configure video resolution, file format, and audio options:"
         )
     if category == "appearance":
@@ -397,7 +397,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Personalize descrições de posts, links originais e botões de ação:"
             )
         return (
-            "<b>🎨 Appearance & Buttons</b>\n\n"
+            "<b>🎨 🎨 Aparência e Botões</b>\n\n"
             "Customize post descriptions, original URL links, and action buttons:"
         )
     if category == "chat":
@@ -407,17 +407,17 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Gerencie o comportamento do bot em grupos e a exclusão automática de mensagens:"
             )
         return (
-            "<b>💬 Chat & Clean-up</b>\n\n"
+            "<b>💬 💬 Chat e Limpeza</b>\n\n"
             "Manage group chat behavior and message cleanup settings:"
         )
     return settings(lang=lang)
 
 
 def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> str:
-    username = bot_username or "MaxLoadBot"
+    username = bot_username or "Save Vídeo DL BotBot"
     if _normalize_lang(lang) == "pt":
         return (
-            "<b>📖 Guia & Ajuda do MaxLoad</b>\n\n"
+            "<b>📖 Guia & Ajuda do Save Vídeo DL Bot</b>\n\n"
             "Envie um link ou cole vários links na mesma mensagem. O bot extrairá e entregará a mídia automaticamente.\n\n"
             "<blockquote expandable><b>📷 Instagram & Threads</b>\n"
             "• Download de Posts, Reels, IGTV & Stories\n"
@@ -445,7 +445,7 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
             "• Entregues um a um para manter o chat organizado</blockquote>"
         )
     return (
-        "<b>📖 MaxLoad Help & Guide</b>\n\n"
+        "<b>📖 Save Vídeo DL Bot Help & Guide</b>\n\n"
         "Send one link or paste multiple links in one message. The bot will automatically extract and deliver the media.\n\n"
         "<blockquote expandable><b>📷 Instagram & Threads</b>\n"
         "• Download Posts, Reels, IGTV & Stories\n"
@@ -475,18 +475,18 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
 
 
 def referral_message(bot_username: str, user_id: int, invited_count: int, lang: str = DEFAULT_LANG) -> str:
-    username = bot_username or "MaxLoadBot"
+    username = bot_username or "Save Vídeo DL BotBot"
     ref_link = f"https://t.me/{username}?start=ref_{user_id}"
     if _normalize_lang(lang) == "pt":
         return (
             "<b>👥 Programa de Indicação</b>\n\n"
-            "Convide amigos para usar o MaxLoad! Compartilhe seu link pessoal:\n"
+            "Convide amigos para usar o Save Vídeo DL Bot! Compartilhe seu link pessoal:\n"
             f"<code>{ref_link}</code>\n\n"
             f"Usuários convidados: <b>{invited_count}</b>"
         )
     return (
         "<b>👥 Your Referral Program</b>\n\n"
-        "Invite friends to use MaxLoad! Share your personal referral link:\n"
+        "Invite friends to use Save Vídeo DL Bot! Share your personal referral link:\n"
         f"<code>{ref_link}</code>\n\n"
         f"Users invited: <b>{invited_count}</b>"
     )

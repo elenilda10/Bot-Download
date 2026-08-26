@@ -338,7 +338,7 @@ async def inline_soundcloud_query(query: types.InlineQuery):
                     message_text=bm.inline_send_audio_prompt("SoundCloud"),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Send audio inline",
+                    "Enviar áudio inline",
                     f"inline:soundcloud:{token}",
                 ),
             )
@@ -379,7 +379,7 @@ async def _send_inline_soundcloud_audio(
     ) -> None:
         reply_markup = (
             kb.inline_send_media_keyboard(
-                "Send audio inline", f"inline:soundcloud:{token}"
+                "Enviar áudio inline", f"inline:soundcloud:{token}"
             )
             if with_retry_button
             else None

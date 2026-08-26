@@ -505,7 +505,7 @@ async def handle_tweet_links(message, direct_url: Optional[str] = None):
                             request_lease.mark_success()
                         await maybe_delete_user_message(message, user_settings.get("delete_message"))
                 except Exception as e:
-                    logging.exception("Failed to process tweet: tweet_id=%s error=%s", tweet_id, e)
+                    logging.exception("Falha ao processar tweet: tweet_id=%s error=%s", tweet_id, e)
                     await message.reply(bm.something_went_wrong())
         else:
             logging.info("No tweet links found: user_id=%s", message.from_user.id)

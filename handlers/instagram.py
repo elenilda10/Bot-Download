@@ -80,9 +80,7 @@ from utils.download_manager import (
 from utils.media_cache import build_media_cache_key
 
 logging = logging.bind(service="instagram")
-
 router = Router()
-
 __all__ = [
     "DownloadError",
     "get_inline_service_icon",
@@ -120,7 +118,6 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
         bot_url = await get_bot_url(bot)
         business_id = message.business_connection_id
         text = get_message_text(message)
-
         if await should_skip_duplicate_business_message(
             message, bot, service_name="Instagram", logger=logging
         ):
@@ -148,11 +145,12 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
             summarize_url_for_log(url),
         )
         user_settings = await load_user_settings(db, message)
+        user_lang = user_settings.get("language") or await db.get_language(message.from_user.id)
         await react_to_message(message, "👾", business_id=business_id)
 
         data = await inst_service.fetch_data(url)
         if not data or not data.media_list:
-            await handle_download_error(message, business_id=business_id)
+            await handle_download_error(message, business_id=business_id, lang=user_lang)
             return
 
         has_videos = any(item.type == "video" for item in data.media_list)
@@ -167,16 +165,16 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
 
         if has_videos and len(data.media_list) == 1:
             if await process_instagram_video(
-                message, data, url, bot_url, user_settings, business_id
+                message, data, url, bot_url, user_settings, business_id, user_lang=user_lang
             ):
                 request_lease.mark_success()
         elif has_photos or len(data.media_list) > 1:
             if await process_instagram_media_group(
-                message, data, url, bot_url, user_settings, business_id
+                message, data, url, bot_url, user_settings, business_id, user_lang=user_lang
             ):
                 request_lease.mark_success()
         else:
-            await handle_download_error(message, business_id=business_id)
+            await handle_download_error(message, business_id=business_id, lang=user_lang)
 
     except Exception as e:
         logging.exception(
@@ -204,20 +202,19 @@ async def process_instagram_video(
     bot_url: str,
     user_settings: dict,
     business_id: Optional[int],
+    user_lang: str = "pt",
 ):
     await send_analytics(
         user_id=message.from_user.id,
         chat_type=message.chat.type,
         action_name="instagram_video",
     )
-
     if not data.media_list or data.media_list[0].type != "video":
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, business_id=business_id, lang=user_lang)
         return False
 
     audio_callback_data = f"audio:inst:{original_url}"
     media = data.media_list[0]
-
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     download_name = f"{data.id}_{timestamp}_instagram_video.mp4"
     as_document = user_settings.get("as_document") == "on"
@@ -227,7 +224,7 @@ async def process_instagram_video(
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:
-        status_message = await message.answer(bm.downloading_video_status())
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
 
     async def _edit_status(text: str) -> None:
         await safe_edit_text(status_message, text)
@@ -236,6 +233,7 @@ async def process_instagram_video(
     on_retry = make_retry_status_notifier(
         _edit_status,
         enabled=show_service_status,
+        lang=user_lang,
     )
 
     def _reply_markup():
@@ -252,7 +250,7 @@ async def process_instagram_video(
 
     _send_cached, _send_downloaded, _extract_file_id = make_video_or_document_senders(
         message,
-        caption=bm.captions(user_settings["captions"], data.description, bot_url),
+        caption=bm.captions(user_settings.get("captions", "off"), data.description, bot_url),
         reply_markup_fn=_reply_markup,
         as_document=as_document,
         cached_log_label="Instagram video",
@@ -273,7 +271,7 @@ async def process_instagram_video(
         )
 
     async def _after_send():
-        await maybe_delete_user_message(message, user_settings["delete_message"])
+        await maybe_delete_user_message(message, user_settings.get("delete_message", "off"))
 
     async def _inspect_metrics(metrics: DownloadMetrics) -> bool:
         log_download_metrics("instagram_video", metrics)
@@ -283,7 +281,7 @@ async def process_instagram_video(
                 summarize_url_for_log(db_video_url),
                 metrics.size,
             )
-            await handle_download_error(message, business_id=business_id)
+            await handle_download_error(message, business_id=business_id, lang=user_lang)
             return False
         return True
 
@@ -302,13 +300,13 @@ async def process_instagram_video(
             summarize_url_for_log(db_video_url),
             exc,
         )
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, business_id=business_id, lang=user_lang)
 
     sent_message = await run_single_media_flow(
         cache_key=db_video_url,
         cache_file_type=cache_file_type,
         db_service=db,
-        upload_status_text=bm.uploading_status(),
+        upload_status_text=bm.uploading_status(lang=user_lang),
         upload_action="upload_video",
         update_status=_edit_status,
         send_chat_action=lambda action: send_chat_action_if_needed(
@@ -321,7 +319,7 @@ async def process_instagram_video(
         cleanup_path=remove_file,
         delete_status_message=lambda: safe_delete_message(status_message),
         on_missing_media=lambda: handle_download_error(
-            message, business_id=business_id
+            message, business_id=business_id, lang=user_lang
         ),
         on_after_send=_after_send,
         inspect_metrics=_inspect_metrics,
@@ -340,26 +338,24 @@ async def process_instagram_media_group(
     bot_url: str,
     user_settings: dict,
     business_id: Optional[int],
+    user_lang: str = "pt",
 ):
     await send_analytics(
         user_id=message.from_user.id,
         chat_type=message.chat.type,
         action_name="instagram_media_group",
     )
-
     logging.info(
         "Sending Instagram media group: user_id=%s media_count=%s url=%s",
         message.from_user.id,
         len(data.media_list),
         summarize_url_for_log(original_url),
     )
-
     await send_chat_action_if_needed(bot, message.chat.id, "upload_photo", business_id)
-
     request_id = f"instagram_group:{message.chat.id}:{message.message_id}:{data.id}"
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status())
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
 
     async def _download_item(index: int, item: InstagramMedia, media_kind: str):
         ext = "mp4" if media_kind == "video" else "jpg"
@@ -387,16 +383,16 @@ async def process_instagram_media_group(
     )
 
     if not media_items:
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, business_id=business_id, lang=user_lang)
         return False
 
     try:
-        await safe_edit_text(status_message, bm.uploading_status())
+        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
         await send_cached_media_entries(
             message,
             media_items,
             db_service=db,
-            caption=bm.captions(user_settings["captions"], data.description, bot_url),
+            caption=bm.captions(user_settings.get("captions", "off"), data.description, bot_url),
             reply_markup=kb.return_video_info_keyboard(
                 None,
                 None,
@@ -410,9 +406,7 @@ async def process_instagram_media_group(
             parse_mode="HTML",
             kind_key="type",
         )
-
-        await maybe_delete_user_message(message, user_settings["delete_message"])
-
+        await maybe_delete_user_message(message, user_settings.get("delete_message", "off"))
         logging.info(
             "Successfully sent Instagram media group: user_id=%s media_count=%s",
             message.from_user.id,
@@ -421,24 +415,24 @@ async def process_instagram_media_group(
         return True
     finally:
         await safe_delete_message(status_message)
-        for path in downloaded_paths:
-            await remove_file(path)
-            logging.debug("Removed temporary Instagram media file: path=%s", path)
+        for file_path in downloaded_paths:
+            await remove_file(file_path)
+            logging.debug("Removed temporary Instagram media file: path=%s", file_path)
 
 
 @router.callback_query(F.data.startswith("audio:inst:"))
 async def download_instagram_audio_callback(call: types.CallbackQuery):
+    user_lang = await db.get_language(call.from_user.id)
     if not call.message:
-        await call.answer(bm.open_bot_for_audio(), show_alert=True)
+        await call.answer(bm.open_bot_for_audio(lang=user_lang), show_alert=True)
         return
-
     await call.answer()
     original_url = call.data.replace("audio:inst:", "")
     business_id = call.message.business_connection_id
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:
-        status_message = await call.message.answer(bm.downloading_audio_status())
+        status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang))
 
     try:
         bot_url = await get_bot_url(bot)
@@ -452,7 +446,7 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
                 summarize_url_for_log(original_url),
                 db_file_id,
             )
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
             await send_chat_action_if_needed(
                 bot,
                 call.message.chat.id,
@@ -472,9 +466,9 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
         data = await inst_service.fetch_data(original_url, audio_only=True)
         if not data or not data.media_list:
             if show_service_status:
-                await safe_edit_text(status_message, bm.audio_fetch_failed())
+                await safe_edit_text(status_message, bm.audio_fetch_failed(lang=user_lang))
             else:
-                await handle_download_error(call.message, business_id=business_id)
+                await handle_download_error(call.message, business_id=business_id, lang=user_lang)
             logging.error(
                 "Failed to fetch Instagram audio: url=%s",
                 summarize_url_for_log(original_url),
@@ -492,6 +486,7 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
         on_retry = make_retry_status_notifier(
             _edit_status,
             enabled=show_service_status,
+            lang=user_lang,
         )
 
         metrics = await inst_service.download_media(
@@ -504,16 +499,16 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
         )
         if not metrics:
             if show_service_status:
-                await safe_edit_text(status_message, bm.audio_download_failed())
+                await safe_edit_text(status_message, bm.audio_download_failed(lang=user_lang))
             else:
-                await handle_download_error(call.message, business_id=business_id)
+                await handle_download_error(call.message, business_id=business_id, lang=user_lang)
             return
 
         if metrics.size >= MAX_FILE_SIZE:
             if show_service_status:
-                await safe_edit_text(status_message, bm.audio_too_large())
+                await safe_edit_text(status_message, bm.audio_too_large(lang=user_lang))
             else:
-                await call.message.reply(bm.audio_too_large())
+                await call.message.reply(bm.audio_too_large(lang=user_lang))
             await remove_file(metrics.path)
             return
 
@@ -523,7 +518,7 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
             "upload_audio",
             business_id,
         )
-        await safe_edit_text(status_message, bm.uploading_status())
+        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
         sent_message = await send_audio_with_thumbnail(
             call.message.reply_audio,
             audio=FSInputFile(metrics.path),
@@ -534,7 +529,6 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
             bot_url=bot_url,
             parse_mode="HTML",
         )
-
         try:
             await db.add_file(cache_key, sent_message.audio.file_id, "audio")
             logging.info(
@@ -551,7 +545,6 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
 
         await remove_file(metrics.path)
         logging.debug("Removed temporary Instagram audio file: path=%s", metrics.path)
-
     except (DownloadRateLimitError, DownloadQueueBusyError) as e:
         await handle_download_backpressure_error(
             e, message=call.message, show_service_status=show_service_status
@@ -563,9 +556,9 @@ async def download_instagram_audio_callback(call: types.CallbackQuery):
             e,
         )
         if status_message:
-            await safe_edit_text(status_message, bm.something_went_wrong())
+            await safe_edit_text(status_message, bm.something_went_wrong(lang=user_lang))
         else:
-            await handle_download_error(call.message, business_id=business_id)
+            await handle_download_error(call.message, business_id=business_id, lang=user_lang)
     finally:
         await safe_delete_message(status_message)
 

@@ -102,7 +102,7 @@ async def handle_youtube_music_inline_query(
                     message_text=bm.inline_send_audio_prompt("YouTube"),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Send audio inline",
+                    "Enviar áudio inline",
                     f"inline:ytmusic:{token}",
                 ),
             )
@@ -156,7 +156,7 @@ async def handle_youtube_video_inline_query(
                     message_text=bm.inline_send_video_prompt("YouTube"),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Send video inline",
+                    "Enviar vídeo inline",
                     f"inline:youtube:{token}",
                 ),
             )
@@ -199,7 +199,7 @@ async def send_inline_youtube_music(
         inline_message_id=inline_message_id,
         callback_data_factory=lambda _media_kind: f"inline:ytmusic:{token}",
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
-        button_text="Send audio inline",
+        button_text="Enviar áudio inline",
     )
 
     try:
@@ -452,6 +452,6 @@ async def send_inline_youtube_video(
         callback_data=f"inline:youtube:{token}",
         plan_fn=_plan,
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
-        button_text="Send video inline",
+        button_text="Enviar vídeo inline",
         log=logging,
     )

@@ -79,7 +79,7 @@ async def test_run_single_media_flow_reuses_inflight_result_for_duplicate_reques
             cache_key=cache_key,
             cache_file_type="video",
             db_service=db,
-            upload_status_text="Uploading...",
+            upload_status_text="Enviando...",
             upload_action="upload_video",
             update_status=_noop,
             send_chat_action=_noop,
@@ -227,7 +227,7 @@ async def test_run_media_group_flow_sends_resolved_entries_and_cleans_up(tmp_pat
         metrics_label="test_group",
         error_label="Test",
         update_status=_update_status,
-        upload_status_text="Uploading...",
+        upload_status_text="Enviando...",
         send_entries=_send_entries,
         on_empty=_on_empty,
         delete_status_message=_delete_status_message,
@@ -238,7 +238,7 @@ async def test_run_media_group_flow_sends_resolved_entries_and_cleans_up(tmp_pat
     assert result is True
     assert "download:1:video" in events
     assert "download:0:photo" not in events
-    assert events[-4:] == ["status:Uploading...", "send_entries", "after_send", "delete_status"]
+    assert events[-4:] == ["status:Enviando...", "send_entries", "after_send", "delete_status"]
     assert cleaned_paths == [str(downloaded_file)]
     entries = sent_entries[0]
     assert entries[0]["file_id"] == "cached-photo-id"
@@ -270,7 +270,7 @@ async def test_run_media_group_flow_calls_on_empty_when_nothing_resolved():
         metrics_label="test_group",
         error_label="Test",
         update_status=_fail,
-        upload_status_text="Uploading...",
+        upload_status_text="Enviando...",
         send_entries=_fail,
         on_empty=_on_empty,
         delete_status_message=_fail,

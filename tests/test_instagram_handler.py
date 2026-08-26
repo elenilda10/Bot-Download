@@ -401,7 +401,7 @@ async def test_inline_instagram_query_returns_send_button_for_single_photo(monke
     assert len(results) == 1
     result = results[0]
     assert result.title == "Instagram Photo"
-    assert result.reply_markup.inline_keyboard[0][0].text == "Send photo inline"
+    assert result.reply_markup.inline_keyboard[0][0].text == "Enviar foto inline"
     assert result.thumbnail_url == "https://cdn.example.com/photo.jpg"
 
 

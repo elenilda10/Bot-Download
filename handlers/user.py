@@ -1,6 +1,6 @@
-
 import asyncio  # noqa: F401
-from aiogram import Router, F
+from copy import copy  # noqa: F401
+from aiogram import Router, F, types
 from aiogram.exceptions import TelegramBadRequest  # noqa: F401
 from aiogram.filters import Command
 
@@ -15,6 +15,12 @@ from services.stats.chart import _render_stats  # noqa: F401
 from handlers import commands as cmd_mod
 from handlers import media_download as media_mod
 from handlers import settings_menu as settings_mod
+from handlers.settings_menu import (
+    handle_language_category,
+    handle_language_selection,
+    handle_back_to_settings,
+    show_language_view,
+)
 
 router = Router(name=__name__)
 
@@ -44,6 +50,17 @@ router.callback_query(F.data == "noop")(settings_mod.noop_callback)
 
 router.message(media_mod._has_multiple_supported_links)(media_mod.process_batch_links)
 router.callback_query(F.data == "start_supported_sites")(media_mod.show_supported_sites)
+
+# Rota direta de idioma
+@router.message(Command("lang", "language", "idioma"))
+async def cmd_lang(message: types.Message):
+    user_id = message.from_user.id
+    current_lang = await db.get_language(user_id)
+    await show_language_view(message, user_id, current_lang)
+
+router.callback_query.register(handle_language_category, F.data.in_(["settings_cat:lang", "settings_lang"]))
+router.callback_query.register(handle_language_selection, F.data.startswith("set_lang:"))
+router.callback_query.register(handle_back_to_settings, F.data.in_(["back_to_settings", "settings_home"]))
 
 # Export functions & attributes for backwards compatibility
 send_welcome = cmd_mod.send_welcome

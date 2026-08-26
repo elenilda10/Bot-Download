@@ -125,10 +125,10 @@ async def handle_tiktok_inline_query(
                         description=info.description if info and info.description else "Press the button to send this photo inline.",
                         thumbnail_url=first_photo,
                         input_message_content=types.InputTextMessageContent(
-                            message_text="TikTok photo is being prepared...\nIf it does not start automatically, tap the button below.",
+                            message_text="A foto do TikTok está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo.",
                         ),
                         reply_markup=kb.inline_send_media_keyboard(
-                            "Send photo inline",
+                            "Enviar foto inline",
                             f"inline:tiktok:{token}",
                         ),
                     )

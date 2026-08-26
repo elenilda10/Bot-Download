@@ -124,10 +124,16 @@ def parse_setting_toggle_callback(
 def resolve_video_quality_format(video_quality: str | None) -> str:
     quality = normalize_setting_value(video_quality) or "best"
     if quality == "saver":
-        return "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best"
+        return "bestvideo[height<=480]+bestaudio/best[height<=480]/best"
     if quality == "balanced":
-        return "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best"
-    return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best"
+        return "bestvideo[height<=720]+bestaudio/best[height<=720]/best"
+    return (
+        "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+        "bestvideo+bestaudio/"
+        "best[ext=mp4]/"
+        "best"
+    )
 
 
 def resolve_audio_format_codec(audio_format: str | None) -> str:

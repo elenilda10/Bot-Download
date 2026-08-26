@@ -230,7 +230,7 @@ async def collect_media_entries(
             raise result
         if isinstance(result, Exception):
             logging.error(
-                "Failed to download tweet media chunk: tweet_id=%s path=%s type=%s error=%s",
+                "Falha ao baixar tweet media chunk: tweet_id=%s path=%s type=%s error=%s",
                 tweet_id,
                 os.path.join(output_dir, file_path),
                 media_kind,

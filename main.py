@@ -372,7 +372,7 @@ async def main():
             dp.include_router(handlers.router)
 
             for middleware_cls in middlewares.__all__:
-                middleware = middleware_cls()
+                middleware = getattr(middlewares, middleware_cls)() if isinstance(middleware_cls, str) else middleware_cls()
                 dp.message.outer_middleware(middleware)
                 dp.callback_query.outer_middleware(middleware)
                 dp.inline_query.outer_middleware(middleware)

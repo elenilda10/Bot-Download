@@ -30,10 +30,10 @@ class RawAnswerInlineQuery(TelegramMethod[bool]):
 
 def _default_inline_button_text(media_kind: str) -> str:
     if media_kind == "photo":
-        return "Send photo inline"
+        return "Enviar foto inline"
     if media_kind == "audio":
-        return "Send audio inline"
-    return "Send video inline"
+        return "Enviar áudio inline"
+    return "Enviar vídeo inline"
 
 
 def build_inline_status_editor(

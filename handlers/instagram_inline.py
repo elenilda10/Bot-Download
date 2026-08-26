@@ -95,7 +95,7 @@ async def handle_instagram_inline_query(
                         message_text=bm.inline_send_video_prompt("Instagram"),
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Send video inline",
+                        "Enviar vídeo inline",
                         f"inline:instagram:{token}",
                     ),
                 )
@@ -126,10 +126,10 @@ async def handle_instagram_inline_query(
                     description=data.description or "Press the button to send this photo inline.",
                     thumbnail_url=first_preview or first_photo.url,
                     input_message_content=types.InputTextMessageContent(
-                        message_text="Instagram photo is being prepared...\nIf it does not start automatically, tap the button below.",
+                        message_text="A foto do Instagram está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo.",
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Send photo inline",
+                        "Enviar foto inline",
                         f"inline:instagram:{token}",
                     ),
                 )

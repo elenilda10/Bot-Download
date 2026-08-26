@@ -107,14 +107,16 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
         user_settings = await load_user_settings(db, message)
         bot_url = await get_bot_url(bot)
         if show_service_status:
-            status_message = await message.answer(bm.downloading_audio_status())
+            user_lang = await db.get_language(message.from_user.id)
+        if show_service_status:
+            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang))
 
         cache_key = build_audio_cache_key(source_url)
         track: dict | None = None
         youtube_track: dict | None = None
 
         async def _send_cached(file_id: str):
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -156,7 +158,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             return await prepare_mp3_metadata(path, track)
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )

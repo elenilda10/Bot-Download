@@ -477,7 +477,7 @@ async def test_inline_tiktok_query_returns_send_button(monkeypatch):
     assert len(results) == 1
     result = results[0]
     assert result.title == "TikTok Video"
-    assert result.reply_markup.inline_keyboard[0][0].text == "Send video inline"
+    assert result.reply_markup.inline_keyboard[0][0].text == "Enviar vídeo inline"
     assert (
         result.reply_markup.inline_keyboard[0][0].callback_data
         == f"inline:tiktok:{result.id.removeprefix('tiktok_inline:')}"
@@ -596,7 +596,7 @@ async def test_inline_tiktok_query_returns_send_button_for_single_photo(monkeypa
     assert len(results) == 1
     result = results[0]
     assert result.title == "TikTok Photo"
-    assert result.reply_markup.inline_keyboard[0][0].text == "Send photo inline"
+    assert result.reply_markup.inline_keyboard[0][0].text == "Enviar foto inline"
     assert result.thumbnail_url == "https://example.com/photo.jpg"
     token = result.id.removeprefix("tiktok_inline:")
     request = get_inline_video_request(token)

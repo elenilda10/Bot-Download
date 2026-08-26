@@ -270,14 +270,14 @@ def make_video_or_document_senders(
                     document=file_id,
                     caption=caption,
                     reply_markup=reply_markup_fn(),
-                    parse_mode=parse_mode,
+                    parse_mode=parse_mode or "HTML",
                     disable_content_type_detection=True,
                 )
             return await message.reply_video(
                 video=file_id,
                 caption=caption,
                 reply_markup=reply_markup_fn(),
-                parse_mode=parse_mode,
+                parse_mode=parse_mode or "HTML",
             )
         except TelegramBadRequest:
             return None
@@ -288,16 +288,24 @@ def make_video_or_document_senders(
                 document=FSInputFile(path),
                 caption=caption,
                 reply_markup=reply_markup_fn(),
-                parse_mode=parse_mode,
+                parse_mode=parse_mode or "HTML",
                 disable_content_type_detection=True,
             )
-        return await message.reply_video(
-            video=FSInputFile(path),
-            caption=caption,
-            reply_markup=reply_markup_fn(),
-            parse_mode=parse_mode,
-            **(await build_video_send_kwargs(path)),
-        )
+        video_kwargs, thumb_path = await build_video_send_kwargs(path)
+        try:
+            return await message.reply_video(
+                video=FSInputFile(path),
+                caption=caption,
+                reply_markup=reply_markup_fn(),
+                parse_mode=parse_mode or "HTML",
+                **video_kwargs,
+            )
+        finally:
+            if thumb_path and Path(thumb_path).exists():
+                try:
+                    Path(thumb_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     def extract_file_id(sent_message: types.Message) -> str | None:
         return extract_sent_file_id(sent_message, "video")
@@ -362,7 +370,7 @@ async def send_cached_media_entries(
     db_service: Any,
     caption: str | None = None,
     reply_markup: Any = None,
-    parse_mode: str | None = None,
+    parse_mode: str | None = "HTML",
     as_document: bool = False,
     kind_key: str = "kind",
     cache_key_key: str = "cache_key",
@@ -374,11 +382,10 @@ async def send_cached_media_entries(
     if not entries:
         return None
 
-    has_sent_media = False
     if len(entries) > 1:
-        album_items = entries[:-1]
-        for offset in range(0, len(album_items), 10):
-            batch = album_items[offset:offset + 10]
+        last_sent_message = None
+        for offset in range(0, len(entries), 10):
+            batch = entries[offset:offset + 10]
             video_kwargs_by_index: dict[int, dict[str, Any]] = {}
             if not as_document:
                 video_indexes = [
@@ -387,11 +394,16 @@ async def send_cached_media_entries(
                     if str(entry[kind_key]) == "video"
                 ]
                 if video_indexes:
-                    kwargs_list = await asyncio.gather(*(
+                    results = await asyncio.gather(*(
                         build_video_send_kwargs(str(batch[index].get(path_key)) if batch[index].get(path_key) else None)
                         for index in video_indexes
                     ))
+                    kwargs_list = [
+                        res[0] if isinstance(res, (tuple, list)) else (res or {})
+                        for res in results
+                    ]
                     video_kwargs_by_index = dict(zip(video_indexes, kwargs_list))
+
             media_group = MediaGroupBuilder()
             for index, entry in enumerate(batch):
                 media_kind = str(entry[kind_key])
@@ -401,35 +413,48 @@ async def send_cached_media_entries(
                     path_key=path_key,
                     url_key=url_key,
                 )
+                
+                # Coloca a legenda no primeiro item do primeiro lote
+                item_caption = caption if (offset == 0 and index == 0) else None
+
                 if as_document:
-                    media_group.add_document(media=media_ref)
+                    media_group.add_document(media=media_ref, caption=item_caption, parse_mode=parse_mode or "HTML")
                 elif media_kind == "video":
+                    v_kwargs = video_kwargs_by_index.get(index, {})
                     media_group.add_video(
                         media=media_ref,
-                        **video_kwargs_by_index[index],
+                        caption=item_caption,
+                        parse_mode=parse_mode or "HTML",
+                        **v_kwargs,
                     )
                 else:
-                    media_group.add_photo(media=media_ref)
+                    media_group.add_photo(media=media_ref, caption=item_caption, parse_mode=parse_mode or "HTML")
 
             send_kwargs = {"media": media_group.build()}
-            if not has_sent_media:
+            if offset == 0:
                 send_kwargs["reply_to_message_id"] = message.message_id
+
             sent_group = await message.answer_media_group(**send_kwargs)
-            has_sent_media = True
+            last_sent_message = sent_group[-1] if sent_group else None
 
             await asyncio.gather(*(
                 _cache_sent_entry(
                     db_service,
                     entry,
-                    sent_message,
+                    sent_msg,
                     kind_key=kind_key,
                     cache_key_key=cache_key_key,
                     cached_key=cached_key,
                 )
-                for sent_message, entry in zip(sent_group, batch)
+                for sent_msg, entry in zip(sent_group, batch)
             ))
 
-    last_entry = entries[-1]
+
+
+        return last_sent_message
+
+    # Caso seja apenas 1 item
+    last_entry = entries[0]
     media_kind = str(last_entry[kind_key])
     media_ref = resolve_media_input(
         last_entry,
@@ -440,21 +465,19 @@ async def send_cached_media_entries(
     send_kwargs: dict[str, Any] = {
         "caption": caption,
         "reply_markup": reply_markup,
+        "reply_to_message_id": message.message_id,
     }
     if parse_mode is not None:
         send_kwargs["parse_mode"] = parse_mode
 
     if as_document:
         send_kwargs["disable_content_type_detection"] = True
-        send_doc = message.answer_document if has_sent_media else message.reply_document
-        sent_message = await send_doc(document=media_ref, **send_kwargs)
+        sent_message = await message.reply_document(document=media_ref, **send_kwargs)
     elif media_kind == "video":
         send_kwargs.update(await build_video_send_kwargs(str(last_entry.get(path_key)) if last_entry.get(path_key) else None))
-        send_video = message.answer_video if has_sent_media else message.reply_video
-        sent_message = await send_video(video=media_ref, **send_kwargs)
+        sent_message = await message.reply_video(video=media_ref, **send_kwargs)
     else:
-        send_photo = message.answer_photo if has_sent_media else message.reply_photo
-        sent_message = await send_photo(photo=media_ref, **send_kwargs)
+        sent_message = await message.reply_photo(photo=media_ref, **send_kwargs)
 
     await _cache_sent_entry(
         db_service,

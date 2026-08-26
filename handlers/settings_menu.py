@@ -81,7 +81,7 @@ async def _ensure_settings_entities(
 
 
 async def _resolve_settings_target(
-    call: types.CallbackQuery, lang: str = "en"
+    call: types.CallbackQuery, lang: str = "pt"
 ) -> int | None:
     if call.message and call.message.chat.type != "private":
         is_admin = await user_mod._is_group_admin(
@@ -94,9 +94,9 @@ async def _resolve_settings_target(
     return call.from_user.id
 
 
-async def _get_chat_language(target_id: int, default_lang: str = "en") -> str:
+async def _get_chat_language(target_id: int, default_lang: str = "pt") -> str:
     try:
-        chat = await user_mod.db.get_chat(user_id=target_id)
+        chat = await user_mod.db.get_user_info(user_id=target_id)
         if chat and getattr(chat, "language", None):
             return str(chat.language).lower()
     except Exception:
@@ -104,7 +104,7 @@ async def _get_chat_language(target_id: int, default_lang: str = "en") -> str:
     return default_lang
 
 
-async def settings_menu(message: types.Message, lang: str = "en"):
+async def settings_menu(message: types.Message, lang: str = "pt"):
     await user_mod.send_analytics(
         user_id=message.from_user.id,
         chat_type=message.chat.type,
@@ -128,7 +128,7 @@ async def settings_menu(message: types.Message, lang: str = "en"):
     )
 
 
-async def back_to_settings(call: types.CallbackQuery, lang: str = "en"):
+async def back_to_settings(call: types.CallbackQuery, lang: str = "pt"):
     target_id = await _resolve_settings_target(call, lang=lang)
     if target_id is None:
         return
@@ -142,7 +142,7 @@ async def back_to_settings(call: types.CallbackQuery, lang: str = "en"):
     await call.answer()
 
 
-async def open_language_menu(call: types.CallbackQuery, lang: str = "en"):
+async def open_language_menu(call: types.CallbackQuery, lang: str = "pt"):
     target_id = await _resolve_settings_target(call, lang=lang)
     if target_id is None:
         return
@@ -162,7 +162,7 @@ async def open_language_menu(call: types.CallbackQuery, lang: str = "en"):
     await call.answer()
 
 
-async def set_language_setting(call: types.CallbackQuery, lang: str = "en"):
+async def set_language_setting(call: types.CallbackQuery, lang: str = "pt"):
     target_id = await _resolve_settings_target(call, lang=lang)
     if target_id is None:
         return
@@ -211,7 +211,7 @@ async def set_language_setting(call: types.CallbackQuery, lang: str = "en"):
         await call.answer(bm.something_went_wrong(lang=new_lang), show_alert=True)
 
 
-async def open_category(call: types.CallbackQuery, lang: str = "en"):
+async def open_category(call: types.CallbackQuery, lang: str = "pt"):
     if not call.data or not call.data.startswith("settings_cat:"):
         await call.answer()
         return
@@ -229,7 +229,7 @@ async def open_category(call: types.CallbackQuery, lang: str = "en"):
     await call.answer()
 
 
-async def open_setting(call: types.CallbackQuery, lang: str = "en"):
+async def open_setting(call: types.CallbackQuery, lang: str = "pt"):
     field = parse_settings_view_callback(call.data)
     if field is None:
         await call.answer(bm.invalid_settings_option(lang=lang), show_alert=True)
@@ -263,7 +263,7 @@ async def open_setting(call: types.CallbackQuery, lang: str = "en"):
         await call.answer(bm.something_went_wrong(lang=user_lang), show_alert=True)
 
 
-async def change_setting(call: types.CallbackQuery, lang: str = "en"):
+async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
     setting_payload = parse_setting_toggle_callback(call.data)
     if setting_payload is None:
         await call.answer(bm.invalid_settings_option(lang=lang), show_alert=True)
@@ -346,4 +346,131 @@ async def change_setting(call: types.CallbackQuery, lang: str = "en"):
 
 
 async def noop_callback(call: types.CallbackQuery):
+    await call.answer()
+
+# ==========================================
+# 🌐 HANDLERS DE IDIOMA / LANGUAGE
+# ==========================================
+
+async def open_language_menu(call_or_msg, user_id: int, chat_id: int, lang: str):
+    text = "🌐 <b>Escolha o seu idioma / Select your language:</b>" if lang == "pt" else "🌐 <b>Select your language / Escolha o seu idioma:</b>"
+    keyboard = kb.language_keyboard(current_lang=lang)
+    if isinstance(call_or_msg, types.CallbackQuery):
+        try:
+            await call_or_msg.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await call_or_msg.message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+        await call_or_msg.answer()
+    else:
+        await call_or_msg.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+async def settings_lang_callback(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    current_lang = (getattr(await user_mod.db.get_user_info(user_id=user_id), "language", None) or "pt")
+    await open_language_menu(call, user_id, chat_id, current_lang)
+
+async def set_language_callback(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    new_lang = "pt" if "pt" in call.data else "en"
+    
+    try:
+        await user_mod.db.set_user_setting(user_id=user_id, field="lang", value=new_lang)
+    except Exception as exc:
+        logging.warning("Não foi possível salvar lang no DB: %s", exc)
+    
+    confirm_text = "✅ Idioma alterado para <b>Português</b>!" if new_lang == "pt" else "✅ Language changed to <b>English</b>!"
+    keyboard = kb.return_settings_categories_keyboard(lang=new_lang)
+    
+    try:
+        await call.message.edit_text(
+            bm.settings_menu_text(lang=new_lang) if hasattr(bm, "settings_menu_text") else confirm_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    except Exception:
+        await call.message.edit_reply_markup(reply_markup=keyboard)
+    
+    await call.answer(confirm_text, show_alert=False)
+
+# ==========================================
+# 🌐 CONTROLE DE IDIOMA
+# ==========================================
+
+async def show_language_view(target, user_id: int, lang: str):
+    text = (
+        "🌐 <b>Escolha o seu idioma / Select your language:</b>"
+        if lang == "pt"
+        else "🌐 <b>Select your language / Escolha o seu idioma:</b>"
+    )
+    keyboard = kb.language_keyboard(current_lang=lang)
+    if isinstance(target, types.CallbackQuery):
+        try:
+            await target.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        except Exception:
+            await target.message.edit_reply_markup(reply_markup=keyboard)
+        await target.answer()
+    else:
+        await target.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+async def handle_language_category(call: types.CallbackQuery):
+    target_id = await _resolve_settings_target(call, lang="pt")
+    current_lang = await _get_chat_language(target_id or call.from_user.id, default_lang="pt")
+    await show_language_view(call, call.from_user.id, current_lang)
+
+
+async def handle_language_selection(call: types.CallbackQuery):
+    chosen_lang = "pt" if call.data.endswith("pt") else "en"
+    target_id = await _resolve_settings_target(call, lang=chosen_lang)
+    chat_id = target_id or (call.message.chat.id if call.message and call.message.chat.type != "private" else call.from_user.id)
+    chat_type = call.message.chat.type if call.message else "private"
+
+    # 1. Salva o idioma na tabela de chats
+    try:
+        await user_mod.db.upsert_chat(
+            user_id=chat_id,
+            user_name=call.from_user.full_name,
+            user_username=call.from_user.username,
+            chat_type=chat_type,
+            language=chosen_lang,
+            status="active",
+        )
+        # Limpa cache de atualização se existir
+        if hasattr(user_mod, "_update_info_cache") and chat_id in user_mod._update_info_cache:
+            del user_mod._update_info_cache[chat_id]
+    except Exception as exc:
+        logging.warning("Erro ao salvar idioma no banco: %s", exc)
+
+    # 2. Atualiza os botões mostrando o check no idioma ativo
+    keyboard = kb.language_keyboard(current_lang=chosen_lang)
+    text = (
+        "🌐 <b>Escolha o seu idioma / Select your language:</b>"
+        if chosen_lang == "pt"
+        else "🌐 <b>Select your language / Escolha o seu idioma:</b>"
+    )
+    
+    try:
+        await call.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        try:
+            await call.message.edit_reply_markup(reply_markup=keyboard)
+        except Exception:
+            pass
+            
+    alert_msg = "✅ Idioma alterado para Português!" if chosen_lang == "pt" else "✅ Language set to English!"
+    await call.answer(alert_msg)
+
+
+async def handle_back_to_settings(call: types.CallbackQuery):
+    target_id = await _resolve_settings_target(call, lang="pt")
+    current_lang = await _get_chat_language(target_id or call.from_user.id, default_lang="pt")
+    
+    title = bm.settings(lang=current_lang)
+    keyboard = kb.return_settings_categories_keyboard(lang=current_lang)
+    
+    try:
+        await call.message.edit_text(title, reply_markup=keyboard, parse_mode="HTML")
+    except Exception:
+        await call.message.edit_reply_markup(reply_markup=keyboard)
     await call.answer()

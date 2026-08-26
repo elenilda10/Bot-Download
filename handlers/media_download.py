@@ -44,7 +44,7 @@ async def _process_inline_album_deeplink(message: types.Message, payload: str) -
             return True
     except Exception:
         logging.exception(
-            "Failed to process inline album deeplink: user_id=%s service=%s url=%s",
+            "Falha ao processar inline album deeplink: user_id=%s service=%s url=%s",
             message.from_user.id,
             request.service,
             summarize_url_for_log(request.url),

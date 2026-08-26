@@ -26,7 +26,15 @@ async def update_info(message: types.Message, referred_by: int | None = None, so
     user_id = message.from_user.id
     user_name = message.from_user.full_name
     user_username = message.from_user.username
-    language = getattr(message.from_user, "language_code", None)
+    
+    # Mantém o idioma salvo no banco se já existir; caso contrário usa o do Telegram
+    existing_lang = None
+    try:
+        existing_lang = await user_mod.db.get_language(user_id)
+    except Exception:
+        pass
+
+    language = existing_lang or getattr(message.from_user, "language_code", None) or "pt"
 
     now = time.monotonic()
     cached = user_mod._update_info_cache.get(user_id)
@@ -59,7 +67,6 @@ def _extract_start_payload(text: str) -> Optional[str]:
 def _build_pending_private_message(message: types.Message, pending_text: str) -> types.Message:
     if hasattr(message, "model_copy"):
         return message.model_copy(update={"text": pending_text, "caption": None})
-
     replayed_message = copy(message)
     replayed_message.text = pending_text
     replayed_message.caption = None
@@ -85,16 +92,16 @@ async def send_welcome(message: types.Message):
                 if await user_mod._process_inline_album_deeplink(message, payload):
                     await user_mod.update_info(message)
                     return
-
-    if referred_by is not None or source is not None:
-        await user_mod.update_info(message, referred_by=referred_by, source=source)
+        if referred_by is not None or source is not None:
+            await user_mod.update_info(message, referred_by=referred_by, source=source)
     else:
         await user_mod.update_info(message)
 
     bot_username = await get_bot_username(user_mod.bot)
+    user_lang = await user_mod.db.get_language(message.from_user.id)
     await message.reply(
-        bm.welcome_message(),
-        reply_markup=kb.start_keyboard(bot_username, ref_user_id=message.from_user.id),
+        bm.welcome_message(lang=user_lang),
+        reply_markup=kb.start_keyboard(bot_username, ref_user_id=message.from_user.id, lang=user_lang),
         parse_mode="HTML",
     )
 
@@ -110,9 +117,10 @@ async def send_welcome(message: types.Message):
 
 async def send_help(message: types.Message):
     bot_username = await get_bot_username(user_mod.bot)
+    user_lang = await user_mod.db.get_language(message.from_user.id)
     await message.reply(
-        bm.help_message(bot_username),
-        reply_markup=kb.start_keyboard(bot_username),
+        bm.help_message(bot_username, lang=user_lang),
+        reply_markup=kb.start_keyboard(bot_username, lang=user_lang),
         parse_mode="HTML",
     )
 
@@ -139,7 +147,6 @@ async def handle_bot_membership(update: ChatMemberUpdated):
         )
 
         chat_title = chat.title or chat_name
-
         became_member = old_status not in {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR}
         became_admin = new_status == ChatMemberStatus.ADMINISTRATOR and old_status != ChatMemberStatus.ADMINISTRATOR
 
@@ -150,14 +157,12 @@ async def handle_bot_membership(update: ChatMemberUpdated):
                     text=bm.join_group(chat_title),
                     parse_mode="HTML",
                 )
-
             if became_admin:
                 await user_mod.bot.send_message(
                     chat_id=chat_id,
                     text=bm.admin_rights_granted(chat_title),
                     parse_mode="HTML",
                 )
-
     elif new_status in {ChatMemberStatus.KICKED, ChatMemberStatus.LEFT, ChatMemberStatus.RESTRICTED}:
         await user_mod.db.set_inactive(update.chat.id)
 

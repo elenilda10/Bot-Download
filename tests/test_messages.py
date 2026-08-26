@@ -55,7 +55,7 @@ def test_captions_supports_larger_limits_for_plain_messages():
         (bm.inline_photo_description, "Single photo"),
         (bm.inline_album_description, "album"),
         (bm.inline_open_full_album_button, "Open Full Album"),
-        (bm.inline_send_video_button, "Send video inline"),
+        (bm.inline_send_video_button, "Enviar vídeo inline"),
         (bm.inline_video_already_processing, "already being prepared"),
         (bm.inline_video_already_sent, "already sent"),
     ],

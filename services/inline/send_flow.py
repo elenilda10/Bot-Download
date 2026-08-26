@@ -411,7 +411,7 @@ async def handle_post_inline_query(
                         message_text=f"{service_name} photo is being prepared...\nIf it does not start automatically, tap the button below.",
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Send photo inline",
+                        "Enviar foto inline",
                         f"inline:{service_key}:{token}",
                     ),
                 )
@@ -494,7 +494,7 @@ async def handle_post_inline_query(
                     message_text=bm.inline_send_video_prompt(service_name),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Send video inline",
+                    "Enviar vídeo inline",
                     f"inline:{service_key}:{token}",
                 ),
             )

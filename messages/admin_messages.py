@@ -1,4 +1,4 @@
-DEFAULT_LANG = "en"
+DEFAULT_LANG = "pt"
 
 
 def _normalize_lang(lang: str | None) -> str:

@@ -2,7 +2,7 @@ from urllib.parse import quote
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-DEFAULT_LANG = "en"
+DEFAULT_LANG = "pt"
 
 
 def _normalize_lang(lang: str | None) -> str:
@@ -19,15 +19,16 @@ def language_keyboard(
 
     txt_pt = "✅ 🇧🇷 Português" if is_pt else "🇧🇷 Português"
     txt_en = "🇺🇸 English" if is_pt else "✅ 🇺🇸 English"
+    txt_back = "⬅️ Voltar às Configurações" if is_pt else "⬅️ Back to Settings"
 
     buttons = [
         [
-            InlineKeyboardButton(text=txt_pt, callback_data="setting:lang:pt"),
-            InlineKeyboardButton(text=txt_en, callback_data="setting:lang:en"),
+            InlineKeyboardButton(text=txt_pt, callback_data="set_lang:pt"),
+            InlineKeyboardButton(text=txt_en, callback_data="set_lang:en"),
         ],
         [
             InlineKeyboardButton(
-                text="⬅️ Voltar às Configurações" if is_pt else "⬅️ Back to Settings",
+                text=txt_back,
                 callback_data="back_to_settings",
             )
         ],
@@ -132,7 +133,7 @@ def return_settings_categories_keyboard(
         ],
         [
             InlineKeyboardButton(
-                text="💬 Chat & Limpeza" if is_pt else "💬 Chat & Clean-up",
+                text="💬 Chat & Limpeza" if is_pt else "💬 Chat & Cleanup",
                 callback_data="settings_cat:chat",
             )
         ],
@@ -168,7 +169,7 @@ def return_category_settings_keyboard(
         ]
     elif category == "appearance":
         fields = [
-            ("📝 Legendas" if is_pt else "📝 Descriptions", "captions"),
+            ("📝 Legendas" if is_pt else "📝 Captions", "captions"),
             ("ℹ️ Botões de Info" if is_pt else "ℹ️ Info Buttons", "info_buttons"),
             ("🎧 Botão MP3" if is_pt else "🎧 MP3 Button", "audio_button"),
             ("📄 Botão de Arquivo" if is_pt else "📄 File Button", "file_button"),
@@ -190,7 +191,8 @@ def return_category_settings_keyboard(
         [
             InlineKeyboardButton(
                 text="⬅️ Voltar às Categorias"
-                if is_pt else "⬅️ Back to Categories",
+                if is_pt
+                else "⬅️ Back to Categories",
                 callback_data="back_to_settings",
             )
         ]
@@ -280,7 +282,6 @@ def return_field_keyboard(
         action_text = "🔴 Turn OFF" if is_enabled else "🟢 Turn ON"
 
     next_value = "off" if is_enabled else "on"
-
     buttons = [
         [InlineKeyboardButton(text=status_text, callback_data="noop")],
         [
@@ -301,13 +302,11 @@ def stats_keyboard(
     current_period: str = "Week", mode: str = "total", lang: str = DEFAULT_LANG
 ):
     is_pt = _normalize_lang(lang) == "pt"
-
     periods_data = [
         ("Semana" if is_pt else "Week", "Week"),
         ("Mês" if is_pt else "Month", "Month"),
         ("Ano" if is_pt else "Year", "Year"),
     ]
-
     period_buttons = [
         InlineKeyboardButton(
             text=f"[{label}]" if key == current_period else label,
@@ -333,13 +332,11 @@ def stats_keyboard(
             )
         ],
     ]
-
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def admin_keyboard(lang: str = DEFAULT_LANG):
     is_pt = _normalize_lang(lang) == "pt"
-
     txt_health = "🩺 Saúde" if is_pt else "🩺 Health"
     txt_runtime = "📦 Armazenamento" if is_pt else "📦 Runtime"
     txt_refresh = "🔄 Atualizar" if is_pt else "🔄 Refresh"
@@ -446,7 +443,8 @@ def start_private_chat_keyboard(bot_username: str, lang: str = DEFAULT_LANG):
         [
             InlineKeyboardButton(
                 text="💬 Abrir conversa com o bot"
-                if is_pt else "💬 Open bot chat",
+                if is_pt
+                else "💬 Open bot chat",
                 url=url,
             )
         ]
@@ -493,7 +491,6 @@ def inline_send_media_keyboard(text: str, callback_data: str) -> InlineKeyboardM
 
 def return_user_info_keyboard(nickname, followers, videos, likes, url):
     builder = InlineKeyboardBuilder()
-
     builder.row(InlineKeyboardButton(text=nickname, url=url))
 
     row1 = []
@@ -521,7 +518,6 @@ def return_user_info_keyboard(nickname, followers, videos, likes, url):
 
     if row1:
         builder.row(*row1)
-
     return builder.as_markup()
 
 
@@ -574,7 +570,6 @@ def return_video_info_keyboard(
                     callback_data=f"shares_{formatted_shares}",
                 )
             )
-
         if row1:
             builder.row(*row1)
 
@@ -608,13 +603,11 @@ def _stats_keyboard_legacy_bottom(
     current_period: str = "Week", mode: str = "total", lang: str = DEFAULT_LANG
 ):
     is_pt = _normalize_lang(lang) == "pt"
-
     periods_data = [
         ("Semana" if is_pt else "Week", "Week"),
         ("Mês" if is_pt else "Month", "Month"),
         ("Ano" if is_pt else "Year", "Year"),
     ]
-
     period_buttons = [
         InlineKeyboardButton(
             text=f"{'· ' if key == current_period else ''}{label}",
@@ -638,5 +631,4 @@ def _stats_keyboard_legacy_bottom(
             )
         ],
     ]
-
     return InlineKeyboardMarkup(inline_keyboard=buttons)

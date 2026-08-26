@@ -178,7 +178,7 @@ class UserRepositoryMixin:
     async def get_user_info(self, user_id: int) -> Any:
         async with self.SessionLocal() as session:
             result = await session.execute(
-                select(User.user_name, User.user_username, User.status).where(User.user_id == user_id)
+                select(User.user_name, User.user_username, User.status, User.language).where(User.user_id == user_id)
             )
             return result.first()
 
@@ -195,3 +195,22 @@ class UserRepositoryMixin:
                 user_id_int = int(user_id)
                 await session.execute(update(User).where(User.user_id == user_id_int).values(status="ban"))
         self._status_cache[int(user_id)] = (time.monotonic(), "ban")
+
+
+    async def get_language(self, user_id: int) -> str:
+        try:
+            async with self.SessionLocal() as session:
+                result = await session.execute(
+                    select(User.language).where(User.user_id == int(user_id))
+                )
+                val = result.scalar()
+                return str(val).lower() if val else "pt"
+        except Exception:
+            return "pt"
+
+    async def set_language(self, user_id: int, lang: str) -> None:
+        async with self.SessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    update(User).where(User.user_id == int(user_id)).values(language=lang)
+                )

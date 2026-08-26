@@ -157,11 +157,11 @@ async def handle_twitter_inline_query(
             )
             return
         token = create_inline_video_request("twitter", source_url, query.from_user.id, user_settings)
-        action_text = "Send photo inline" if media_kind == "photo" else "Send video inline"
+        action_text = "Enviar foto inline" if media_kind == "photo" else "Enviar vídeo inline"
         prompt_text = (
             bm.inline_send_video_prompt("Twitter")
             if media_kind == "video"
-            else "Twitter photo is being prepared...\nIf it does not start automatically, tap the button below."
+            else "A foto do Twitter está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo."
         )
         preview_url = get_twitter_media_preview_url_fn(media, tweet_media) or get_inline_service_icon("twitter")
         results = [

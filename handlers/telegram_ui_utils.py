@@ -1,3 +1,4 @@
+from app_context import db
 import asyncio
 import os
 import time
@@ -184,6 +185,18 @@ async def _send_with_reaction(
         pass
 
 
+async def _resolve_user_lang(message: types.Message, default: str = "pt") -> str:
+    try:
+        user_id = message.from_user.id if message.from_user else None
+        if user_id:
+            lang = await db.get_language(user_id)
+            if lang:
+                return lang
+    except Exception:
+        pass
+    return default
+
+
 async def handle_download_error(
     message: types.Message,
     *,
@@ -192,12 +205,15 @@ async def handle_download_error(
     business_id: Optional[int] = None,
     skip_if_business: bool = True,
     method: str = "reply",
+    lang: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
     """Notify user about a failed download with a consistent reaction and message."""
+    user_lang = lang or await _resolve_user_lang(message)
+    error_text = text or bm.something_went_wrong(lang=user_lang)
     await _send_with_reaction(
         message,
-        text or bm.something_went_wrong(),
+        error_text,
         emoji=emoji,
         business_id=business_id,
         skip_if_business=skip_if_business,
@@ -212,12 +228,14 @@ async def handle_video_too_large(
     business_id: Optional[int] = None,
     skip_if_business: bool = True,
     method: str = "reply",
+    lang: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
     """Inform the user that the requested media exceeds Telegram limits."""
+    user_lang = lang or await _resolve_user_lang(message)
     await _send_with_reaction(
         message,
-        bm.video_too_large(),
+        bm.video_too_large(lang=user_lang),
         emoji="👎",
         business_id=business_id,
         skip_if_business=skip_if_business,
@@ -352,13 +370,14 @@ def make_status_text_progress_updater(
 def make_retry_status_notifier(
     update_text: Callable[[str], Awaitable[None]],
     *,
-    enabled: bool = True,
     min_failed_attempt: int = 2,
+    enabled: bool = True,
+    lang: str = "pt",
 ) -> Callable[[int, int, Any], Awaitable[None]]:
     async def _on_retry(failed_attempt: int, total_attempts: int, _error: Any) -> None:
         if not enabled or failed_attempt < min_failed_attempt:
             return
-        await update_text(bm.retrying_again_status(failed_attempt + 1, total_attempts))
+        await update_text(bm.retrying_again_status(failed_attempt + 1, total_attempts, lang=lang))
 
     return _on_retry
 
