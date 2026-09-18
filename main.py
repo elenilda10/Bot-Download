@@ -101,7 +101,6 @@ bot = _app.bot
 dp = _app.dispatcher
 db = _app.db
 
-
 _ANALYTICS_QUEUE_MAXSIZE = 2048
 _ANALYTICS_WORKERS = 2
 _ANALYTICS_BATCH_SIZE = 25
@@ -135,7 +134,7 @@ async def _close_analytics_http_client() -> None:
             await _analytics_http_client.aclose()
         except Exception as error:
             logging.debug("Failed to close analytics HTTP client: %s", error)
-    _analytics_http_client = None
+        _analytics_http_client = None
 
 
 def _build_analytics_identity(user_id: int) -> tuple[str, str, str]:
@@ -168,7 +167,6 @@ async def _send_to_google_analytics(payload: _AnalyticsPayload) -> None:
             }
         ],
     }
-
     client = await _get_analytics_http_client()
     await client.post(
         f"https://www.google-analytics.com/mp/collect?measurement_id={MEASUREMENT_ID}&api_secret={API_SECRET}",
@@ -189,7 +187,6 @@ async def _persist_analytics_batch(batch: list[_AnalyticsPayload]) -> None:
         }
         for p in batch
     ]
-
     async with db.SessionLocal() as db_session:
         await db_session.execute(sql_insert(AnalyticsEvent), rows)
         await db_session.commit()
@@ -280,7 +277,6 @@ async def start_analytics_workers() -> None:
     global _analytics_queue, _analytics_worker_tasks
     if _analytics_queue is not None and _analytics_worker_tasks:
         return
-
     _analytics_queue = asyncio.Queue(maxsize=_ANALYTICS_QUEUE_MAXSIZE)
     _analytics_worker_tasks = [
         asyncio.create_task(
@@ -302,7 +298,6 @@ async def stop_analytics_workers() -> None:
             await asyncio.gather(
                 *_analytics_worker_tasks, return_exceptions=True
             )
-
     _analytics_worker_tasks = []
     _analytics_queue = None
     await _close_analytics_http_client()
@@ -317,7 +312,6 @@ async def send_analytics(user_id, chat_type, action_name):
             else str(chat_type),
             action_name=action_name,
         )
-
         queue = _analytics_queue
         if queue is not None:
             try:
@@ -377,7 +371,10 @@ async def main():
                 dp.callback_query.outer_middleware(middleware)
                 dp.inline_query.outer_middleware(middleware)
 
-            await bot.set_my_commands(commands=BOT_COMMANDS)
+            try:
+                await bot.set_my_commands(commands=BOT_COMMANDS)
+            except Exception as exc:
+                logging.warning("Rate limit ao configurar comandos: %s", exc)
 
             webhook_url = f"{WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
             await bot.set_webhook(

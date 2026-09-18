@@ -260,7 +260,7 @@ async def open_setting(call: types.CallbackQuery, lang: str = "pt"):
             getattr(getattr(call.message, "chat", None), "id", None),
             exc,
         )
-        await call.answer(bm.something_went_wrong(lang=user_lang), show_alert=True)
+        await call.answer("Ocorreu um erro ao salvar." if user_lang == "pt" else "An error occurred while saving.", show_alert=True)
 
 
 async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
@@ -291,7 +291,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
             getattr(getattr(call.message, "chat", None), "id", None),
             exc,
         )
-        await call.answer(bm.something_went_wrong(lang=user_lang), show_alert=True)
+        await call.answer("Ocorreu um erro ao salvar." if user_lang == "pt" else "An error occurred while saving.", show_alert=True)
         return
 
     try:

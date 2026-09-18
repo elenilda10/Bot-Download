@@ -24,13 +24,24 @@ from config import COBALT_API_URL, COBALT_API_KEY
 logging = logging.bind(service="tiktok_media")
 
 
+def _get_tiktok_cookie_file() -> Optional[str]:
+    for cand in [
+        "/root/bot_teste/cookies/tiktok_cookies.txt",
+        "/root/bot_teste/cookies/tiktok.txt",
+    ]:
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
 class TikTokDownloadMixin:
     DOWNLOAD_URL_TEMPLATE = "https://tikwm.com/video/media/play/{video_id}.mp4"
     DOWNLOAD_SERVICE_CYCLES = 3
     DOWNLOAD_CYCLE_DELAY_SECONDS = 2.0
 
     def _build_ytdlp_download_options(self) -> dict[str, Any]:
-        return {
+        cookie_file = _get_tiktok_cookie_file()
+        opts: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
@@ -38,11 +49,14 @@ class TikTokDownloadMixin:
             "cachedir": False,
             "continuedl": True,
             "overwrites": True,
-            "socket_timeout": 15,
-            "retries": 0,
-            "fragment_retries": 0,
-            "concurrent_fragment_downloads": 4,
+            "socket_timeout": 20,
+            "retries": 1,
+            "fragment_retries": 1,
+            "concurrent_fragment_downloads": 5,
         }
+        if cookie_file:
+            opts["cookiefile"] = cookie_file
+        return opts
 
     @staticmethod
     def _resolve_priority(size_hint: Optional[int]) -> int:
@@ -113,6 +127,7 @@ class TikTokDownloadMixin:
             speed = float(status.get("speed") or 0.0)
             eta = status.get("eta")
             eta_seconds = float(eta) if isinstance(eta, (int, float)) else None
+
             if state == "finished":
                 total = total or downloaded
                 self._notify_progress(
@@ -125,6 +140,7 @@ class TikTokDownloadMixin:
                     done=True,
                 )
                 return
+
             if state == "downloading":
                 self._notify_progress(
                     progress_callback,
@@ -208,20 +224,17 @@ class TikTokDownloadMixin:
         output_path: str,
         progress_callback=None,
     ) -> DownloadMetrics:
+        # Prioriza a melhor stream (1080p original/HD) com remux rápido em MP4
         return self._download_media_with_ytdlp_sync(
             source_url=source_url,
             output_path=output_path,
             outtmpl=output_path,
             ydl_overrides={
-                "format": (
-                    "best[ext=mp4][acodec!=none][vcodec!=none]/"
-                    "best[acodec!=none][vcodec!=none]/"
-                    "best*[ext=mp4][acodec!=none][vcodec!=none]/"
-                    "best*[acodec!=none][vcodec!=none]/"
-                    "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-                    "bestvideo+bestaudio/best"
-                ),
+                "format": "bestvideo+bestaudio/best",
                 "merge_output_format": "mp4",
+                "postprocessor_args": {
+                    "Merger": ["-c", "copy", "-movflags", "+faststart"]
+                },
             },
             progress_callback=progress_callback,
         )
@@ -267,7 +280,8 @@ class TikTokDownloadMixin:
 
     def _direct_video_candidates(self, source_url: str, source_data: dict[str, Any]) -> list[str]:
         candidates: list[str] = []
-        for key in ("play", "wmplay", "hdplay"):
+        # Tenta pegar a fonte HD primeiro
+        for key in ("hdplay", "play", "wmplay"):
             self._append_unique_url(candidates, source_data.get(key))
         video_id = source_data.get("id") or get_video_id_from_url(source_url)
         if isinstance(video_id, str) and video_id.strip():
@@ -293,21 +307,18 @@ class TikTokDownloadMixin:
         on_progress,
         on_retry,
     ) -> DownloadMetrics:
-        async def _download_once() -> DownloadMetrics:
-            return await self._downloader.download(
-                candidate_url,
-                filename,
-                headers=headers,
-                user_id=user_id,
-                chat_id=chat_id,
-                source="tiktok",
-                request_id=request_id,
-                size_hint=size_hint,
-                on_queued=on_queued,
-                on_progress=on_progress,
-            )
-
-        return await _download_once()
+        return await self._downloader.download(
+            candidate_url,
+            filename,
+            headers=headers,
+            user_id=user_id,
+            chat_id=chat_id,
+            source="tiktok",
+            request_id=request_id,
+            size_hint=size_hint,
+            on_queued=on_queued,
+            on_progress=on_progress,
+        )
 
     async def _download_direct(
         self,
@@ -371,31 +382,23 @@ class TikTokDownloadMixin:
     ) -> Optional[DownloadMetrics]:
         if not COBALT_API_URL or not COBALT_API_KEY:
             return None
-
         data = await cobalt_client.fetch_cobalt_data(
             COBALT_API_URL,
             COBALT_API_KEY,
-            {"url": source_url, "videoQuality": "1080", "filenameStyle": "basic"},
+            {"url": source_url, "videoQuality": "max", "filenameStyle": "basic"},
             source="tiktok",
             attempts=2,
             retry_delay=1.0,
         )
         if not data:
             return None
-
         status = data.get("status")
         video_url: Optional[str] = None
-
-        if status in ("tunnel", "redirect"):
-            video_url = data.get("url")
-        elif status == "stream":
+        if status in ("tunnel", "redirect", "stream"):
             video_url = data.get("url")
 
         if not video_url:
-            logging.debug("Cobalt returned no usable URL for TikTok: status=%s", status)
             return None
-
-        logging.info("Cobalt resolved TikTok URL: source=%s cobalt_url=%s", source_url, video_url)
 
         try:
             return await self._downloader.download(
@@ -416,102 +419,6 @@ class TikTokDownloadMixin:
             logging.warning("Cobalt TikTok download failed: source=%s error=%s", source_url, exc)
             return None
 
-    async def _download_with_service_cycle(
-        self,
-        *,
-        direct_download: Callable[[], Any],
-        ytdlp_download: Callable[[], Any],
-        source_url: str,
-        media_kind: str,
-        on_retry,
-    ) -> Optional[DownloadMetrics]:
-        last_error: Optional[Exception] = None
-        for cycle in range(1, self.DOWNLOAD_SERVICE_CYCLES + 1):
-            try:
-                direct_metrics = await direct_download()
-                if direct_metrics:
-                    logging.info(
-                        "TikTok direct %s download succeeded: source_url=%s path=%s cycle=%s",
-                        media_kind,
-                        source_url,
-                        direct_metrics.path,
-                        cycle,
-                    )
-                    return direct_metrics
-            except (DownloadRateLimitError, DownloadQueueBusyError):
-                raise
-            except DownloadError as exc:
-                last_error = exc
-                logging.warning(
-                    "TikTok direct %s download failed, trying yt-dlp fallback: source_url=%s cycle=%s error=%s",
-                    media_kind,
-                    source_url,
-                    cycle,
-                    exc,
-                )
-
-            try:
-                return await ytdlp_download()
-            except (DownloadRateLimitError, DownloadQueueBusyError):
-                raise
-            except DownloadError as exc:
-                last_error = exc
-                if cycle >= self.DOWNLOAD_SERVICE_CYCLES:
-                    break
-                logging.warning(
-                    "TikTok yt-dlp %s fallback failed, retrying service cycle: source_url=%s cycle=%s error=%s",
-                    media_kind,
-                    source_url,
-                    cycle,
-                    exc,
-                )
-                await self._notify_download_cycle_retry(on_retry, cycle, self.DOWNLOAD_SERVICE_CYCLES, exc)
-                await asyncio.sleep(self.DOWNLOAD_CYCLE_DELAY_SECONDS)
-
-        if last_error:
-            raise DownloadError(str(last_error)) from last_error
-        return None
-
-    async def _submit_queued_ytdlp_download(
-        self,
-        *,
-        source: str,
-        size_hint: Optional[int],
-        user_id: Optional[int],
-        chat_id: Optional[int],
-        request_id: Optional[str],
-        on_queued,
-        on_progress,
-        on_retry,
-        sync_download: Callable[[Any], DownloadMetrics],
-    ) -> DownloadMetrics:
-        loop = asyncio.get_running_loop()
-        progress_bridge = self._build_progress_bridge(loop, on_progress)
-        queue = get_download_queue()
-
-        async def _runner() -> DownloadMetrics:
-            return await self._retry_async_operation(
-                lambda: asyncio.to_thread(sync_download, progress_bridge),
-                attempts=1,
-                retry_on_exception=lambda exc: not isinstance(exc, (DownloadRateLimitError, DownloadQueueBusyError)),
-                on_retry=None,
-            )
-
-        try:
-            return await queue.submit(
-                _runner,
-                priority=self._resolve_priority(size_hint),
-                source=source,
-                user_id=user_id,
-                chat_id=chat_id,
-                request_id=request_id,
-                on_queued=on_queued,
-            )
-        except QueueRateLimitError as exc:
-            raise DownloadRateLimitError(exc.retry_after) from exc
-        except QueueBackpressureError as exc:
-            raise DownloadQueueBusyError(exc.position) from exc
-
     async def download_video(
         self,
         source_url: str,
@@ -530,57 +437,49 @@ class TikTokDownloadMixin:
         effective_size_hint = size_hint or _safe_int(source_data.get("size_hd"))
         output_path = os.path.join(self._output_dir, filename)
 
+        # 1. Prioridade Absoluta: yt-dlp com cookies (obtém 1080p original sem compressão de terceiros)
         try:
-            cobalt_result = await self._download_via_cobalt(
-                source_url=source_url,
-                filename=filename,
+            metrics = await self._submit_queued_ytdlp_download(
+                source="tiktok",
                 size_hint=effective_size_hint,
                 user_id=user_id,
                 chat_id=chat_id,
                 request_id=request_id,
                 on_queued=on_queued,
                 on_progress=on_progress,
+                on_retry=on_retry,
+                sync_download=lambda progress_callback: self._download_video_with_ytdlp_sync(
+                    source_url=source_url,
+                    output_path=output_path,
+                    progress_callback=progress_callback,
+                ),
             )
-            if cobalt_result:
-                logging.info("TikTok video downloaded via Cobalt: source_url=%s", source_url)
-                return cobalt_result
+            if metrics:
+                logging.info("TikTok video downloaded in MAX quality via yt-dlp: url=%s size=%s", source_url, metrics.size)
+                return metrics
+        except (DownloadRateLimitError, DownloadQueueBusyError):
+            raise
+        except Exception as exc:
+            logging.warning("yt-dlp MAX quality download failed, falling back to direct stream: url=%s error=%s", source_url, exc)
 
-            return await self._download_with_service_cycle(
-                direct_download=lambda: self._download_direct(
-                    candidates=self._direct_video_candidates(source_url, source_data),
-                    filename=filename,
-                    headers=self._build_direct_download_headers(source_url, source_data, "download_headers"),
-                    size_hint=effective_size_hint,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    request_id=request_id,
-                    on_queued=on_queued,
-                    on_progress=on_progress,
-                    on_retry=on_retry,
-                ),
-                ytdlp_download=lambda: self._submit_queued_ytdlp_download(
-                    source="tiktok",
-                    size_hint=effective_size_hint,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    request_id=request_id,
-                    on_queued=on_queued,
-                    on_progress=on_progress,
-                    on_retry=on_retry,
-                    sync_download=lambda progress_callback: self._download_video_with_ytdlp_sync(
-                        source_url=source_url,
-                        output_path=output_path,
-                        progress_callback=progress_callback,
-                    ),
-                ),
-                source_url=source_url,
-                media_kind="video",
+        # 2. Fallback: stream direto (HD/Play)
+        try:
+            return await self._download_direct(
+                candidates=self._direct_video_candidates(source_url, source_data),
+                filename=filename,
+                headers=self._build_direct_download_headers(source_url, source_data, "download_headers"),
+                size_hint=effective_size_hint,
+                user_id=user_id,
+                chat_id=chat_id,
+                request_id=request_id,
+                on_queued=on_queued,
+                on_progress=on_progress,
                 on_retry=on_retry,
             )
         except (DownloadRateLimitError, DownloadQueueBusyError):
             raise
-        except DownloadError as exc:
-            logging.error("Error downloading TikTok video: source_url=%s error=%s", source_url, exc)
+        except Exception as exc:
+            logging.error("TikTok fallback direct download failed: url=%s error=%s", source_url, exc)
             return None
 
     async def download_audio(
@@ -602,40 +501,35 @@ class TikTokDownloadMixin:
         output_path = os.path.join(self._output_dir, filename)
 
         try:
-            return await self._download_with_service_cycle(
-                direct_download=lambda: self._download_direct(
-                    candidates=self._direct_audio_candidates(source_data),
-                    filename=filename,
-                    headers=self._build_direct_download_headers(source_url, source_data, "audio_headers"),
-                    size_hint=effective_size_hint,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    request_id=request_id,
-                    on_queued=on_queued,
-                    on_progress=on_progress,
-                    on_retry=on_retry,
-                ),
-                ytdlp_download=lambda: self._submit_queued_ytdlp_download(
-                    source="tiktok",
-                    size_hint=effective_size_hint,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    request_id=request_id,
-                    on_queued=on_queued,
-                    on_progress=on_progress,
-                    on_retry=on_retry,
-                    sync_download=lambda progress_callback: self._download_audio_with_ytdlp_sync(
-                        source_url=source_url,
-                        output_path=output_path,
-                        progress_callback=progress_callback,
-                    ),
-                ),
-                source_url=source_url,
-                media_kind="audio",
+            metrics = await self._submit_queued_ytdlp_download(
+                source="tiktok",
+                size_hint=effective_size_hint,
+                user_id=user_id,
+                chat_id=chat_id,
+                request_id=request_id,
+                on_queued=on_queued,
+                on_progress=on_progress,
                 on_retry=on_retry,
+                sync_download=lambda progress_callback: self._download_audio_with_ytdlp_sync(
+                    source_url=source_url,
+                    output_path=output_path,
+                    progress_callback=progress_callback,
+                ),
             )
-        except (DownloadRateLimitError, DownloadQueueBusyError):
-            raise
-        except DownloadError as exc:
-            logging.error("Error downloading TikTok audio: source_url=%s error=%s", source_url, exc)
-            return None
+            if metrics:
+                return metrics
+        except Exception:
+            pass
+
+        return await self._download_direct(
+            candidates=self._direct_audio_candidates(source_data),
+            filename=filename,
+            headers=self._build_direct_download_headers(source_url, source_data, "audio_headers"),
+            size_hint=effective_size_hint,
+            user_id=user_id,
+            chat_id=chat_id,
+            request_id=request_id,
+            on_queued=on_queued,
+            on_progress=on_progress,
+            on_retry=on_retry,
+        )

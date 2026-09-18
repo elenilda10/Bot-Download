@@ -1,0 +1,212 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  BOT_TOKEN: "123456:TESTTOKEN"
+  ADMIN_ID: "1"
+  CUSTOM_API_URL: "https://api.example.com"
+  CHANNEL_ID: "-1001234567890"
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements-dev.txt ruff
+
+      - name: Run ruff
+        run: ruff check --select=E,F,W --ignore=E501 .
+
+      - name: Compile check
+        run: python -m compileall -q .
+
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/downloader_bot_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. --cov-fail-under=74 --cov-report=term-missing:skip-covered --cov-report=xml --junitxml=pytest.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-results
+          path: |
+            coverage.xml
+            pytest.xml
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: downloader_bot_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d downloader_bot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/downloader_bot_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: downloader-bot:test
+          cache-from: type=gha,scope=downloader-bot
+          cache-to: type=gha,mode=max,scope=downloader-bot,ignore-error=true
+
+      - name: Smoke-test container startup
+        run: |
+          docker run --rm \
+            --network host \
+            -e BOT_TOKEN \
+            -e DATABASE_URL \
+            -e ADMIN_ID \
+            -e CUSTOM_API_URL \
+            -e CHANNEL_ID \
+            -e MIGRATE_ON_STARTUP=1 \
+            --entrypoint python \
+            downloader-bot:test \
+            - <<'PY'
+          import asyncio
+          import os
+          from services.storage.db import DataBase
+
+          os.environ.update({
+              'BOT_TOKEN': os.environ['BOT_TOKEN'],
+              'DATABASE_URL': os.environ['DATABASE_URL'],
+              'ADMIN_ID': os.environ['ADMIN_ID'],
+              'CUSTOM_API_URL': os.environ['CUSTOM_API_URL'],
+          })
+
+          async def main():
+              db = DataBase()
+              await db.init_db()
+              print('Migrations applied successfully.')
+              tables = await db._get_existing_tables()
+              assert 'users' in tables, f'Missing users table: {tables}'
+              assert 'downloaded_files' in tables, f'Missing downloaded_files table: {tables}'
+              assert 'alembic_version' in tables, f'Missing alembic_version table: {tables}'
+              print('All tables verified.')
+
+          asyncio.run(main())
+          PY
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: downloader_bot_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d downloader_bot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      RUN_DB_TESTS: "1"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/downloader_bot_test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements-dev.txt
+
+      - name: Run PostgreSQL integration tests
+        run: |
+          pytest tests/test_db.py -q

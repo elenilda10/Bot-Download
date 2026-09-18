@@ -3,6 +3,7 @@ def _favicon_url(domain: str) -> str:
 
 
 INLINE_SERVICE_ICONS: dict[str, str] = {
+    "deezer": _favicon_url("https://www.deezer.com"),
     "instagram": _favicon_url("https://www.instagram.com"),
     "threads": _favicon_url("https://www.threads.com"),
     "pinterest": _favicon_url("https://www.pinterest.com"),

@@ -15,18 +15,22 @@ from sqlalchemy.orm import declarative_base, relationship
 from services.settings import SETTING_DISABLED
 
 Base = declarative_base()
+
 NON_DOWNLOAD_ACTIONS = ("start", "settings")
+
 DEFAULT_USER_SETTINGS = {
     "captions": SETTING_DISABLED,
     "delete_message": SETTING_DISABLED,
     "info_buttons": SETTING_DISABLED,
     "url_button": SETTING_DISABLED,
     "audio_button": SETTING_DISABLED,
+    "music_button": SETTING_DISABLED,
     "file_button": SETTING_DISABLED,
     "video_quality": "best",
     "as_document": SETTING_DISABLED,
     "audio_format": "mp3",
 }
+
 APP_SCHEMA_TABLES = frozenset(
     {
         "downloaded_files",
@@ -106,6 +110,7 @@ class Settings(Base):
     info_buttons = Column(Text, default=SETTING_DISABLED, nullable=False)
     url_button = Column(Text, default=SETTING_DISABLED, nullable=False)
     audio_button = Column(Text, default=SETTING_DISABLED, nullable=False)
+    music_button = Column(Text, default=SETTING_DISABLED, nullable=False)
     file_button = Column(Text, default=SETTING_DISABLED, nullable=False)
     video_quality = Column(Text, default="best", nullable=False)
     as_document = Column(Text, default=SETTING_DISABLED, nullable=False)

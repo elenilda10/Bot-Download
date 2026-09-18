@@ -45,17 +45,7 @@ async def claim_message_request(
     chat_id = getattr(getattr(message, "chat", None), "id", None)
     scope_id = getattr(message, "business_connection_id", None)
     status = claim_request(message.from_user.id, chat_id, service, url, scope_id=scope_id)
-    if status == "active":
-        try:
-            await message.reply(bm.duplicate_link_processing())
-        except TelegramBadRequest:
-            pass
-        return None
-    if status == "recent":
-        try:
-            await message.reply(bm.duplicate_link_recently_processed())
-        except TelegramBadRequest:
-            pass
+    if status in ("active", "recent"):
         return None
     return MessageRequestLease(
         user_id=message.from_user.id,

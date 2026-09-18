@@ -1,3 +1,4 @@
+import httpx
 from app_context import db
 import asyncio
 import os
@@ -47,7 +48,7 @@ async def get_business_owner_user_id(bot: Bot, business_id: str) -> int | None:
         return cached[1]
 
     try:
-        connection = await bot.get_business_connection(business_id)
+        connection = await bot.get_business_connection(business_connection_id=business_id)
     except Exception as exc:
         logging.warning(
             "Failed to resolve business owner: business_id=%s error=%s",
@@ -175,6 +176,34 @@ async def _send_with_reaction(
             skip_if_business=skip_if_business,
         )
 
+    # Mensagens Efemeras Nativas (Bot API 10.2)
+    is_group = message.chat and message.chat.type in ["group", "supergroup"]
+    user_id = message.from_user.id if message.from_user else None
+
+    if is_group and user_id and not business_id:
+        try:
+            bot_token = message.bot.token
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                payload = {
+                    "chat_id": message.chat.id,
+                    "text": text,
+                    "receiver_user_id": user_id,
+                    "reply_parameters": {
+                        "message_id": message.message_id
+                    }
+                }
+                res = await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json=payload
+                )
+                data = res.json()
+                if data.get("ok"):
+                    return
+                else:
+                    print("[EFÊMERO API RESPOSTA]:", data)
+        except Exception as exc:
+            print("[EFÊMERO EXCEÇÃO]:", exc)
+
     responder = getattr(message, method, None)
     if not responder:
         raise AttributeError(f"Message object has no method '{method}'")
@@ -183,7 +212,6 @@ async def _send_with_reaction(
         await responder(text, **kwargs)
     except TelegramBadRequest:
         pass
-
 
 async def _resolve_user_lang(message: types.Message, default: str = "pt") -> str:
     try:

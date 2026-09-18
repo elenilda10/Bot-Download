@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import os
 import re
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -37,7 +38,6 @@ from handlers.utils import (
     load_user_settings,
     make_backpressure_handler,
     make_retry_status_notifier,
-    make_status_text_progress_updater,
     maybe_delete_user_message,
     react_to_message,
     remove_file,
@@ -82,6 +82,45 @@ build_tiktok_video_url = tiktok_platform.build_tiktok_video_url
 get_tiktok_audio_callback_data = tiktok_platform.get_tiktok_audio_callback_data
 get_tiktok_size_hint = tiktok_platform.get_tiktok_size_hint
 is_invalid_tiktok_payload = tiktok_platform.is_invalid_tiktok_payload
+
+
+def _create_throttled_progress_updater(label: str, edit_fn, min_interval: float = 4.0):
+    """Garante que atualizações de progresso para o Telegram nunca violem rate limit."""
+    last_update_time = 0.0
+    last_rendered_text = ""
+    lock = asyncio.Lock()
+
+    async def _progress_callback(current: int, total: int, *args, **kwargs):
+        nonlocal last_update_time, last_rendered_text
+        if total <= 0:
+            return
+
+        now = time.monotonic()
+        percent = int((current / total) * 100)
+
+        # Só atualiza a cada min_interval segundos ou quando bater 100%
+        if percent < 100 and (now - last_update_time < min_interval):
+            return
+
+        current_mb = current / (1024 * 1024)
+        total_mb = total / (1024 * 1024)
+        text = f"⏳ <b>{label}:</b> {percent}% ({current_mb:.1f}MB / {total_mb:.1f}MB)"
+
+        if text == last_rendered_text:
+            return
+
+        if lock.locked():
+            return
+
+        async with lock:
+            last_update_time = time.monotonic()
+            last_rendered_text = text
+            try:
+                await edit_fn(text)
+            except Exception:
+                pass
+
+    return _progress_callback
 
 
 class TikTokService(tiktok_platform.TikTokMediaService):
@@ -204,7 +243,6 @@ async def process_tiktok(message: types.Message, direct_url: Optional[str] = Non
 
         data = await fetch_tiktok_data_with_retry(url, on_retry=_on_retry_fetch)
         images = data.get("data", {}).get("images", [])
-
         logging.debug(
             "TikTok content classification: has_images=%s is_profile=%s",
             bool(images),
@@ -291,7 +329,8 @@ async def process_tiktok_video(
     async def _edit_status(text: str) -> None:
         await safe_edit_text(status_message, text)
 
-    on_progress = make_status_text_progress_updater("TikTok video", _edit_status)
+    # Throttling estrito de 4.0s para evitar FloodWait no Telegram
+    on_progress = _create_throttled_progress_updater("TikTok video", _edit_status, min_interval=4.0)
     on_retry_download = make_retry_status_notifier(
         _edit_status,
         enabled=show_service_status,
@@ -311,6 +350,8 @@ async def process_tiktok_video(
             user_settings,
             audio_callback_data=audio_callback_data,
             file_callback_data=file_callback_data,
+            lang=user_lang,
+            has_video=True,
         )
 
     async def _download_media():
@@ -415,6 +456,7 @@ async def process_tiktok_photos(
     info = await video_info(data)
     audio_callback_data = get_tiktok_audio_callback_data(info) if info else None
     video_url = build_tiktok_video_url(info) if info else ""
+
     if not images:
         logging.warning(
             "TikTok photo post missing images: user_id=%s url=%s",
@@ -440,7 +482,6 @@ async def process_tiktok_photos(
         )
 
         as_document = user_settings.get("as_document") == "on" if isinstance(user_settings, dict) else False
-
         if as_document and len(images) > 1:
             from utils.zip_utils import create_photos_zip
 
@@ -485,6 +526,8 @@ async def process_tiktok_photos(
                         video_url,
                         user_settings,
                         audio_callback_data=audio_callback_data,
+                        lang=user_lang,
+                        has_video=False,
                     ),
                     parse_mode="HTML",
                     disable_content_type_detection=True,
@@ -519,7 +562,6 @@ async def process_tiktok_photos(
                 zip(images, cache_keys, cached_file_ids)
             )
         ]
-
         await send_cached_media_entries(
             message,
             media_items,
@@ -538,6 +580,8 @@ async def process_tiktok_photos(
                 video_url,
                 user_settings,
                 audio_callback_data=audio_callback_data,
+                lang=user_lang,
+                has_video=False,
             ),
             as_document=as_document,
         )
@@ -677,7 +721,6 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
     if len(parts) != 4:
         await handle_download_error(call.message, lang=user_lang)
         return
-
     _, _, author, video_id = parts
     video_url = f"https://www.tiktok.com/@{author}/video/{video_id}"
     logging.info(
@@ -725,14 +768,13 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
             await handle_download_error(call.message, lang=user_lang)
             return
         audio_duration = info.duration_seconds or None
-
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         download_name = f"{info.id}_{timestamp}_tiktok_audio.mp3"
 
         async def _edit_status(text: str) -> None:
             await safe_edit_text(status_message, text)
 
-        on_progress = make_status_text_progress_updater("TikTok audio", _edit_status)
+        on_progress = _create_throttled_progress_updater("TikTok audio", _edit_status, min_interval=4.0)
         on_retry_download = make_retry_status_notifier(
             _edit_status,
             enabled=show_service_status,
@@ -752,7 +794,6 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
         if not metrics:
             await handle_download_error(call.message, lang=user_lang)
             return
-
         if metrics.size >= MAX_FILE_SIZE:
             await call.message.reply(bm.audio_too_large(lang=user_lang))
             await remove_file(metrics.path)

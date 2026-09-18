@@ -1,9 +1,10 @@
 from services.settings import resolve_video_quality_format
 import asyncio
 import re
+import time
 from typing import Any, Optional
 from aiogram import types, Router, F
-from aiogram.types import FSInputFile
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from yt_dlp import YoutubeDL
 import keyboards as kb
 import messages as bm
@@ -35,7 +36,6 @@ from handlers.utils import (
     load_user_settings,
     make_backpressure_handler,
     make_retry_status_notifier,
-    make_status_text_progress_updater,
     maybe_delete_user_message,
     react_to_message,
     remove_file,
@@ -73,6 +73,24 @@ YOUTUBE_MUSIC_URL_REGEX = (
 YOUTUBE_INFO_TIMEOUT_SECONDS = youtube_platform.YOUTUBE_INFO_TIMEOUT_SECONDS
 router = Router()
 YTDLP_FORMAT_720 = youtube_platform.YTDLP_FORMAT_720
+
+# Dicionário de progresso em tempo real
+YOUTUBE_PROGRESS: dict[str, dict[str, Any]] = {}
+
+
+def _is_pt(lang: Optional[str]) -> bool:
+    if not lang:
+        return True
+    code = lang.strip().lower()
+    return code == "pt" or code.startswith("pt_") or code.startswith("pt-")
+
+
+def _make_progress_keyboard(video_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
+    text = "📊 Ver Progresso" if _is_pt(lang) else "📊 View Progress"
+    norm_lang = "pt" if _is_pt(lang) else "en"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"ytprog:{video_id}:{norm_lang}")]]
+    )
 
 
 def safe_int(value, default: int = 0) -> int:
@@ -153,6 +171,7 @@ async def download_with_ytdlp_metrics(
     *,
     max_filesize: Optional[int] = None,
     merge_output_format: Optional[str] = "mp4",
+    on_progress: Optional[Any] = None,
 ) -> Optional[DownloadMetrics]:
     return await youtube_media_service.download_with_ytdlp_metrics(
         url,
@@ -161,6 +180,7 @@ async def download_with_ytdlp_metrics(
         source,
         max_filesize=max_filesize,
         merge_output_format=merge_output_format,
+        on_progress=on_progress,
     )
 
 
@@ -221,6 +241,7 @@ async def _download_youtube_media(
                     format_selector,
                     source,
                     max_filesize=MAX_FILE_SIZE - 1,
+                    on_progress=on_progress,
                 ),
                 attempts=3,
                 should_retry_result=lambda result: result is None,
@@ -230,6 +251,59 @@ async def _download_youtube_media(
         )
 
     return await _ytdlp_fallback("youtube_video_ytdlp_merged")
+
+
+@router.callback_query(F.data.startswith("ytprog:"))
+async def handle_youtube_progress_callback(call: types.CallbackQuery):
+    parts = call.data.split(":")
+    video_id = parts[1] if len(parts) > 1 else ""
+    lang_hint = parts[2] if len(parts) > 2 else None
+
+    user_lang = lang_hint or await db.get_language(call.from_user.id)
+    is_portuguese = _is_pt(user_lang)
+
+    info = YOUTUBE_PROGRESS.get(video_id)
+
+    if not info:
+        text = (
+            "⏳ Inicializando download ou preparando envio..."
+            if is_portuguese
+            else "⏳ Initializing download or preparing upload..."
+        )
+        await call.answer(text, show_alert=True)
+        return
+
+    status = info.get("status")
+    if status == "uploading":
+        text = (
+            "🚀 Download finalizado! Enviando ao Telegram..."
+            if is_portuguese
+            else "🚀 Download complete! Sending to Telegram..."
+        )
+        await call.answer(text, show_alert=True)
+        return
+
+    percent = info.get("percent", "0%")
+    downloaded = info.get("downloaded", "0 MB")
+    total = info.get("total", "?")
+    speed = info.get("speed", "--")
+
+    if is_portuguese:
+        msg = (
+            f"📊 Progresso do Download:\n\n"
+            f"▸ Status: {percent}\n"
+            f"▸ Tamanho: {downloaded} / {total}\n"
+            f"▸ Velocidade: {speed}"
+        )
+    else:
+        msg = (
+            f"📊 Download Progress:\n\n"
+            f"▸ Status: {percent}\n"
+            f"▸ Size: {downloaded} / {total}\n"
+            f"▸ Speed: {speed}"
+        )
+
+    await call.answer(msg, show_alert=True)
 
 
 @router.message(
@@ -266,6 +340,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
     status_message: Optional[types.Message] = None
     request_lease = None
     show_service_status = business_id is None
+    video_id: Optional[str] = None
+
     try:
         request_lease = await claim_message_request(message, service="youtube", url=url)
         if request_lease is None:
@@ -273,27 +349,34 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         await react_to_message(message, "👾", business_id=business_id)
         user_settings = await load_user_settings(db, message)
         user_lang = user_settings.get("language") or await db.get_language(message.from_user.id)
-        if show_service_status:
-            status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
 
         user_captions = user_settings["captions"]
         bot_url = await get_bot_url(bot)
         yt = await _get_youtube_video_with_timeout(url)
         if not yt:
-            await safe_delete_message(status_message)
+            if status_message:
+                await safe_delete_message(status_message)
             await message.reply(bm.nothing_found(lang=user_lang))
             return
-        video = await asyncio.to_thread(get_video_stream, yt)
 
+        video_id = yt.get("id") or "video"
+        progress_kb = _make_progress_keyboard(video_id, lang=user_lang)
+
+        if show_service_status:
+            status_message = await message.answer(
+                bm.downloading_video_status(lang=user_lang),
+                reply_markup=progress_kb,
+            )
+
+        video = await asyncio.to_thread(get_video_stream, yt)
         audio_callback_data = (
             f"audio:youtube:{yt['id']}" if yt and yt.get("id") else None
         )
 
         views = safe_int(yt.get("view_count"), None)
         likes = safe_int(yt.get("like_count"), None)
-
         name = f"{yt['id']}_youtube_video.mp4"
-        await safe_edit_text(status_message, bm.downloading_video_status(lang=user_lang))
+
         size_hint_raw = (video or {}).get("filesize") or (video or {}).get(
             "filesize_approx"
         )
@@ -302,10 +385,46 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             await handle_video_too_large(message, business_id=business_id)
             return
 
-        async def _edit_status(text: str) -> None:
-            await safe_edit_text(status_message, text)
+        initial_status_text = "Baixando..." if _is_pt(user_lang) else "Downloading..."
+        initial_speed_text = "Calculando..." if _is_pt(user_lang) else "Calculating..."
 
-        on_progress = make_status_text_progress_updater("YouTube video", _edit_status)
+        YOUTUBE_PROGRESS[video_id] = {
+            "percent": "0%",
+            "downloaded": "0 MB",
+            "total": f"{size_hint / (1024 * 1024):.1f} MB" if size_hint else "?",
+            "speed": initial_speed_text,
+            "last_time": time.monotonic(),
+            "last_bytes": 0,
+        }
+
+        def on_progress(downloaded_bytes: int, total_bytes: int | None = None, speed: float | None = None) -> None:
+            curr_time = time.monotonic()
+            info = YOUTUBE_PROGRESS.get(video_id)
+            if not info:
+                return
+
+            if speed is not None and speed > 0:
+                speed_mb = speed / (1024 * 1024)
+            else:
+                dt = max(curr_time - info.get("last_time", curr_time), 0.001)
+                db_delta = max(downloaded_bytes - info.get("last_bytes", 0), 0)
+                speed_mb = (db_delta / dt) / (1024 * 1024)
+
+            tot = total_bytes or size_hint or 0
+            pct_str = f"{(downloaded_bytes / tot * 100):.1f}%" if tot else initial_status_text
+
+            info.update({
+                "percent": pct_str,
+                "downloaded": f"{downloaded_bytes / (1024 * 1024):.1f} MB",
+                "total": f"{tot / (1024 * 1024):.1f} MB" if tot else "?",
+                "speed": f"{speed_mb:.1f} MB/s",
+                "last_time": curr_time,
+                "last_bytes": downloaded_bytes,
+            })
+
+        async def _edit_status(text: str) -> None:
+            await safe_edit_text(status_message, text, reply_markup=progress_kb)
+
         on_retry_download = make_retry_status_notifier(_edit_status, lang=user_lang)
 
         def _reply_markup():
@@ -362,13 +481,18 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         cache_key = f"{yt['webpage_url']}#document" if as_document else yt["webpage_url"]
         cache_file_type = "document" if as_document else "video"
 
+        async def _update_status_and_mark(text: str) -> None:
+            if video_id in YOUTUBE_PROGRESS:
+                YOUTUBE_PROGRESS[video_id]["status"] = "uploading"
+            await safe_edit_text(status_message, text)
+
         sent_message = await run_single_media_flow(
             cache_key=cache_key,
             cache_file_type=cache_file_type,
             db_service=db,
             upload_status_text=bm.uploading_status(lang=user_lang),
             upload_action="upload_video",
-            update_status=_edit_status,
+            update_status=_update_status_and_mark,
             send_chat_action=lambda action: send_chat_action_if_needed(
                 bot, message.chat.id, action, business_id
             ),
@@ -405,6 +529,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         logging.error("Video download error: %s", e)
         await handle_download_error(message, business_id=business_id)
     finally:
+        if video_id and video_id in YOUTUBE_PROGRESS:
+            YOUTUBE_PROGRESS.pop(video_id, None)
         if request_lease is not None:
             request_lease.finish()
         await safe_delete_message(status_message)

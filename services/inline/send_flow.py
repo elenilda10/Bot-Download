@@ -12,13 +12,15 @@ module and those modules import this one.
 """
 
 from __future__ import annotations
+import os
+import subprocess
+from aiogram.types import FSInputFile
 
 import asyncio
 import datetime
 from typing import Any, Awaitable, Callable, List, Optional
 
 from aiogram import types
-from aiogram.types import FSInputFile
 
 import keyboards as kb
 import messages as bm
@@ -53,6 +55,29 @@ def _handler_utils():
     from handlers import utils as handler_utils
 
     return handler_utils
+
+
+def _optimize_video_for_streaming(video_path: str) -> None:
+    """Move o moov atom para o início do arquivo MP4 (+faststart) para renderizar direto no Telegram."""
+    if not isinstance(video_path, str) or not video_path.endswith(".mp4") or not os.path.exists(video_path):
+        return
+    tmp_path = f"{video_path}.faststart.mp4"
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-c", "copy",
+        "-movflags", "+faststart",
+        tmp_path,
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        if res.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+            os.replace(tmp_path, video_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 
 class InlineFlowState:
@@ -162,7 +187,7 @@ async def deliver_inline_photo(
         await edit_status(bm.uploading_status(), media_kind="photo")
         sent = await deps.bot.send_photo(
             chat_id=channel_id,
-            photo=photo_url,
+            photo=FSInputFile(photo_url) if (isinstance(photo_url, str) and os.path.exists(photo_url)) else photo_url,
             caption=channel_caption,
         )
         if not sent.photo:
@@ -213,11 +238,12 @@ async def deliver_inline_video(
     log=None,
 ) -> None:
     """Serve a single video inline, downloading and uploading it to the cache
-    channel once. ``download_fn`` receives an ``on_progress`` callback and
-    returns download metrics, ``None`` on failure, or ``VIDEO_TOO_LARGE``."""
+    channel once."""
     log = log or logging
     utils = _handler_utils()
     db_id = await deps.db.get_file_id(cache_key)
+    video_meta = {}
+
     if not db_id:
         if not channel_id:
             log.error("CHANNEL_ID is not configured; %s inline upload is disabled", service_name)
@@ -246,11 +272,31 @@ async def deliver_inline_video(
             return
 
         await edit_status(bm.uploading_status())
+        
+        # Otimiza o container de vídeo para streaming instantâneo
+        _optimize_video_for_streaming(metrics.path)
+
+        raw_kwargs = build_video_send_kwargs(metrics.path)
+        if asyncio.iscoroutine(raw_kwargs):
+            video_kwargs = await raw_kwargs
+        else:
+            video_kwargs = raw_kwargs
+
+        if not isinstance(video_kwargs, dict):
+            video_kwargs = {}
+
+        video_kwargs["supports_streaming"] = True
+        video_meta = {
+            "width": video_kwargs.get("width"),
+            "height": video_kwargs.get("height"),
+            "duration": video_kwargs.get("duration"),
+        }
+
         sent = await deps.bot.send_video(
             chat_id=channel_id,
             video=FSInputFile(metrics.path),
             caption=channel_caption,
-            **(await build_video_send_kwargs(metrics.path)),
+            **video_kwargs,
         )
         db_id = sent.video.file_id
         await deps.db.add_file(cache_key, db_id, "video")
@@ -270,6 +316,10 @@ async def deliver_inline_video(
             media=db_id,
             caption=await build_caption(),
             parse_mode="HTML",
+            supports_streaming=True,
+            width=video_meta.get("width"),
+            height=video_meta.get("height"),
+            duration=video_meta.get("duration"),
         ),
         reply_markup=reply_markup,
     )
@@ -298,9 +348,7 @@ async def ensure_album_preview_file_id(
     source_url: str,
     log=None,
 ) -> Optional[str]:
-    """Return a cached Telegram file_id for an album preview photo, uploading
-    it to the cache channel on first use. Best effort: returns ``None`` when
-    the preview cannot be prepared."""
+    """Return a cached Telegram file_id for an album preview photo."""
     if not channel_id or not photo_url:
         return None
     preview_file_id = await deps.db.get_file_id(cache_key)
@@ -342,8 +390,6 @@ async def handle_post_inline_query(
     safe_answer_inline_query_fn,
     log=None,
 ) -> None:
-    """Generic inline query handler for services exposing ``fetch_post``
-    returning a post with a ``media_list`` (Pinterest, Threads, ...)."""
     import re
 
     log = log or logging
@@ -530,8 +576,6 @@ async def send_inline_post_media(
     safe_edit_inline_text_fn,
     log=None,
 ) -> None:
-    """Generic inline send flow for services exposing ``fetch_post`` and
-    ``download_media`` (Pinterest, Threads, ...)."""
     log = log or logging
 
     async def _plan(request, edit_status, state: InlineFlowState) -> None:

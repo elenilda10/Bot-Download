@@ -1,29 +1,69 @@
 import asyncio
+import glob
 import hashlib
 import json
+import logging
 import os
 import re
+import subprocess
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional
+from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
-from services.logger import logger as logging
-from services.platforms import CobaltMediaService, strip_url_query
-from utils.cobalt_media import parse_cobalt_media_response
-from utils.download_manager import (
-    DownloadError as DownloadError,
-    DownloadMetrics,
-)
+import httpx
+from config import COBALT_API_KEY, COBALT_API_URL
+from utils.cobalt_client import fetch_cobalt_data
 
-logging = logging.bind(service="instagram_media")
+logger = logging.getLogger(__name__)
 
-strip_instagram_url = strip_url_query
+EXTENSION_COOKIES_PATH = "/root/bot_teste/cookies.txt"
+GDL_BIN = "/root/bot_teste/venv/bin/gallery-dl"
+YTDLP_BIN = "/root/bot_teste/venv/bin/yt-dlp"
+
+PUBLIC_COBALT_INSTANCES = [
+    "https://cobalt-api.kwiatekm.tokyo",
+    "https://cobalt.xy2.dev",
+    "https://dl.khann.me",
+    "https://api.cobalt.tools",
+    "https://cobalt.ducks.party",
+    "https://cobalt.canine.tools",
+]
+
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
+
+def strip_instagram_url(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
+
+
+def _extract_story_target_id(url: str) -> Optional[str]:
+    match = re.search(r"/stories/[^/?#&]+/(\d+)", url)
+    return match.group(1) if match else None
+
+
+def _extract_instagram_post_id(url: str) -> Optional[str]:
+    story_id = _extract_story_target_id(url)
+    if story_id:
+        return story_id
+
+    match = re.search(r"/(?:p|reel|reels|tv|stories/[^/?#&]+)/([A-Za-z0-9_-]+)", url)
+    if match:
+        return match.group(1)
+    match_fallback = re.search(r"/(?:p|reel|reels|tv|stories)/([A-Za-z0-9_-]+)", url)
+    return match_fallback.group(1) if match_fallback else None
 
 
 @dataclass
 class InstagramMedia:
     url: str
-    type: str
+    type: str  # "photo" ou "video"
     thumb: Optional[str] = None
+    width: Optional[int] = 1280
+    height: Optional[int] = 720
+    duration: Optional[int] = 0
     index: int = 0
 
 
@@ -38,227 +78,287 @@ class InstagramVideo:
 def get_instagram_preview_url(media: Optional[InstagramMedia]) -> Optional[str]:
     if not media:
         return None
-    if media.type == "photo":
-        return media.url
-    return media.thumb or None
+    return media.thumb or media.url
 
 
-def _extract_cobalt_description(data: dict, fallback_url: str) -> str:
-    metadata = data.get("metadata") or data.get("output", {}).get("metadata") or {}
-    if isinstance(metadata, dict):
-        fields = ("description", "caption", "title", "text")
-        for field_name in fields:
-            val = metadata.get(field_name)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-    if isinstance(data.get("filename"), str) and data["filename"].strip():
-        return data["filename"].strip()
-    return ""
-
-
-def _extract_cobalt_author(data: dict, filename: str) -> str:
-    metadata = data.get("metadata") or data.get("output", {}).get("metadata") or {}
-    if isinstance(metadata, dict):
-        fields = ("author", "uploader", "username", "creator", "channel")
-        for field_name in fields:
-            val = metadata.get(field_name)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-    if filename:
-        parts = filename.replace("\\", "/").split("/")
-        for part in parts:
-            part = part.strip()
-            if part and not part.startswith(".") and "_" in part:
-                maybe = part.split("_")[0]
-                if maybe and len(maybe) >= 2:
-                    return maybe
-    return ""
-
-
-def _extract_instagram_post_id(url: str) -> str:
-    match = re.search(r"instagram\.com/(?:p|reels|reel)/([^/?#&]+)", url)
-    if match:
-        return match.group(1)
-    return ""
-
-
-async def _fetch_instagram_with_gallery_dl(url: str) -> Optional[InstagramVideo]:
-    clean_url = strip_instagram_url(url)
-    post_id = _extract_instagram_post_id(clean_url) or hashlib.blake2s(
-        clean_url.encode("utf-8"), digest_size=8
-    ).hexdigest()
-
-    cookie_file = "/root/bot_teste/cookies/instagram_cookies.txt"
-    cmd = ["gallery-dl", "-j"]
-    if os.path.exists(cookie_file):
-        cmd.extend(["--cookies", cookie_file])
-    cmd.append(clean_url)
-
+def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None) -> Optional[InstagramVideo]:
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0 or not stdout:
-            logging.warning(
-                "gallery-dl returned code %s: %s",
-                proc.returncode,
-                stderr.decode("utf-8", errors="ignore")[:200],
-            )
+        target_dir = os.path.join(output_dir, f"gdl_{post_id}")
+        os.makedirs(target_dir, exist_ok=True)
+
+        binary = GDL_BIN if os.path.exists(GDL_BIN) else "gallery-dl"
+
+        # Aqui entra a flag corrigida com {shortcode}_{num}.{extension}
+        cmd = [
+            binary,
+            "--no-part",
+            "--no-mtime",
+            "--retries", "3",
+            "-d", target_dir,
+            "-o", "directory=",
+            "--filename", "{shortcode}_{num}.{extension}",
+            "--write-metadata",
+            "--user-agent", BROWSER_UA,
+        ]
+
+        if story_id:
+            cmd.extend(["--filter", f"str(media_id) == '{story_id}' or str(id) == '{story_id}' or str(post_id) == '{story_id}'"])
+
+        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
+            cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
+
+        cmd.append(url)
+
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            logger.warning("gallery-dl output/warn: %s", proc.stderr)
+
+        saved_files = []
+        caption = ""
+        author = "instagram_user"
+
+        for root, _, files in os.walk(target_dir):
+            for file in files:
+                fpath = os.path.join(root, file)
+                if file.endswith(".json"):
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as jf:
+                            m_data = json.load(jf)
+                            caption = caption or m_data.get("description") or m_data.get("caption") or ""
+                            author = m_data.get("username") or m_data.get("author") or author
+                    except Exception:
+                        pass
+                elif not file.endswith((".part", ".ytdl", ".txt")):
+                    if os.path.getsize(fpath) > 0:
+                        saved_files.append(fpath)
+
+        if not saved_files:
             return None
 
-        raw_output = stdout.decode("utf-8", errors="ignore").strip()
-        parsed_entries = []
+        # Ordena pelo sufixo numérico (_1, _2, _3...) para manter a ordem do carrossel
+        def _sort_key(filepath: str):
+            match = re.search(r"_(\d+)\.[^.]+$", filepath)
+            return int(match.group(1)) if match else 0
 
-        try:
-            full_json = json.loads(raw_output)
-            if isinstance(full_json, list):
-                parsed_entries = full_json
-        except Exception:
-            for line in raw_output.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    parsed_entries.append(json.loads(line))
-                except Exception:
-                    continue
+        saved_files.sort(key=_sort_key)
 
-        media_list = []
-        author = "instagram_user"
-        description = ""
+        if story_id:
+            matching_files = [f for f in saved_files if story_id in os.path.basename(f)]
+            if matching_files:
+                for f in saved_files:
+                    if f not in matching_files:
+                        try:
+                            os.remove(f)
+                        except Exception:
+                            pass
+                saved_files = matching_files
+            else:
+                saved_files = [saved_files[0]]
 
-        for item in parsed_entries:
-            file_url = None
-            metadata = {}
-
-            if isinstance(item, list):
-                # Se for [3, "https://url...", {...}]
-                if len(item) >= 3 and isinstance(item[1], str) and item[1].startswith("http"):
-                    file_url = item[1]
-                    if isinstance(item[2], dict):
-                        metadata = item[2]
-                elif len(item) >= 2 and isinstance(item[1], dict):
-                    metadata = item[1]
-                    file_url = metadata.get("url") or metadata.get("display_url") or metadata.get("video_url")
-            elif isinstance(item, dict):
-                metadata = item
-                file_url = metadata.get("url") or metadata.get("display_url") or metadata.get("video_url")
-
-            # Extração da legenda global do post
-            if not description and metadata:
-                for cap_key in ("description", "caption", "text", "title"):
-                    val = metadata.get(cap_key)
-                    if isinstance(val, str) and val.strip():
-                        description = val.strip()
-                        break
-
-            # Extração do autor
-            if author == "instagram_user" and metadata:
-                extracted_author = (
-                    metadata.get("fullname")
-                    or metadata.get("username")
-                    or metadata.get("owner_username")
+        media_items = []
+        for idx, fpath in enumerate(saved_files):
+            ext = os.path.splitext(fpath)[1].lower()
+            is_vid = ext in [".mp4", ".mov", ".mkv", ".webm"]
+            media_items.append(
+                InstagramMedia(
+                    url=fpath,
+                    type="video" if is_vid else "photo",
+                    thumb=None,
+                    width=1080,
+                    height=1080,
+                    duration=0,
+                    index=idx,
                 )
-                if extracted_author:
-                    author = str(extracted_author)
-
-            # Adiciona item de mídia
-            if file_url:
-                extension = metadata.get("extension") or ""
-                post_type = metadata.get("type") or metadata.get("post_type") or ""
-                is_video = (
-                    extension.lower() in ("mp4", "m4v", "mov")
-                    or ".mp4" in file_url.lower()
-                    or post_type == "video"
-                )
-                media_type = "video" if is_video else "photo"
-
-                media_list.append(
-                    InstagramMedia(
-                        url=file_url,
-                        type=media_type,
-                        index=len(media_list),
-                    )
-                )
-
-        if media_list:
-            logging.info(
-                "gallery-dl resolved %d item(s). Author=%s, Description length=%d",
-                len(media_list),
-                author,
-                len(description),
             )
-            return InstagramVideo(
-                id=post_id,
-                description=description,
-                author=author,
-                media_list=media_list,
-            )
+
+        if media_items:
+            return InstagramVideo(id=post_id, description=caption.strip(), author=author, media_list=media_items)
+
     except Exception as exc:
-        logging.error("gallery-dl extraction error: %s", exc)
+        logger.warning("gallery-dl falhou: %s", exc)
     return None
 
 
-class InstagramMediaService(CobaltMediaService):
-    def __init__(
-        self,
-        output_dir: str,
-        *,
-        cobalt_api_url: str,
-        cobalt_api_key: str,
-        fetch_cobalt_data_func: Callable[..., Awaitable[dict | None]],
-        retry_async_operation_func: Callable[..., Awaitable[DownloadMetrics | None]],
-    ) -> None:
-        super().__init__(
-            output_dir,
-            source="instagram",
-            cobalt_api_url=cobalt_api_url,
-            cobalt_api_key=cobalt_api_key,
-            fetch_cobalt_data_func=fetch_cobalt_data_func,
-            retry_async_operation_func=retry_async_operation_func,
-            logger=logging,
-            download_error_message="Error downloading Instagram media: url=%s error=%s",
-        )
+def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVideo]:
+    try:
+        out_template = os.path.join(output_dir, f"{post_id}_ytdlp_%(autonumber)s.%(ext)s")
+        binary = YTDLP_BIN if os.path.exists(YTDLP_BIN) else "yt-dlp"
 
-    async def fetch_data(self, url: str, audio_only: bool = False) -> Optional[InstagramVideo]:
-        # 1. Prioridade absoluta para gallery-dl com cookies
-        gdl_res = await _fetch_instagram_with_gallery_dl(url)
-        if gdl_res and gdl_res.media_list:
-            return gdl_res
+        cmd = [
+            binary,
+            "--yes-playlist",
+            "--no-warnings",
+            "-f", "bestvideo*+bestaudio/best",
+            "--merge-output-format", "mp4",
+            "--write-info-json",
+            "--user-agent", BROWSER_UA,
+            "-o", out_template,
+        ]
 
-        # 2. Fallback para Cobalt
-        logging.info("gallery-dl returned empty for %s, trying Cobalt fallback", url)
-        payload = {
-            "url": url,
-            "videoQuality": "720",
-            "downloadMode": "audio" if audio_only else "auto",
-        }
-        try:
-            data = await self._fetch_cobalt_json(payload)
-            if data:
-                parsed = parse_cobalt_media_response(data, audio_only=audio_only, source="instagram")
-                if parsed and parsed.items:
-                    media_list = [
-                        InstagramMedia(url=media_url, type=media_type, thumb=thumb, index=idx)
-                        for idx, (media_url, media_type, thumb) in enumerate(parsed.items)
-                    ]
+        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
+            cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
 
-                    description = _extract_cobalt_description(data, fallback_url=url)
-                    author = _extract_cobalt_author(data, data.get("filename", ""))
+        cmd.append(url)
 
-                    post_id = _extract_instagram_post_id(url) or hashlib.blake2s(
-                        url.encode("utf-8"), digest_size=8
-                    ).hexdigest()
-                    return InstagramVideo(
-                        id=post_id,
-                        description=description,
-                        author=author or "instagram_user",
-                        media_list=media_list,
+        subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        info_json_pattern = os.path.join(output_dir, f"{post_id}_ytdlp_*.info.json")
+        info_files = sorted(glob.glob(info_json_pattern))
+
+        media_items = []
+        caption = ""
+        author = "instagram_user"
+
+        if info_files:
+            for idx, info_path in enumerate(info_files):
+                try:
+                    with open(info_path, "r", encoding="utf-8") as f:
+                        info = json.load(f)
+
+                    caption = caption or info.get("description") or ""
+                    author = info.get("uploader") or info.get("channel") or author
+
+                    base_name = info_path.replace(".info.json", "")
+                    target_file = None
+                    for ext in ["mp4", "jpg", "jpeg", "webp", "png"]:
+                        candidate = f"{base_name}.{ext}"
+                        if os.path.exists(candidate):
+                            target_file = candidate
+                            break
+
+                    if not target_file:
+                        continue
+
+                    is_vid = target_file.endswith(".mp4")
+                    thumb_candidate = f"{base_name}.jpg"
+                    thumb = thumb_candidate if (is_vid and os.path.exists(thumb_candidate)) else None
+
+                    media_items.append(
+                        InstagramMedia(
+                            url=target_file,
+                            type="video" if is_vid else "photo",
+                            thumb=thumb,
+                            width=info.get("width") or 1080,
+                            height=info.get("height") or 1080,
+                            duration=int(info.get("duration") or 0),
+                            index=idx,
+                        )
                     )
-        except Exception as exc:
-            logging.warning("Cobalt fallback failed: %s", exc)
+                except Exception as file_err:
+                    logger.warning("Erro processando info do yt-dlp: %s", file_err)
+                finally:
+                    if os.path.exists(info_path):
+                        try:
+                            os.remove(info_path)
+                        except Exception:
+                            pass
 
+        if media_items:
+            return InstagramVideo(id=post_id, description=caption.strip(), author=author, media_list=media_items)
+
+    except Exception as exc:
+        logger.warning("yt-dlp falhou: %s", exc)
+    return None
+
+
+async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is_reel: bool = False) -> Optional[InstagramVideo]:
+    status = data.get("status")
+    items_to_download = []
+
+    if status == "picker" or "picker" in data:
+        picker = data.get("picker") or []
+        for item in picker:
+            if isinstance(item, dict):
+                m_url = item.get("url")
+                m_type = item.get("type", "video" if is_reel else "photo")
+                if m_url:
+                    items_to_download.append((m_url, "video" if m_type == "video" else "photo"))
+    elif data.get("url"):
+        default_type = "video" if (is_reel or status in ["redirect", "tunnel", "stream"]) else "photo"
+        items_to_download.append((data.get("url"), default_type))
+
+    if not items_to_download:
         return None
+
+    media_items = []
+    async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as client:
+        for idx, (m_url, m_type) in enumerate(items_to_download):
+            try:
+                resp = await client.get(m_url)
+                if resp.status_code != 200:
+                    continue
+
+                content_type = resp.headers.get("Content-Type", "").lower()
+                if "video" in content_type or m_url.endswith((".mp4", ".mov")) or is_reel:
+                    m_type = "video"
+
+                ext = "mp4" if m_type == "video" else "jpg"
+                out_path = os.path.join(output_dir, f"{post_id}_cobalt_{idx}.{ext}")
+                with open(out_path, "wb") as f:
+                    f.write(resp.content)
+
+                media_items.append(
+                    InstagramMedia(
+                        url=out_path,
+                        type=m_type,
+                        thumb=None,
+                        width=1280,
+                        height=720,
+                        duration=0,
+                        index=idx,
+                    )
+                )
+            except Exception as exc:
+                logger.warning("Falha ao baixar item %s do Cobalt: %s", m_url, exc)
+
+    if media_items:
+        return InstagramVideo(id=post_id, description="", author="instagram_user", media_list=media_items)
+    return None
+
+
+async def fetch_instagram_media(url: str, output_dir: str = "/root/bot_teste/downloads") -> Optional[InstagramVideo]:
+    story_id = _extract_story_target_id(url)
+    clean_url = strip_instagram_url(url)
+    post_id = _extract_instagram_post_id(url) or hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
+    is_reel = "/reel/" in url or "/reels/" in url
+    is_album_or_story = "/p/" in url or "/stories/" in url
+    os.makedirs(output_dir, exist_ok=True)
+    loop = asyncio.get_running_loop()
+
+    # Prioridade para o gallery-dl: com os cookies da extensão, ele extrai o carrossel completo
+    res_gdl = await loop.run_in_executor(None, _run_gallery_dl, clean_url, output_dir, post_id, story_id)
+    if res_gdl and res_gdl.media_list:
+        return res_gdl
+
+    # Fallback 1: Cobalt local
+    payload = {"url": clean_url, "videoQuality": "1080", "downloadMode": "auto"}
+    try:
+        data = await fetch_cobalt_data(COBALT_API_URL, COBALT_API_KEY, payload, source="instagram")
+        if data and isinstance(data, dict) and data.get("status") != "error":
+            res = await _download_cobalt_payload(data, post_id, output_dir, is_reel=is_reel)
+            if res and res.media_list:
+                return res
+    except Exception as exc:
+        logger.warning("Cobalt local falhou: %s", exc)
+
+    # Fallback 2: yt-dlp
+    res_ytdlp = await loop.run_in_executor(None, _run_ytdlp, clean_url, output_dir, post_id)
+    if res_ytdlp and res_ytdlp.media_list:
+        return res_ytdlp
+
+    # Fallback 3: Instâncias públicas do Cobalt
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        for base_url in PUBLIC_COBALT_INSTANCES:
+            try:
+                resp = await client.post(f"{base_url.rstrip('/')}/", json=payload, headers=headers)
+                if resp.status_code == 200:
+                    pub_data = resp.json()
+                    if pub_data.get("status") != "error":
+                        res = await _download_cobalt_payload(pub_data, post_id, output_dir, is_reel=is_reel)
+                        if res and res.media_list:
+                            return res
+            except Exception:
+                continue
+
+    return None

@@ -1,10 +1,10 @@
 import asyncio
+import os
 from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 
 import aiohttp
 from yt_dlp.extractor.tiktok import TikTokIE
-
 from services.logger import logger as logging
 from services.platforms.tiktok_common import (
     SHORT_HOSTS,
@@ -22,9 +22,20 @@ TIKWM_BASE_URL = "https://tikwm.com"
 TIKWM_API_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
+def _get_tiktok_cookie_file() -> Optional[str]:
+    for cand in [
+        "/root/bot_teste/cookies/tiktok_cookies.txt",
+        "/root/bot_teste/cookies/tiktok.txt",
+    ]:
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
 class TikTokMetadataMixin:
     def _build_ytdlp_options(self) -> dict[str, Any]:
-        return {
+        cookie_file = _get_tiktok_cookie_file()
+        opts: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
@@ -34,15 +45,15 @@ class TikTokMetadataMixin:
             "retries": 2,
             "extractor_retries": 2,
         }
+        if cookie_file:
+            opts["cookiefile"] = cookie_file
+        return opts
 
     def _extract_tiktok_detail_sync(self, video_url: str) -> tuple[dict[str, Any], int]:
         video_id = get_video_id_from_url(video_url)
         with self._youtube_dl_factory(self._build_ytdlp_options()) as ydl:
             extractor = TikTokIE(ydl)
             try:
-                # Private yt-dlp extractor internals; a yt-dlp bump can change
-                # or remove this method, so degrade to "post unavailable"
-                # instead of crashing the fallback path.
                 detail, status = extractor._extract_web_data_and_status(video_url, video_id, fatal=False)
             except (AttributeError, TypeError) as exc:
                 logging.error(
@@ -98,6 +109,7 @@ class TikTokMetadataMixin:
         images = image_post.get("images")
         if not isinstance(images, list):
             return []
+
         image_urls: list[str] = []
         for image in images:
             if not isinstance(image, dict):
@@ -199,6 +211,7 @@ class TikTokMetadataMixin:
         image_urls = self._extract_image_urls(detail)
         webpage_url = strip_tiktok_tracking(video_url)
         video_size = self._extract_video_size(detail)
+
         return {
             "error": None,
             "code": 0,
@@ -307,15 +320,10 @@ class TikTokMetadataMixin:
             raise
 
         data = self._normalize_tikwm_payload(payload)
-        logging.debug(
-            "Fetched TikTok data via TikWM: url=%s code=%s keys=%s",
-            video_url,
-            data.get("code"),
-            list(data.get("data", {}).keys()) if isinstance(data.get("data"), dict) else None,
-        )
         return data
 
     async def fetch_tiktok_data(self, video_url: str) -> dict:
+        # 1. Tentar TikWM
         async with self._request_semaphore:
             async with self._request_rate_limit_lock:
                 now = self._monotonic()
@@ -338,27 +346,20 @@ class TikTokMetadataMixin:
 
             try:
                 data = await self._fetch_tikwm_data(video_url)
-            except Exception as exc:
-                logging.warning("TikWM metadata failed, trying yt-dlp fallback: url=%s error=%s", video_url, exc)
-            else:
                 if not is_invalid_tiktok_payload(data):
                     return data
-                logging.warning(
-                    "TikWM metadata invalid, trying yt-dlp fallback: url=%s code=%s error=%s",
-                    video_url,
-                    data.get("code"),
-                    data.get("error"),
-                )
+            except Exception as exc:
+                logging.warning("TikWM metadata failed, falling back to yt-dlp: url=%s error=%s", video_url, exc)
 
+        # 2. Fallback robusto com yt-dlp (com cookies carregados)
         logging.debug("Fetching TikTok data via yt-dlp fallback: url=%s", video_url)
         detail, status = await self._extract_tiktok_detail(video_url)
 
         if status not in (0, None) or not detail:
             logging.warning(
-                "TikTok yt-dlp fallback metadata unavailable: url=%s status=%s detail_keys=%s",
+                "TikTok yt-dlp fallback metadata unavailable: url=%s status=%s",
                 video_url,
                 status,
-                list(detail.keys()) if isinstance(detail, dict) else None,
             )
             return {
                 "error": f"status:{status}",
@@ -368,12 +369,6 @@ class TikTokMetadataMixin:
             }
 
         data = self._build_legacy_payload(video_url, detail)
-        logging.debug(
-            "Fetched TikTok data via yt-dlp fallback: url=%s has_images=%s keys=%s",
-            video_url,
-            bool(data.get("data", {}).get("images")),
-            list(data.get("data", {}).keys()),
-        )
         return data
 
     async def fetch_tiktok_data_with_retry(self, video_url: str, *, on_retry=None) -> dict:

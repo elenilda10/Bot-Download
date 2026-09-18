@@ -1,0 +1,39 @@
+name: Dependency Audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install audit tool
+        run: |
+          uv pip install --system pip-audit
+
+      - name: Audit dependencies
+        run: |
+          pip-audit -r requirements-dev.txt

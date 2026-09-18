@@ -16,7 +16,6 @@ def language_keyboard(
     current_lang: str = DEFAULT_LANG,
 ) -> InlineKeyboardMarkup:
     is_pt = _normalize_lang(current_lang) == "pt"
-
     txt_pt = "✅ 🇧🇷 Português" if is_pt else "🇧🇷 Português"
     txt_en = "🇺🇸 English" if is_pt else "✅ 🇺🇸 English"
     txt_back = "⬅️ Voltar às Configurações" if is_pt else "⬅️ Back to Settings"
@@ -45,7 +44,6 @@ def start_keyboard(
     base_link = f"https://t.me/{username}"
 
     is_pt = _normalize_lang(lang) == "pt"
-
     share_text = (
         "Bot rápido para baixar vídeos do Instagram, TikTok, YouTube e mais!"
         if is_pt
@@ -106,6 +104,7 @@ FIELD_CATEGORY_MAP = {
     "captions": "appearance",
     "info_buttons": "appearance",
     "audio_button": "appearance",
+    "music_button": "appearance",
     "file_button": "appearance",
     "url_button": "appearance",
     "delete_message": "chat",
@@ -172,6 +171,7 @@ def return_category_settings_keyboard(
             ("📝 Legendas" if is_pt else "📝 Captions", "captions"),
             ("ℹ️ Botões de Info" if is_pt else "ℹ️ Info Buttons", "info_buttons"),
             ("🎧 Botão MP3" if is_pt else "🎧 MP3 Button", "audio_button"),
+            ("🎵 Botão Shazam" if is_pt else "🎵 Shazam Button", "music_button"),
             ("📄 Botão de Arquivo" if is_pt else "📄 File Button", "file_button"),
             ("🔗 Botão de URL" if is_pt else "🔗 URL Button", "url_button"),
         ]
@@ -532,6 +532,7 @@ def return_video_info_keyboard(
     audio_callback_data: str | None = None,
     file_callback_data: str | None = None,
     lang: str = DEFAULT_LANG,
+    has_video: bool = True,
 ):
     builder = InlineKeyboardBuilder()
     is_pt = _normalize_lang(lang) == "pt"
@@ -572,6 +573,15 @@ def return_video_info_keyboard(
             )
         if row1:
             builder.row(*row1)
+
+    # Condicionado às configurações do usuário (padrão 'off') e só se for vídeo
+    if has_video and user_settings.get("music_button", "off") == "on":
+        builder.row(
+            InlineKeyboardButton(
+                text="🎵 Identificar Música" if is_pt else "🎵 Identify Music",
+                callback_data="identify_music",
+            )
+        )
 
     if user_settings.get("audio_button") == "on" and audio_callback_data:
         builder.row(

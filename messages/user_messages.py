@@ -90,6 +90,10 @@ def get_field_text(field: str, lang: str = DEFAULT_LANG):
             "<b>🎧 Botão MP3</b>\n"
             "Ativar ou desativar o botão 'Baixar MP3' quando o áudio estiver disponível."
         ),
+        "music_button": (
+            "<b>🎵 Botão Shazam</b>\n"
+            "Ativar ou desativar o botão 'Identificar Música' abaixo dos vídeos baixados para reconhecer a faixa via Shazam."
+        ),
         "file_button": (
             "<b>📄 Botão de Arquivo</b>\n"
             "Mostrar ou ocultar o botão 'Baixar Arquivo' abaixo dos vídeos para obter o arquivo original sem compressão sob demanda."
@@ -136,6 +140,10 @@ def get_field_text(field: str, lang: str = DEFAULT_LANG):
             "<b>🎧 MP3 Button</b>\n"
             "Toggle the Download MP3 button when audio is available."
         ),
+        "music_button": (
+            "<b>🎵 Shazam Button</b>\n"
+            "Toggle the 'Identify Music' button under downloaded videos to recognize tracks via Shazam."
+        ),
         "file_button": (
             "<b>📄 File Button</b>\n"
             "Show or hide the Download File button under videos to get original uncompressed files on demand."
@@ -178,7 +186,8 @@ def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
             cut = cut[:amp]
         return cut
 
-    footer = '<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji> Powered by <a href="{bot_url}">Save Vídeo DL Bot</a>'.format(bot_url=bot_url)
+    escaped_url = html.escape(bot_url or "")
+    footer = f'<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji> Powered by <a href="{escaped_url}">Save Vídeo DL Bot</a>'
 
     if user_captions == "on" and post_caption:
         body = html.escape(str(post_caption))
@@ -387,7 +396,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Configure a resolução de vídeo, formato de arquivo e opções de áudio:"
             )
         return (
-            "<b>🎬 🎬 Mídia e Qualidade Settings</b>\n\n"
+            "<b>🎬 Mídia e Qualidade Settings</b>\n\n"
             "Configure video resolution, file format, and audio options:"
         )
     if category == "appearance":
@@ -397,7 +406,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Personalize descrições de posts, links originais e botões de ação:"
             )
         return (
-            "<b>🎨 🎨 Aparência e Botões</b>\n\n"
+            "<b>🎨 Aparência e Botões</b>\n\n"
             "Customize post descriptions, original URL links, and action buttons:"
         )
     if category == "chat":
@@ -407,7 +416,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Gerencie o comportamento do bot em grupos e a exclusão automática de mensagens:"
             )
         return (
-            "<b>💬 💬 Chat e Limpeza</b>\n\n"
+            "<b>💬 Chat e Limpeza</b>\n\n"
             "Manage group chat behavior and message cleanup settings:"
         )
     return settings(lang=lang)
@@ -434,7 +443,7 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
             "<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n"
             "• Vídeos, GIFs e imagens do X / Twitter\n"
             "• Pins de vídeo e imagem do Pinterest</blockquote>\n\n"
-            "<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n"
+            "<blockquote expandable><b>🎧 SoundCloud &  🟢 Spotify</b>\n"
             "• Faixas de áudio do SoundCloud em alta qualidade\n"
             "• Identificação de faixas e download do Spotify</blockquote>\n\n"
             f"<blockquote expandable><b>⚡ Modo Inline</b>\n"
@@ -465,8 +474,8 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
         "<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n"
         "• High quality SoundCloud audio tracks\n"
         "• Spotify track matching & audio download</blockquote>\n\n"
-        f"<blockquote expandable><b>⚡ Inline Mode</b>\n"
-        f"• Type <code>@{username} [link]</code> in any chat\n"
+        f"<blockquote expandable><b>⚡ Modo Inline</b>\n"
+        f"• Type <code>@{username} [link]</code> em any chat\n"
         "• Instant preview and direct media sharing</blockquote>\n\n"
         "<blockquote expandable><b>📦 Batch Downloading</b>\n"
         "• Paste up to 6 links in a single message\n"
@@ -500,7 +509,6 @@ def batch_links_started(processed_total: int, detected_total: int | None = None,
                 f"Processarei os primeiros {processed_total} um por um para manter o chat organizado."
             )
         return f"Encontrados {processed_total} links suportados. Processarei um por um para manter o chat organizado."
-
     if detected_total is not None and detected_total > processed_total:
         return (
             f"Found {detected_total} supported links. "

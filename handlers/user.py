@@ -3,7 +3,6 @@ from copy import copy  # noqa: F401
 from aiogram import Router, F, types
 from aiogram.exceptions import TelegramBadRequest  # noqa: F401
 from aiogram.filters import Command
-
 import keyboards as kb  # noqa: F401
 import messages as bm  # noqa: F401
 from app_context import bot, db, send_analytics  # noqa: F401
@@ -35,6 +34,11 @@ _MESSAGE_NOT_MODIFIED_MARKERS = (
 # Route definitions
 router.message(Command("start"))(cmd_mod.send_welcome)
 router.message(Command("help"))(cmd_mod.send_help)
+
+# Comandos de banimento exclusivos para o PV do Admin
+router.message(Command("ban"), F.chat.type == "private")(cmd_mod.ban_command)
+router.message(Command("unban"), F.chat.type == "private")(cmd_mod.unban_command)
+
 router.my_chat_member()(cmd_mod.handle_bot_membership)
 router.message(Command("remove_keyboard"))(cmd_mod.remove_reply_keyboard)
 router.message(Command("stats"))(cmd_mod.stats_command)
@@ -54,6 +58,8 @@ router.callback_query(F.data == "start_supported_sites")(media_mod.show_supporte
 # Rota direta de idioma
 @router.message(Command("lang", "language", "idioma"))
 async def cmd_lang(message: types.Message):
+    if await cmd_mod.is_banned(message.from_user.id if message.from_user else None, message.chat.id):
+        return
     user_id = message.from_user.id
     current_lang = await db.get_language(user_id)
     await show_language_view(message, user_id, current_lang)
@@ -65,6 +71,9 @@ router.callback_query.register(handle_back_to_settings, F.data.in_(["back_to_set
 # Export functions & attributes for backwards compatibility
 send_welcome = cmd_mod.send_welcome
 send_help = cmd_mod.send_help
+ban_command = cmd_mod.ban_command
+unban_command = cmd_mod.unban_command
+is_banned = cmd_mod.is_banned
 handle_bot_membership = cmd_mod.handle_bot_membership
 remove_reply_keyboard = cmd_mod.remove_reply_keyboard
 stats_command = cmd_mod.stats_command

@@ -1,8 +1,7 @@
 from aiogram import Router
-from . import user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, universal
+from . import user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, universal, music
 
 router = Router(name=__name__)
-
 router.include_routers(
     user.router,
     tiktok.router,
@@ -14,6 +13,8 @@ router.include_routers(
     threads.router,
     soundcloud.router,
     pinterest.router,
+    deezer.router,
+    music.router,
     universal.router,
 )
 

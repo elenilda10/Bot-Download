@@ -45,6 +45,7 @@ SETTING_FIELDS: Final[tuple[str, ...]] = (
     "info_buttons",
     "url_button",
     "audio_button",
+    "music_button",
     "file_button",
 )
 
@@ -55,6 +56,7 @@ SETTING_LABELS_EN: Final[tuple[tuple[str, str], ...]] = (
     ("📝 Descriptions", "captions"),
     ("ℹ️ Info Buttons", "info_buttons"),
     ("🎧 MP3 Button", "audio_button"),
+    ("🎵 Shazam Button", "music_button"),
     ("📄 File Button", "file_button"),
     ("🔗 URL Button", "url_button"),
     ("🗑️ Delete Messages", "delete_message"),
@@ -67,6 +69,7 @@ SETTING_LABELS_PT: Final[tuple[tuple[str, str], ...]] = (
     ("📝 Legendas", "captions"),
     ("ℹ️ Botões de Informação", "info_buttons"),
     ("🎧 Botão MP3", "audio_button"),
+    ("🎵 Botão Shazam", "music_button"),
     ("📄 Botão de Arquivo", "file_button"),
     ("🔗 Botão de URL", "url_button"),
     ("🗑️ Apagar Mensagens", "delete_message"),
@@ -113,7 +116,6 @@ def parse_setting_toggle_callback(
     parts = data.split(":", 2)
     if len(parts) != 3:
         return None
-
     _, field, raw_value = parts
     normalized_value = normalize_setting_value(raw_value)
     if not is_valid_setting_field(field) or normalized_value is None:

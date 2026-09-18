@@ -18,7 +18,17 @@ class UserRepositoryMixin:
             return pg_insert(model)
         return sqlite_insert(model)
 
-    async def upsert_chat(self, user_id: int, user_name: str | None, user_username: str | None, chat_type: str | None, language: str | None = None, status: str = "active", referred_by: int | None = None, source: str | None = None) -> None:
+    async def upsert_chat(
+        self,
+        user_id: int,
+        user_name: str | None,
+        user_username: str | None,
+        chat_type: str | None,
+        language: str | None = None,
+        status: str = "active",
+        referred_by: int | None = None,
+        source: str | None = None,
+    ) -> None:
         values = {
             "user_name": user_name,
             "user_username": user_username,
@@ -30,6 +40,7 @@ class UserRepositoryMixin:
             values["referred_by"] = referred_by
         if source is not None:
             values["source"] = source
+
         async with self.SessionLocal() as session:
             async with session.begin():
                 stmt = (
@@ -96,6 +107,7 @@ class UserRepositoryMixin:
                         "info_buttons": settings.info_buttons or SETTING_DISABLED,
                         "url_button": settings.url_button or SETTING_DISABLED,
                         "audio_button": settings.audio_button or SETTING_DISABLED,
+                        "music_button": getattr(settings, "music_button", None) or SETTING_DISABLED,
                         "file_button": getattr(settings, "file_button", None) or SETTING_DISABLED,
                         "video_quality": getattr(settings, "video_quality", None) or "best",
                         "as_document": getattr(settings, "as_document", None) or SETTING_DISABLED,
@@ -195,7 +207,6 @@ class UserRepositoryMixin:
                 user_id_int = int(user_id)
                 await session.execute(update(User).where(User.user_id == user_id_int).values(status="ban"))
         self._status_cache[int(user_id)] = (time.monotonic(), "ban")
-
 
     async def get_language(self, user_id: int) -> str:
         try:

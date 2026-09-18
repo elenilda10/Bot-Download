@@ -34,22 +34,18 @@ YTDLP_FORMAT_720 = (
 YTDLP_SPEED_OPTS: dict[str, Any] = {
     "quiet": True,
     "no_warnings": True,
-    "noprogress": True,
     "continuedl": True,
     "overwrites": True,
     "noplaylist": True,
     "cachedir": False,
-    "socket_timeout": 15,
-    "retries": 2,
-    "fragment_retries": 2,
+    "socket_timeout": 20,
+    "retries": 3,
+    "fragment_retries": 3,
     "concurrent_fragment_downloads": 4,
 }
+
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEFAULT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies", "youtube.txt")
-ALT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DEFAULT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies", "youtube.txt")
-ALT_YOUTUBE_COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
 
 
 def _read_float_env(name: str) -> Optional[float]:
@@ -98,7 +94,6 @@ def _parse_cookies_from_browser(value: str) -> tuple[str, Optional[str], Optiona
 
 def build_ytdlp_youtube_options(**overrides: Any) -> dict[str, Any]:
     options = {**YTDLP_SPEED_OPTS}
-
     sleep_requests = _read_float_env("YTDLP_YOUTUBE_SLEEP_REQUESTS_SECONDS")
     if sleep_requests is not None:
         options["sleep_interval_requests"] = sleep_requests
@@ -110,12 +105,11 @@ def build_ytdlp_youtube_options(**overrides: Any) -> dict[str, Any]:
         options["max_sleep_interval"] = max_sleep_interval
 
     cookies_file = os.getenv("YTDLP_YOUTUBE_COOKIES_FILE")
-    if cookies_file and cookies_file.strip():
+    if cookies_file and os.path.exists(cookies_file.strip()) and os.path.getsize(cookies_file.strip()) > 0:
         options["cookiefile"] = cookies_file.strip()
     elif os.path.exists(DEFAULT_YOUTUBE_COOKIES_FILE) and os.path.getsize(DEFAULT_YOUTUBE_COOKIES_FILE) > 0:
         options["cookiefile"] = DEFAULT_YOUTUBE_COOKIES_FILE
-    elif os.path.exists(ALT_YOUTUBE_COOKIES_FILE) and os.path.getsize(ALT_YOUTUBE_COOKIES_FILE) > 0:
-        options["cookiefile"] = ALT_YOUTUBE_COOKIES_FILE
+
     cookies_from_browser = os.getenv("YTDLP_YOUTUBE_COOKIES_FROM_BROWSER")
     if cookies_from_browser and cookies_from_browser.strip():
         try:
@@ -127,11 +121,14 @@ def build_ytdlp_youtube_options(**overrides: Any) -> dict[str, Any]:
     player_client = os.getenv("YTDLP_YOUTUBE_PLAYER_CLIENT")
     if player_client and player_client.strip():
         extractor_args.setdefault("youtube", {})["player_client"] = _split_env_list(player_client)
+    else:
+        extractor_args.setdefault("youtube", {})["player_client"] = ["ios", "web_embedded", "mweb"]
+
     po_token = os.getenv("YTDLP_YOUTUBE_PO_TOKEN")
     if po_token and po_token.strip():
         extractor_args.setdefault("youtube", {})["po_token"] = _split_env_list(po_token)
-    if extractor_args:
-        options["extractor_args"] = extractor_args
+
+    options["extractor_args"] = extractor_args
 
     remote_components = os.getenv("YTDLP_YOUTUBE_REMOTE_COMPONENTS")
     if remote_components and remote_components.strip():
@@ -205,7 +202,7 @@ def get_audio_stream(yt: dict) -> dict | None:
     best = audio_streams[0] if audio_streams else None
     if best:
         best["webpage_url"] = yt["webpage_url"]
-    return best
+        return best
 
 
 def get_audio_artist(yt: dict[str, Any]) -> str | None:
@@ -265,7 +262,6 @@ class YouTubeMediaService:
             return None
 
     def search_youtube_track(self, query: str) -> Optional[dict[str, Any]]:
-        """Resolve the best YouTube candidate for a track metadata query."""
         if not query.strip():
             return None
         try:
@@ -277,7 +273,7 @@ class YouTubeMediaService:
             )
             with self._youtube_dl_factory(ydl_opts) as ydl:
                 search = ydl.extract_info(f"ytsearch1:{query}", download=False)
-            entries = (search or {}).get("entries") or []
+                entries = (search or {}).get("entries") or []
             if not entries:
                 return None
             candidate = entries[0] or {}
@@ -373,6 +369,7 @@ class YouTubeMediaService:
         *,
         max_filesize: Optional[int] = None,
         merge_output_format: Optional[str] = "mp4",
+        on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     ) -> Optional[DownloadMetrics]:
         out_path = self._downloader._resolve_target_path(filename)
         os.makedirs(os.path.dirname(out_path) or self._output_dir, exist_ok=True)
@@ -384,6 +381,20 @@ class YouTubeMediaService:
             ydl_opts["merge_output_format"] = merge_output_format
         if max_filesize is not None:
             ydl_opts["max_filesize"] = int(max_filesize)
+
+        # Hook do yt-dlp em tempo real
+        if on_progress:
+            def _ytdlp_hook(d: dict[str, Any]) -> None:
+                if d.get("status") == "downloading":
+                    dl_bytes = d.get("downloaded_bytes") or 0
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate")
+                    speed = d.get("speed")
+                    try:
+                        on_progress(dl_bytes, total, speed)
+                    except Exception:
+                        pass
+            ydl_opts["progress_hooks"] = [_ytdlp_hook]
+
         start = time.monotonic()
         try:
             await asyncio.to_thread(self._run_ytdlp_download, url, ydl_opts)

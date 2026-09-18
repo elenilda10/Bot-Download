@@ -1,294 +1,327 @@
 import asyncio
+import glob
+import hashlib
+import json
 import os
-from typing import Any, Optional
-from urllib.parse import urlsplit
+import re
+from dataclasses import dataclass
+from typing import Optional
 
+import aiohttp
 from services.logger import logger as logging
-from utils.download_manager import (
-    DownloadMetrics,
-    DownloadQueueBusyError,
-    DownloadRateLimitError,
-    DownloadTooLargeError,
-    log_download_metrics,
-)
-from utils.media_cache import build_media_cache_key
 
 logging = logging.bind(service="twitter_media")
 
 
-def normalize_twitter_media_kind(media_type: str | None) -> str | None:
-    if media_type in {"image", "photo"}:
-        return "photo"
-    if media_type in {"video", "gif"}:
-        return "video"
+@dataclass
+class TwitterMediaItem:
+    url: str
+    type: str  # "video" ou "photo"
+    thumb: Optional[str] = None
+    width: Optional[int] = 1280
+    height: Optional[int] = 720
+    duration: Optional[int] = 0
+    index: int = 0
+
+
+@dataclass
+class TwitterMediaResult:
+    id: str
+    description: str
+    author: str
+    likes: int
+    replies: int
+    retweets: int
+    media_list: list[TwitterMediaItem]
+
+
+def _clean_url(url: str) -> str:
+    return url.split("?")[0].split("#")[0].strip()
+
+
+def _extract_tweet_id(url: str) -> Optional[str]:
+    match = re.search(r"/status/(\d+)", url)
+    return match.group(1) if match else None
+
+
+def _get_cookie_file() -> Optional[str]:
+    for cand in [
+        "/root/bot_teste/cookies/twitter_cookies.txt",
+        "/root/bot_teste/cookies/twitter.txt",
+        "/root/bot_teste/cookies/x.txt",
+    ]:
+        if os.path.exists(cand):
+            return cand
     return None
 
 
-def infer_twitter_media_kind_from_url(url: str | None) -> str | None:
-    if not isinstance(url, str) or not url:
+async def _get_video_metadata(file_path: str) -> dict:
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,duration:format=duration",
+        "-of", "json",
+        file_path,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode == 0 and stdout:
+            data = json.loads(stdout.decode("utf-8", errors="ignore"))
+            streams = data.get("streams", [])
+            v_stream = streams[0] if streams else {}
+
+            width = int(v_stream.get("width") or 0)
+            height = int(v_stream.get("height") or 0)
+            dur_val = v_stream.get("duration") or data.get("format", {}).get("duration")
+            duration = int(float(dur_val)) if dur_val else 0
+
+            return {"width": width or 1280, "height": height or 720, "duration": duration}
+    except Exception as exc:
+        logging.warning("ffprobe error: %s", exc)
+    return {"width": 1280, "height": 720, "duration": 0}
+
+
+async def _generate_thumbnail(video_path: str, output_thumb_path: str) -> Optional[str]:
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", "00:00:01",
+        "-i", video_path,
+        "-vframes", "1",
+        "-vf", "scale=640:-1",
+        "-q:v", "3",
+        output_thumb_path,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
+        if os.path.exists(output_thumb_path) and os.path.getsize(output_thumb_path) > 0:
+            return output_thumb_path
+    except Exception as exc:
+        logging.warning("Thumb error: %s", exc)
+    return None
+
+
+async def _fetch_fxtwitter_data(url: str, output_dir: str, post_id: str) -> Optional[TwitterMediaResult]:
+    """Resolve tweets, vídeos em quotes e carrosséis via API direta FxTwitter/FixupX."""
+    match = re.search(r"(?:twitter|x)\.com/([^/]+)/status/(\d+)", url)
+    if not match:
         return None
-    probe = url.lower().split("?", 1)[0]
-    if any(probe.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif")):
-        return "photo"
-    if any(probe.endswith(ext) for ext in (".mp4", ".mov", ".m4v", ".webm")):
-        return "video"
-    return None
 
+    screen_name, tweet_id = match.groups()
+    api_url = f"https://api.fxtwitter.com/{screen_name}/status/{tweet_id}"
 
-def extract_twitter_media_url(item: Any) -> str | None:
-    if isinstance(item, str) and item:
-        return item
-    if not isinstance(item, dict):
-        return None
-    for key in (
-        "url",
-        "media_url",
-        "mediaUrl",
-        "image",
-        "image_url",
-        "imageUrl",
-        "video_url",
-        "videoUrl",
-        "src",
-    ):
-        value = item.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=8)) as response:
+                if response.status != 200:
+                    return None
+                payload = await response.json()
 
+        tweet = payload.get("tweet")
+        if not tweet:
+            return None
 
-def extract_twitter_media_items(tweet_media: dict[str, Any]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    raw_items = tweet_media.get("media_extended")
-    if isinstance(raw_items, list):
-        for item in raw_items:
-            if not isinstance(item, dict):
+        # Resolve dados do tweet citado se o principal não tiver mídia direta
+        media_source = tweet.get("media")
+        if not media_source and tweet.get("quote"):
+            quote = tweet.get("quote")
+            media_source = quote.get("media")
+
+        if not media_source:
+            return None
+
+        description = tweet.get("text") or ""
+        author = tweet.get("author", {}).get("name") or screen_name
+        likes = tweet.get("likes") or 0
+        replies = tweet.get("replies") or 0
+        retweets = tweet.get("retweets") or 0
+
+        media_items = []
+        all_media = media_source.get("all") or []
+
+        # Se não vier a lista "all", monta a partir de videos e photos
+        if not all_media:
+            for v in media_source.get("videos") or []:
+                all_media.append(v)
+            for p in media_source.get("photos") or []:
+                all_media.append(p)
+
+        for idx, item in enumerate(all_media):
+            m_type = item.get("type", "photo")
+            m_url = item.get("url")
+            if not m_url:
                 continue
-            media_url = extract_twitter_media_url(item)
-            media_kind = normalize_twitter_media_kind(item.get("type")) or infer_twitter_media_kind_from_url(media_url)
-            if media_url and media_kind:
-                normalized = dict(item)
-                normalized["url"] = media_url
-                normalized["type"] = media_kind
-                items.append(normalized)
-    if items:
-        return items
 
-    candidate_lists = (
-        tweet_media.get("mediaURLs"),
-        tweet_media.get("media_urls"),
-        tweet_media.get("images"),
-        tweet_media.get("videos"),
-        tweet_media.get("videoURLs"),
-        tweet_media.get("video_urls"),
-    )
-    for candidate in candidate_lists:
-        if not isinstance(candidate, list):
-            continue
-        normalized_items: list[dict[str, Any]] = []
-        for item in candidate:
-            media_url = extract_twitter_media_url(item)
-            media_kind = None
-            if isinstance(item, dict):
-                media_kind = (
-                    normalize_twitter_media_kind(item.get("type"))
-                    or normalize_twitter_media_kind(item.get("media_type"))
-                    or normalize_twitter_media_kind(item.get("kind"))
+            is_video = m_type == "video" or m_type == "gif" or m_url.lower().endswith((".mp4", ".mov", ".mkv", ".webm"))
+            ext = "mp4" if is_video else "jpg"
+            target_file = os.path.join(output_dir, f"{post_id}_fx_{idx}.{ext}")
+
+            # Download da stream
+            cmd = ["curl", "-sL", m_url, "-o", target_file]
+            proc = await asyncio.create_subprocess_exec(*cmd)
+            await proc.communicate()
+
+            if os.path.exists(target_file) and os.path.getsize(target_file) > 0:
+                thumb = None
+                width = item.get("width") or 1280
+                height = item.get("height") or 720
+                duration = int(item.get("duration") or 0)
+
+                if is_video:
+                    meta = await _get_video_metadata(target_file)
+                    width = meta["width"]
+                    height = meta["height"]
+                    duration = meta["duration"] or duration
+                    thumb_path = os.path.join(output_dir, f"{post_id}_fx_thumb_{idx}.jpg")
+                    thumb = await _generate_thumbnail(target_file, thumb_path)
+
+                media_items.append(
+                    TwitterMediaItem(
+                        url=target_file,
+                        type="video" if is_video else "photo",
+                        thumb=thumb,
+                        width=width,
+                        height=height,
+                        duration=duration,
+                        index=idx,
+                    )
                 )
-            media_kind = media_kind or infer_twitter_media_kind_from_url(media_url)
-            if not media_kind and candidate in (tweet_media.get("mediaURLs"), tweet_media.get("media_urls"), tweet_media.get("images")):
-                media_kind = "photo"
-            if media_url and media_kind:
-                normalized_items.append(
-                    item if isinstance(item, dict) and item.get("url") == media_url and item.get("type") == media_kind
-                    else {
-                        **(item if isinstance(item, dict) else {}),
-                        "url": media_url,
-                        "type": media_kind,
-                    }
-                )
-        if normalized_items:
-            return normalized_items
-    return []
 
+        if media_items:
+            logging.info("FxTwitter resolved %d item(s) for tweet_id=%s", len(media_items), tweet_id)
+            return TwitterMediaResult(
+                id=post_id,
+                description=description,
+                author=author,
+                likes=likes,
+                replies=replies,
+                retweets=retweets,
+                media_list=media_items,
+            )
+    except Exception as exc:
+        logging.warning("FxTwitter error: %s", exc)
 
-def build_twitter_media_cache_key(post_url: str, index: int, media_kind: str, total_items: int) -> str:
-    if total_items == 1 and media_kind == "video":
-        return post_url
-    return build_media_cache_key(post_url, item_index=index, item_kind=media_kind)
-
-
-def get_twitter_media_preview_url(media: dict[str, Any], tweet_media: dict[str, Any]) -> Optional[str]:
-    media_kind = normalize_twitter_media_kind(media.get("type"))
-    if media_kind == "photo":
-        media_url = media.get("url")
-        if isinstance(media_url, str) and media_url:
-            return media_url
-
-    for key in (
-        "thumb",
-        "thumbnail",
-        "thumbnail_url",
-        "thumbnailUrl",
-        "poster",
-        "poster_url",
-        "posterUrl",
-        "preview",
-        "preview_url",
-        "previewUrl",
-        "image",
-        "image_url",
-        "imageUrl",
-    ):
-        value = media.get(key)
-        if isinstance(value, str) and value:
-            return value
-
-    for key in ("mediaURLs", "media_urls", "images", "thumbnails"):
-        value = tweet_media.get(key)
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, str) and item:
-                    return item
-                if isinstance(item, dict):
-                    nested = get_twitter_media_preview_url(item, {})
-                    if nested:
-                        return nested
     return None
 
 
-async def collect_media_entries(
-    tweet_id: str,
-    tweet_media: dict[str, Any],
-    *,
-    db_service: Any,
-    downloader: Any,
-    output_dir: str,
-    max_file_size: int,
-    user_id: Optional[int] = None,
-    chat_id: Optional[int] = None,
-    request_id: Optional[str] = None,
-    download_dir_name: Optional[str] = None,
-) -> list[dict[str, Any]]:
-    entries: list[dict[str, Any] | None] = []
-    download_tasks = []
-    media_meta: list[tuple[int, int, str, str, str, str]] = []
-    media_items = extract_twitter_media_items(tweet_media)
-    total_items = len(media_items)
-    post_url = tweet_media.get("tweetURL") or f"https://x.com/i/status/{tweet_id}"
-    dir_name = download_dir_name or str(tweet_id)
+async def download_twitter_media(url: str, output_dir: str = "/root/bot_teste/downloads") -> Optional[TwitterMediaResult]:
+    clean_url = _clean_url(url)
+    post_id = _extract_tweet_id(clean_url) or hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
+    os.makedirs(output_dir, exist_ok=True)
 
-    for index, media in enumerate(media_items):
-        media_url = media.get("url")
-        media_kind = normalize_twitter_media_kind(media.get("type"))
-        if not media_url or not media_kind:
-            continue
+    # 1. Prioridade: FxTwitter API (Instantâneo, resolve quotes, vídeos de 1080p e carrosséis)
+    fx_res = await _fetch_fxtwitter_data(clean_url, output_dir, post_id)
+    if fx_res and fx_res.media_list:
+        return fx_res
 
-        cache_key = build_twitter_media_cache_key(post_url, index, media_kind, total_items)
-        cached_file_id = await db_service.get_file_id(cache_key)
-        if cached_file_id:
-            entries.append(
-                {
-                    "index": index,
-                    "kind": media_kind,
-                    "cache_key": cache_key,
-                    "file_id": cached_file_id,
-                    "path": None,
-                    "cached": True,
-                }
+    # 2. Fallback: yt-dlp local com cookies
+    cookie_file = _get_cookie_file()
+    raw_template = os.path.join(output_dir, f"{post_id}_raw.%(ext)s")
+    final_mp4 = os.path.join(output_dir, f"{post_id}_fast.mp4")
+    thumb_path = os.path.join(output_dir, f"{post_id}_thumb.jpg")
+
+    cmd_dl = [
+        "yt-dlp",
+        "--no-warnings",
+        "--no-check-certificates",
+        "--print-json",
+        "--concurrent-fragments", "5",
+        "-f", "bestvideo+bestaudio/best",
+        "--merge-output-format", "mp4",
+        "-o", raw_template,
+    ]
+    if cookie_file:
+        cmd_dl.extend(["--cookies", cookie_file])
+    cmd_dl.append(clean_url)
+
+    title = ""
+    uploader = "Twitter"
+    likes = 0
+    replies = 0
+    retweets = 0
+    has_video = False
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd_dl,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+
+        if stdout:
+            for line in stdout.decode("utf-8", errors="ignore").splitlines():
+                if line.strip().startswith("{") and line.strip().endswith("}"):
+                    try:
+                        info = json.loads(line)
+                        title = info.get("description") or info.get("title") or ""
+                        uploader = info.get("uploader") or info.get("channel") or info.get("uploader_id") or "Twitter"
+                        likes = info.get("like_count") or 0
+                        replies = info.get("comment_count") or 0
+                        retweets = info.get("repost_count") or 0
+                        formats = info.get("formats", [])
+                        has_video = any(f.get("vcodec") != "none" and f.get("vcodec") is not None for f in formats)
+                        break
+                    except Exception:
+                        continue
+
+        raw_files = glob.glob(os.path.join(output_dir, f"{post_id}_raw*"))
+        if raw_files and (has_video or any(f.endswith(".mp4") for f in raw_files)):
+            downloaded_raw = raw_files[0]
+            cmd_fast_remux = [
+                "ffmpeg", "-y",
+                "-i", downloaded_raw,
+                "-c", "copy",
+                "-movflags", "+faststart",
+                final_mp4,
+            ]
+            proc_remux = await asyncio.create_subprocess_exec(
+                *cmd_fast_remux,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            continue
+            await proc_remux.communicate()
 
-        file_name = os.path.join(dir_name, os.path.basename(urlsplit(media_url).path))
-        entries.append(None)
-        slot = len(entries) - 1
-        logging.debug(
-            "Queueing tweet media download: tweet_id=%s type=%s url=%s",
-            tweet_id,
-            media_kind,
-            media_url,
-        )
-        download_tasks.append(
-            downloader.download(
-                media_url,
-                file_name,
-                skip_if_exists=True,
-                user_id=user_id,
-                chat_id=chat_id,
-                request_id=request_id,
-                max_size_bytes=max_file_size,
+            video_to_use = final_mp4 if (os.path.exists(final_mp4) and os.path.getsize(final_mp4) > 0) else downloaded_raw
+            if os.path.exists(downloaded_raw) and video_to_use == final_mp4:
+                try:
+                    os.remove(downloaded_raw)
+                except Exception:
+                    pass
+
+            meta = await _get_video_metadata(video_to_use)
+            thumb = await _generate_thumbnail(video_to_use, thumb_path)
+
+            return TwitterMediaResult(
+                id=post_id,
+                description=title,
+                author=uploader,
+                likes=likes,
+                replies=replies,
+                retweets=retweets,
+                media_list=[
+                    TwitterMediaItem(
+                        url=video_to_use,
+                        type="video",
+                        thumb=thumb,
+                        width=meta["width"],
+                        height=meta["height"],
+                        duration=meta["duration"],
+                        index=0,
+                    )
+                ],
             )
-        )
-        media_meta.append((slot, index, media_kind, file_name, media_url, cache_key))
+    except Exception as exc:
+        logging.error("yt-dlp error for %s: %s", clean_url, exc)
 
-    if not download_tasks:
-        return [entry for entry in entries if entry is not None]
-
-    results = await asyncio.gather(*download_tasks, return_exceptions=True)
-    for (slot, index, media_kind, file_path, media_url, cache_key), result in zip(media_meta, results):
-        if isinstance(result, (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError)):
-            raise result
-        if isinstance(result, Exception):
-            logging.error(
-                "Falha ao baixar tweet media chunk: tweet_id=%s path=%s type=%s error=%s",
-                tweet_id,
-                os.path.join(output_dir, file_path),
-                media_kind,
-                result,
-            )
-            continue
-
-        resolved_path = (
-            result.path if isinstance(result, DownloadMetrics) else os.path.join(output_dir, file_path)
-        )
-        log_download_metrics(
-            "twitter_media",
-            result if isinstance(result, DownloadMetrics) else DownloadMetrics(
-                url=media_url,
-                path=resolved_path,
-                size=os.path.getsize(resolved_path) if os.path.exists(resolved_path) else 0,
-                elapsed=0.0,
-                used_multipart=isinstance(result, DownloadMetrics) and result.used_multipart,
-                resumed=isinstance(result, DownloadMetrics) and result.resumed,
-            ),
-        )
-        entries[slot] = {
-            "index": index,
-            "kind": media_kind,
-            "cache_key": cache_key,
-            "file_id": None,
-            "path": resolved_path,
-            "cached": False,
-        }
-
-    return [entry for entry in entries if entry is not None]
-
-
-async def collect_media_files(
-    tweet_id: str,
-    tweet_media: dict[str, Any],
-    *,
-    db_service: Any,
-    downloader: Any,
-    output_dir: str,
-    max_file_size: int,
-    user_id: Optional[int] = None,
-    chat_id: Optional[int] = None,
-    request_id: Optional[str] = None,
-    download_dir_name: Optional[str] = None,
-) -> tuple[list[str], list[str]]:
-    entries = await collect_media_entries(
-        tweet_id,
-        tweet_media,
-        db_service=db_service,
-        downloader=downloader,
-        output_dir=output_dir,
-        max_file_size=max_file_size,
-        user_id=user_id,
-        chat_id=chat_id,
-        request_id=request_id,
-        download_dir_name=download_dir_name,
-    )
-    photos = [str(entry["path"]) for entry in entries if entry["kind"] == "photo" and entry["path"]]
-    videos = [str(entry["path"]) for entry in entries if entry["kind"] == "video" and entry["path"]]
-    return photos, videos
+    return None
