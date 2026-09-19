@@ -3,7 +3,7 @@ from pathlib import Path
 import logging
 
 SECRET_TOKEN = "meu_token_secreto_bot_123"
-COOKIES_FILE = Path("/root/bot_teste/cookies.txt")
+COOKIES_FILE = Path("/root/Bot-Download/cookies.txt")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 

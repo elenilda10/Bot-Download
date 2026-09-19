@@ -46,9 +46,9 @@ def _extract_tweet_id(url: str) -> Optional[str]:
 
 def _get_cookie_file() -> Optional[str]:
     for cand in [
-        "/root/bot_teste/cookies/twitter_cookies.txt",
-        "/root/bot_teste/cookies/twitter.txt",
-        "/root/bot_teste/cookies/x.txt",
+        "/root/Bot-Download/cookies/twitter_cookies.txt",
+        "/root/Bot-Download/cookies/twitter.txt",
+        "/root/Bot-Download/cookies/x.txt",
     ]:
         if os.path.exists(cand):
             return cand
@@ -214,7 +214,7 @@ async def _fetch_fxtwitter_data(url: str, output_dir: str, post_id: str) -> Opti
     return None
 
 
-async def download_twitter_media(url: str, output_dir: str = "/root/bot_teste/downloads") -> Optional[TwitterMediaResult]:
+async def download_twitter_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[TwitterMediaResult]:
     clean_url = _clean_url(url)
     post_id = _extract_tweet_id(clean_url) or hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
     os.makedirs(output_dir, exist_ok=True)

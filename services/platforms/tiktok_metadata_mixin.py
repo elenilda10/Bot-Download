@@ -24,8 +24,8 @@ TIKWM_API_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 def _get_tiktok_cookie_file() -> Optional[str]:
     for cand in [
-        "/root/bot_teste/cookies/tiktok_cookies.txt",
-        "/root/bot_teste/cookies/tiktok.txt",
+        "/root/Bot-Download/cookies/tiktok_cookies.txt",
+        "/root/Bot-Download/cookies/tiktok.txt",
     ]:
         if os.path.exists(cand):
             return cand

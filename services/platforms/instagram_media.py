@@ -16,9 +16,9 @@ from utils.cobalt_client import fetch_cobalt_data
 
 logger = logging.getLogger(__name__)
 
-EXTENSION_COOKIES_PATH = "/root/bot_teste/cookies.txt"
-GDL_BIN = "/root/bot_teste/venv/bin/gallery-dl"
-YTDLP_BIN = "/root/bot_teste/venv/bin/yt-dlp"
+EXTENSION_COOKIES_PATH = "/root/Bot-Download/cookies.txt"
+GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
+YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
 PUBLIC_COBALT_INSTANCES = [
     "https://cobalt-api.kwiatekm.tokyo",
@@ -316,7 +316,7 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
     return None
 
 
-async def fetch_instagram_media(url: str, output_dir: str = "/root/bot_teste/downloads") -> Optional[InstagramVideo]:
+async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
     story_id = _extract_story_target_id(url)
     clean_url = strip_instagram_url(url)
     post_id = _extract_instagram_post_id(url) or hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()

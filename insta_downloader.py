@@ -3,7 +3,7 @@ import re
 import json
 import subprocess
 
-COOKIES_PATH = "/root/bot_teste/cookies.txt"
+COOKIES_PATH = "/root/Bot-Download/cookies.txt"
 
 def clean_instagram_url(url: str) -> str:
     # Remove parâmetros desnecessários da URL (?utm_source, etc.)

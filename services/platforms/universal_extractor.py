@@ -15,9 +15,9 @@ logging = logging.bind(service="universal_extractor")
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg")
 _DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-GDL_BIN = "/root/bot_teste/venv/bin/gallery-dl"
-YTDLP_BIN = "/root/bot_teste/venv/bin/yt-dlp"
-REDDIT_COOKIES = "/root/bot_teste/cookies/reddit_cookies.txt"
+GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
+YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
+REDDIT_COOKIES = "/root/Bot-Download/cookies/reddit_cookies.txt"
 
 
 @dataclass
@@ -47,7 +47,7 @@ def _resolve_cookie(url: str) -> Optional[str]:
     if "reddit.com" in url or "redd.it" in url:
         if os.path.exists(REDDIT_COOKIES) and os.path.getsize(REDDIT_COOKIES) > 0:
             return REDDIT_COOKIES
-        gen_cookie = "/root/bot_teste/cookies.txt"
+        gen_cookie = "/root/Bot-Download/cookies.txt"
         if os.path.exists(gen_cookie) and os.path.getsize(gen_cookie) > 0:
             return gen_cookie
     return None
@@ -253,7 +253,7 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
 
 async def _download_with_ytdlp(
     url: str,
-    output_dir: str = "/root/bot_teste/downloads",
+    output_dir: str = "/root/Bot-Download/downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
     **kwargs: Any,
@@ -400,7 +400,7 @@ async def _download_with_ytdlp(
 
 async def download_universal_media(
     url: str,
-    output_dir: str = "/root/bot_teste/downloads",
+    output_dir: str = "/root/Bot-Download/downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
     **kwargs: Any,

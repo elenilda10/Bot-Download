@@ -59,7 +59,7 @@ async def _fetch_reddit_with_gallery_dl(url: str) -> Optional[RedditVideo]:
     post_match = re.search(r"comments/([a-zA-Z0-9]+)", clean_url)
     post_id = post_match.group(1) if post_match else hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
 
-    cookie_file = "/root/bot_teste/cookies/reddit_cookies.txt"
+    cookie_file = "/root/Bot-Download/cookies/reddit_cookies.txt"
     cmd = ["gallery-dl", "-j"]
     if os.path.exists(cookie_file):
         cmd.extend(["--cookies", cookie_file])
