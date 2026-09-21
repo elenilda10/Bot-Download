@@ -252,8 +252,12 @@ async def deliver_inline_video(
             return
 
         await edit_status(bm.downloading_video_status())
-        on_progress = utils.make_status_text_progress_updater(progress_label, edit_status)
-        metrics = await download_fn(on_progress)
+        # Inline messages keep a static download status. Avoid percentage/ETA edits
+        # during the transfer to reduce Telegram Bot API edit traffic and 429 risk.
+        async def _ignore_inline_progress(*_args, **_kwargs) -> None:
+            return None
+
+        metrics = await download_fn(_ignore_inline_progress)
         if metrics is VIDEO_TOO_LARGE:
             complete_inline_video_request(token)
             await edit_status(bm.video_too_large())
