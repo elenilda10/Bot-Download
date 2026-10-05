@@ -66,6 +66,7 @@ async def handle_instagram_inline_query(
         )
 
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         bot_url = await get_bot_url_fn(deps.bot)
 
         url_match = re.search(r"(https?://(www\.)?instagram\.com/(p|reels|reel|share|stories/[^/?#&]+)/[\w-]+)", query.query or "")
@@ -89,14 +90,14 @@ async def handle_instagram_inline_query(
             results.append(
                 types.InlineQueryResultArticle(
                     id=f"instagram_inline:{token}",
-                    title="Instagram Vídeo",
-                    description=data.description or "Toque no botão para enviar este vídeo inline.",
+                    title=bm.inline_video_title("Instagram", lang=user_lang),
+                    description=data.description or bm.inline_send_video_description(lang=user_lang),
                     thumbnail_url=preview_url,
                     input_message_content=types.InputTextMessageContent(
-                        message_text=bm.inline_send_video_prompt("Instagram"),
+                        message_text=bm.inline_send_video_prompt("Instagram", lang=user_lang),
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Enviar vídeo inline",
+                        bm.inline_send_video_button(lang=user_lang),
                         f"inline:instagram:{token}",
                     ),
                 )
@@ -115,14 +116,14 @@ async def handle_instagram_inline_query(
             results.append(
                 types.InlineQueryResultArticle(
                     id=f"instagram_inline:{token}",
-                    title="Instagram Foto",
-                    description=data.description or "Toque no botão para enviar esta foto inline.",
+                    title=bm.inline_photo_title("Instagram", lang=user_lang),
+                    description=data.description or bm.inline_send_photo_description(lang=user_lang),
                     thumbnail_url=first_preview or first_photo.url,
                     input_message_content=types.InputTextMessageContent(
-                        message_text="A foto do Instagram está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo.",
+                        message_text=bm.inline_send_photo_prompt("Instagram", lang=user_lang),
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Enviar foto inline",
+                        bm.inline_send_photo_button(lang=user_lang),
                         f"inline:instagram:{token}",
                     ),
                 )
@@ -147,13 +148,18 @@ async def handle_instagram_inline_query(
             deep_link = build_start_deeplink_url(bot_url, f"album_instagram_{token}")
             results.append(
                 build_inline_album_result(
-                    "instagram",
-                    token,
-                    deep_link,
-                    len(data.media_list),
+                    result_id=f"instagram_album:{token}",
+                    service_name="Instagram",
+                    deep_link=deep_link,
+                    message_text=bm.captions(
+                        user_settings["captions"],
+                        data.description,
+                        bot_url,
+                    ),
                     preview_url=first_preview or (first_photo.url if first_photo else None),
                     preview_file_id=preview_file_id,
-                    description=data.description,
+                    thumbnail_url=first_preview or (first_photo.url if first_photo else None),
+                    lang=user_lang,
                 )
             )
             await safe_answer_inline_query_fn(query, results, cache_time=10, is_personal=True)
@@ -180,6 +186,11 @@ async def send_inline_instagram_media(
     safe_edit_inline_text_fn=safe_edit_inline_text,
 ) -> None:
     async def _plan(request, edit_status: StatusEditor, state: InlineFlowState) -> None:
+        try:
+            user_lang = await deps.db.get_language(actor_user_id)
+        except Exception:
+            user_lang = "pt"
+
         source_url = request.source_url
         user_settings = request.user_settings
         bot_url = await get_bot_url_fn(deps.bot)
@@ -187,7 +198,7 @@ async def send_inline_instagram_media(
         data = await fetch_instagram_media(source_url, output_dir=OUTPUT_DIR)
         if not data or not data.media_list:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         first_item = data.media_list[0]
@@ -225,6 +236,7 @@ async def send_inline_instagram_media(
                 edit_status=edit_status,
                 safe_edit_inline_media_fn=safe_edit_inline_media_fn,
                 log=logging,
+                lang=user_lang,
             )
             return
 
@@ -256,6 +268,7 @@ async def send_inline_instagram_media(
             safe_edit_inline_media_fn=safe_edit_inline_media_fn,
             metrics_log_key="instagram_inline",
             log=logging,
+            lang=user_lang,
         )
 
     await run_inline_send_flow(

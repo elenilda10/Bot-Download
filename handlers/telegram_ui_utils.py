@@ -318,7 +318,10 @@ async def maybe_delete_user_message(message: types.Message, delete_flag: Any) ->
         await message.delete()
         return True
     except TelegramAPIError:
-        await message.answer(bm.delete_permission_warning())
+        user_lang = await _resolve_user_lang(message)
+        await message.answer(
+            bm.delete_permission_warning(lang=user_lang)
+        )
         return False
 
 

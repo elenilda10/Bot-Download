@@ -419,7 +419,11 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
         try:
             await call.message.reply_document(
                 document=cached_file_id,
-                caption="📄 Original file",
+                caption=(
+                "📄 Arquivo original"
+                if not str(user_lang).lower().startswith("en")
+                else "📄 Original file"
+            ),
                 disable_content_type_detection=True,
             )
             return
@@ -432,7 +436,9 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
         await call.message.reply(bm.something_went_wrong(lang=user_lang))
         return
 
-    status_message = await call.message.answer(bm.downloading_video_status())
+    status_message = await call.message.answer(
+        bm.downloading_video_status(lang=user_lang)
+    )
     try:
         res = await download_universal_media(original_url)
         if not res or not res.media_list:
@@ -445,7 +451,11 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
 
         sent = await call.message.reply_document(
             document=file_input,
-            caption="📄 Original file",
+            caption=(
+                "📄 Arquivo original"
+                if not str(user_lang).lower().startswith("en")
+                else "📄 Original file"
+            ),
             disable_content_type_detection=True,
         )
         if sent and sent.document:
@@ -533,7 +543,11 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         sent_audio = await send_audio_with_thumbnail(
             call.message.reply_audio,
             audio=FSInputFile(output_mp3_path),
-            title=res.description or "Universal Audio",
+            title=res.description or (
+                "Áudio"
+                if not str(user_lang).lower().startswith("en")
+                else "Universal Audio"
+            ),
             caption=bm.captions(None, None, bot_url),
             audio_path=output_mp3_path,
             bot_avatar=bot_avatar,

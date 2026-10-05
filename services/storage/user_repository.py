@@ -41,12 +41,25 @@ class UserRepositoryMixin:
         if source is not None:
             values["source"] = source
 
+        # O language_code recebido do Telegram serve para inicializar
+        # usuários novos. Em usuários existentes, preservamos o idioma
+        # salvo no banco para não sobrescrever uma escolha manual feita
+        # nas configurações do bot.
+        update_values = {
+            key: value
+            for key, value in values.items()
+            if key != "language"
+        }
+
         async with self.SessionLocal() as session:
             async with session.begin():
                 stmt = (
                     self._insert(User)
                     .values(user_id=user_id, **values)
-                    .on_conflict_do_update(index_elements=[User.user_id], set_=values)
+                    .on_conflict_do_update(
+                        index_elements=[User.user_id],
+                        set_=update_values,
+                    )
                 )
                 await session.execute(stmt)
         self._status_cache[int(user_id)] = (time.monotonic(), status)

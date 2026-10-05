@@ -128,6 +128,7 @@ async def handle_deezer_inline_query(
                 pass
 
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         token = create_inline_video_request("deezer", target_url, query.from_user.id, user_settings)
 
         desc = f"{artist_name} • {duration_str}" if duration_str else artist_name
@@ -138,10 +139,10 @@ async def handle_deezer_inline_query(
                 description=desc,
                 thumbnail_url=album_cover,
                 input_message_content=types.InputTextMessageContent(
-                    message_text=bm.inline_send_audio_prompt("Deezer"),
+                    message_text=bm.inline_send_audio_prompt("Deezer", lang=user_lang),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Enviar áudio inline",
+                    bm.inline_send_audio_button(lang=user_lang),
                     f"inline:deezer:{token}",
                 ),
             )
@@ -237,12 +238,18 @@ async def send_inline_deezer_music(
     if request is None:
         return
 
+    try:
+        user_lang = await deps.db.get_language(actor_user_id)
+    except Exception:
+        user_lang = "pt"
+
     _edit_inline_status = build_inline_status_editor(
         bot=deps.bot,
         inline_message_id=inline_message_id,
         callback_data_factory=lambda _media_kind: f"inline:deezer:{token}",
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
-        button_text="Tentar novamente",
+        button_text=bm.inline_send_audio_button(lang=user_lang),
+        lang=user_lang,
     )
 
     downloaded_track = None
@@ -252,12 +259,12 @@ async def send_inline_deezer_music(
         bot_url = await get_bot_url_fn(deps.bot)
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             return None
 
         async def _download_audio():
             nonlocal downloaded_track
-            await _edit_inline_status(bm.downloading_audio_status())
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
 
             download_coro = download_deezer_track(request.source_url, output_dir=output_dir)
             if asyncio.iscoroutine(download_coro):
@@ -276,17 +283,17 @@ async def send_inline_deezer_music(
 
         async def _on_missing_audio():
             reset_inline_video_request(token)
-            await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+            await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
 
         async def _on_too_large():
             complete_inline_video_request(token)
-            await _edit_inline_status(bm.audio_too_large())
+            await _edit_inline_status(bm.audio_too_large(lang=user_lang))
 
         async def _prepare_metadata(path: str):
             return DeezerMetadataWrapper(downloaded_track)
 
         async def _send_downloaded(path: str, meta_wrapper):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             meta = meta_wrapper.track if meta_wrapper else downloaded_track
             bot_avatar = await get_bot_avatar_thumbnail_fn(deps.bot) if get_bot_avatar_thumbnail_fn else None
             audio_thumbnail = (
@@ -356,7 +363,7 @@ async def send_inline_deezer_music(
             return
 
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
 
     except Exception as exc:
         logging.exception(
@@ -366,4 +373,4 @@ async def send_inline_deezer_music(
             exc,
         )
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)

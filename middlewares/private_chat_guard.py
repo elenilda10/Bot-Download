@@ -27,6 +27,10 @@ class PrivateChatGuardMiddleware(BaseMiddleware):
         if not isinstance(event, Message):
             return await handler(event, data)
 
+        # Ignora completamente mensagens/publicacoes de canais
+        if event.chat.type == ChatType.CHANNEL:
+            return None
+
         if event.chat.type == ChatType.PRIVATE:
             return await handler(event, data)
 

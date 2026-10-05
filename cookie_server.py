@@ -23,13 +23,13 @@ async def handle_sync(request):
         cookies_content = data.get("cookies", "")
 
         if token != SECRET_TOKEN:
-            return web.Response(status=403, text="Acesso negado: Token inválido", headers=CORS_HEADERS)
+            return web.Response(status=403, text="Acesso negado: Token invalido", headers=CORS_HEADERS)
 
         if cookies_content:
             COOKIES_FILE.write_text(cookies_content, encoding="utf-8")
-            logging.info(f"cookies.txt atualizado com sucesso ({len(cookies_content)} bytes)")
+            logging.info(f"cookies.txt atualizado com sucesso ({len(cookies_content)} caracteres)")
             return web.Response(text="OK", headers=CORS_HEADERS)
-        
+
         return web.Response(status=400, text="Nenhum dado enviado", headers=CORS_HEADERS)
     except Exception as e:
         logging.error(f"Erro: {e}")

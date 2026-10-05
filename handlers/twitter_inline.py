@@ -62,6 +62,7 @@ async def handle_twitter_inline_query(
 
         source_url = match.group(0)
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         bot_url = await get_bot_url_fn(deps.bot)
 
         result_data = await download_twitter_media(source_url)
@@ -81,13 +82,18 @@ async def handle_twitter_inline_query(
 
             results = [
                 build_inline_album_result(
-                    "twitter",
-                    f"{result_data.id}_album",
-                    deep_link,
-                    len(media_items),
+                    result_id=f"twitter_album:{result_data.id}",
+                    service_name="X / Twitter",
+                    deep_link=deep_link,
+                    message_text=bm.captions(
+                        user_settings["captions"],
+                        result_data.description or None,
+                        bot_url,
+                    ),
                     preview_url=preview_url,
                     preview_file_id=preview_file_id,
-                    description=result_data.description or None,
+                    thumbnail_url=preview_url,
+                    lang=user_lang,
                 )
             ]
             await safe_answer_inline_query_fn(query, results, cache_time=10, is_personal=True)
@@ -97,19 +103,31 @@ async def handle_twitter_inline_query(
         kind = item.type
         preview_url = item.thumb or (item.url if kind == "photo" else get_inline_service_icon("twitter"))
         token = create_inline_video_request("twitter", source_url, query.from_user.id, user_settings)
-        title = "X / Twitter Vídeo" if kind == "video" else "X / Twitter Foto"
-        prompt_text = (
-            bm.inline_send_video_prompt("X / Twitter")
+        title = (
+            bm.inline_video_title("X / Twitter", lang=user_lang)
             if kind == "video"
-            else "A foto do X / Twitter está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo."
+            else bm.inline_photo_title("X / Twitter", lang=user_lang)
         )
-        button_text = "Enviar vídeo inline" if kind == "video" else "Enviar foto inline"
+        prompt_text = (
+            bm.inline_send_video_prompt("X / Twitter", lang=user_lang)
+            if kind == "video"
+            else bm.inline_send_photo_prompt("X / Twitter", lang=user_lang)
+        )
+        button_text = (
+            bm.inline_send_video_button(lang=user_lang)
+            if kind == "video"
+            else bm.inline_send_photo_button(lang=user_lang)
+        )
 
         results = [
             types.InlineQueryResultArticle(
                 id=f"twitter_inline:{token}",
                 title=title,
-                description=result_data.description or f"Toque no botão para enviar este {kind} inline.",
+                description=result_data.description or (
+                    bm.inline_send_video_description(lang=user_lang)
+                    if kind == "video"
+                    else bm.inline_send_photo_description(lang=user_lang)
+                ),
                 thumbnail_url=preview_url,
                 input_message_content=types.InputTextMessageContent(message_text=prompt_text),
                 reply_markup=kb.inline_send_media_keyboard(
@@ -141,6 +159,11 @@ async def send_inline_twitter_media(
     safe_edit_inline_text_fn=safe_edit_inline_text,
 ) -> None:
     async def _plan(request, edit_status: StatusEditor, state: InlineFlowState) -> None:
+        try:
+            user_lang = await deps.db.get_language(actor_user_id)
+        except Exception:
+            user_lang = "pt"
+
         source_url = request.source_url
         user_settings = request.user_settings
         bot_url = await get_bot_url_fn(deps.bot)
@@ -148,7 +171,7 @@ async def send_inline_twitter_media(
         result_data = await download_twitter_media(source_url)
         if not result_data or not result_data.media_list:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         item = result_data.media_list[0]
@@ -207,6 +230,7 @@ async def send_inline_twitter_media(
                 safe_edit_inline_media_fn=safe_edit_inline_media_fn,
                 metrics_log_key="twitter_inline",
                 log=logging,
+                lang=user_lang,
             )
         else:
             await deliver_inline_photo(
@@ -223,6 +247,7 @@ async def send_inline_twitter_media(
                 edit_status=edit_status,
                 safe_edit_inline_media_fn=safe_edit_inline_media_fn,
                 log=logging,
+                lang=user_lang,
             )
 
     await run_inline_send_flow(

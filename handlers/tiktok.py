@@ -352,6 +352,7 @@ async def process_tiktok_video(
             file_callback_data=file_callback_data,
             lang=user_lang,
             has_video=True,
+            platform="tiktok",
         )
 
     async def _download_media():
@@ -528,6 +529,7 @@ async def process_tiktok_photos(
                         audio_callback_data=audio_callback_data,
                         lang=user_lang,
                         has_video=False,
+                        platform="tiktok",
                     ),
                     parse_mode="HTML",
                     disable_content_type_detection=True,
@@ -582,6 +584,7 @@ async def process_tiktok_photos(
                 audio_callback_data=audio_callback_data,
                 lang=user_lang,
                 has_video=False,
+                platform="tiktok",
             ),
             as_document=as_document,
         )
@@ -672,7 +675,11 @@ async def download_tiktok_doc_callback(call: types.CallbackQuery):
         try:
             await call.message.reply_document(
                 document=file_id,
-                caption="📄 Original video file",
+                caption=(
+                    "📄 Arquivo de vídeo original"
+                    if not str(user_lang).lower().startswith("en")
+                    else "📄 Original video file"
+                ),
                 disable_content_type_detection=True,
             )
             return
@@ -708,7 +715,11 @@ async def download_tiktok_doc_callback(call: types.CallbackQuery):
 @router.callback_query(F.data.startswith("audio:tiktok:"))
 async def download_tiktok_audio_callback(call: types.CallbackQuery):
     if not call.message:
-        await call.answer("Open the bot to download MP3", show_alert=True)
+        user_lang = await db.get_language(call.from_user.id)
+        await call.answer(
+            bm.open_bot_to_download_mp3(lang=user_lang),
+            show_alert=True,
+        )
         return
     await call.answer()
     business_id = call.message.business_connection_id
@@ -809,7 +820,11 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
         sent_message = await send_audio_with_thumbnail(
             call.message.reply_audio,
             audio=FSInputFile(metrics.path),
-            title=info.description or "TikTok audio",
+            title=info.description or (
+                "Áudio do TikTok"
+                if not str(user_lang).lower().startswith("en")
+                else "TikTok Audio"
+            ),
             caption=bm.captions(None, None, bot_url),
             audio_path=metrics.path,
             bot_avatar=bot_avatar,
@@ -912,22 +927,25 @@ async def handle_stats_callback(call: types.CallbackQuery):
     try:
         prefix, value = call.data.split("_", 1)
         mapping = {
-            "followers": ("Followers", "👥"),
-            "videos": ("Videos", "🎥"),
-            "likes": ("Likes", "❤️"),
-            "views": ("Views", "👁️"),
-            "comments": ("Comments", "💬"),
-            "shares": ("Shares", "🔄"),
+            "followers": "👥",
+            "videos": "🎥",
+            "likes": "❤️",
+            "views": "👁️",
+            "comments": "💬",
+            "shares": "🔄",
         }
+        user_lang = await db.get_language(call.from_user.id)
         if prefix in mapping:
-            label, emoji = mapping[prefix]
+            label = bm.tiktok_stat_label(prefix, lang=user_lang)
+            emoji = mapping[prefix]
             await call.answer(f"{label}: {value} {emoji}")
         else:
-            await call.answer("Unknown data")
+            await call.answer(bm.unknown_data(lang=user_lang))
     except Exception as e:
         logging.exception(
             "Error handling TikTok stats callback: data=%s error=%s",
             call.data,
             e,
         )
-        await call.answer("Error processing callback")
+        user_lang = await db.get_language(call.from_user.id)
+        await call.answer(bm.callback_processing_error(lang=user_lang))

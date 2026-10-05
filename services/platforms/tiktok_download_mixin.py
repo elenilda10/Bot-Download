@@ -1,6 +1,7 @@
 import asyncio
 import glob
 import os
+import subprocess
 from typing import Any, Callable, Optional
 
 from services.logger import logger as logging
@@ -500,6 +501,7 @@ class TikTokDownloadMixin:
         effective_size_hint = size_hint or _safe_int(source_data.get("audio_size"))
         output_path = os.path.join(self._output_dir, filename)
 
+        # 1. Tenta extrair o MP3 diretamente com yt-dlp.
         try:
             metrics = await self._submit_queued_ytdlp_download(
                 source="tiktok",
@@ -518,18 +520,124 @@ class TikTokDownloadMixin:
             )
             if metrics:
                 return metrics
-        except Exception:
-            pass
+        except (DownloadRateLimitError, DownloadQueueBusyError):
+            raise
+        except Exception as exc:
+            logging.warning(
+                "TikTok audio yt-dlp failed; trying video-to-MP3 fallback: url=%s error=%s",
+                source_url,
+                exc,
+            )
 
-        return await self._download_direct(
-            candidates=self._direct_audio_candidates(source_data),
-            filename=filename,
-            headers=self._build_direct_download_headers(source_url, source_data, "audio_headers"),
-            size_hint=effective_size_hint,
-            user_id=user_id,
-            chat_id=chat_id,
-            request_id=request_id,
-            on_queued=on_queued,
-            on_progress=on_progress,
-            on_retry=on_retry,
-        )
+        # 2. Se o TikTok bloquear o yt-dlp, baixa o vídeo pela mesma
+        # fonte direta usada pelo download normal e extrai o áudio localmente.
+        temp_video_name = f"{os.path.splitext(filename)[0]}_source.mp4"
+        temp_video_path: Optional[str] = None
+
+        try:
+            video_metrics = await self._download_direct(
+                candidates=self._direct_video_candidates(source_url, source_data),
+                filename=temp_video_name,
+                headers=self._build_direct_download_headers(
+                    source_url,
+                    source_data,
+                    "download_headers",
+                ),
+                size_hint=_safe_int(source_data.get("size_hd")),
+                user_id=user_id,
+                chat_id=chat_id,
+                request_id=request_id,
+                on_queued=on_queued,
+                on_progress=on_progress,
+                on_retry=on_retry,
+            )
+
+            if video_metrics and video_metrics.path:
+                temp_video_path = video_metrics.path
+
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    temp_video_path,
+                    "-vn",
+                    "-codec:a",
+                    "libmp3lame",
+                    "-q:a",
+                    "2",
+                    output_path,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await proc.communicate()
+
+                if (
+                    proc.returncode == 0
+                    and os.path.exists(output_path)
+                    and os.path.getsize(output_path) > 0
+                ):
+                    logging.info(
+                        "TikTok MP3 extracted from direct video fallback: url=%s size=%s",
+                        source_url,
+                        os.path.getsize(output_path),
+                    )
+                    return DownloadMetrics(
+                        url=source_url,
+                        path=output_path,
+                        size=os.path.getsize(output_path),
+                        elapsed=video_metrics.elapsed,
+                        used_multipart=video_metrics.used_multipart,
+                        resumed=video_metrics.resumed,
+                    )
+
+                error_text = stderr.decode("utf-8", errors="ignore")[-1000:]
+                logging.warning(
+                    "TikTok video-to-MP3 ffmpeg failed: url=%s returncode=%s error=%s",
+                    source_url,
+                    proc.returncode,
+                    error_text,
+                )
+
+        except (DownloadRateLimitError, DownloadQueueBusyError):
+            raise
+        except Exception as exc:
+            logging.warning(
+                "TikTok video-to-MP3 fallback failed: url=%s error=%s",
+                source_url,
+                exc,
+            )
+        finally:
+            if temp_video_path and os.path.exists(temp_video_path):
+                try:
+                    os.remove(temp_video_path)
+                except OSError:
+                    pass
+
+        # 3. Última tentativa: áudio direto informado pela API.
+        try:
+            return await self._download_direct(
+                candidates=self._direct_audio_candidates(source_data),
+                filename=filename,
+                headers=self._build_direct_download_headers(
+                    source_url,
+                    source_data,
+                    "audio_headers",
+                ),
+                size_hint=effective_size_hint,
+                user_id=user_id,
+                chat_id=chat_id,
+                request_id=request_id,
+                on_queued=on_queued,
+                on_progress=on_progress,
+                on_retry=on_retry,
+            )
+        except (DownloadRateLimitError, DownloadQueueBusyError):
+            raise
+        except Exception as exc:
+            logging.error(
+                "TikTok audio direct fallback failed: url=%s error=%s",
+                source_url,
+                exc,
+            )
+            return None
+

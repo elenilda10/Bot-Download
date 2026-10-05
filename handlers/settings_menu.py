@@ -183,6 +183,7 @@ async def set_language_setting(call: types.CallbackQuery, lang: str = "pt"):
             language=new_lang,
             status="active",
         )
+        await user_mod.db.set_language(target_id, new_lang)
 
         feedback = (
             "✅ Idioma alterado para Português!"
@@ -375,7 +376,7 @@ async def set_language_callback(call: types.CallbackQuery):
     new_lang = "pt" if "pt" in call.data else "en"
     
     try:
-        await user_mod.db.set_user_setting(user_id=user_id, field="lang", value=new_lang)
+        await user_mod.db.set_language(user_id, new_lang)
     except Exception as exc:
         logging.warning("Não foi possível salvar lang no DB: %s", exc)
     
@@ -436,6 +437,7 @@ async def handle_language_selection(call: types.CallbackQuery):
             language=chosen_lang,
             status="active",
         )
+        await user_mod.db.set_language(chat_id, chosen_lang)
         # Limpa cache de atualização se existir
         if hasattr(user_mod, "_update_info_cache") and chat_id in user_mod._update_info_cache:
             del user_mod._update_info_cache[chat_id]

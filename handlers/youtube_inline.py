@@ -90,19 +90,20 @@ async def handle_youtube_music_inline_query(
             return
 
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         webpage_url = yt.get("webpage_url") or url
         token = create_inline_video_request("youtube", webpage_url, query.from_user.id, user_settings)
         results = [
             types.InlineQueryResultArticle(
                 id=f"ytmusic_inline:{token}",
                 title="YouTube Music",
-                description=yt.get("title") or "Press the button to send this audio inline.",
+                description=yt.get("title") or bm.inline_send_audio_description(lang=user_lang),
                 thumbnail_url=get_youtube_thumbnail_url_fn(yt) or get_inline_service_icon("youtube"),
                 input_message_content=types.InputTextMessageContent(
-                    message_text=bm.inline_send_audio_prompt("YouTube"),
+                    message_text=bm.inline_send_audio_prompt("YouTube", lang=user_lang),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Enviar áudio inline",
+                    bm.inline_send_audio_button(lang=user_lang),
                     f"inline:ytmusic:{token}",
                 ),
             )
@@ -145,18 +146,19 @@ async def handle_youtube_video_inline_query(
         )
 
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         token = create_inline_video_request("youtube", yt["webpage_url"], query.from_user.id, user_settings)
         results = [
             types.InlineQueryResultArticle(
                 id=f"youtube_inline:{token}",
-                title="YouTube Video",
-                description=yt.get("title") or "Press the button to send this video inline.",
+                title=bm.inline_video_title("YouTube", lang=user_lang),
+                description=yt.get("title") or bm.inline_send_video_description(lang=user_lang),
                 thumbnail_url=get_youtube_thumbnail_url_fn(yt) or get_inline_service_icon("youtube"),
                 input_message_content=types.InputTextMessageContent(
-                    message_text=bm.inline_send_video_prompt("YouTube"),
+                    message_text=bm.inline_send_video_prompt("YouTube", lang=user_lang),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Enviar vídeo inline",
+                    bm.inline_send_video_button(lang=user_lang),
                     f"inline:youtube:{token}",
                 ),
             )
@@ -194,19 +196,25 @@ async def send_inline_youtube_music(
     if request is None:
         return
 
+    try:
+        user_lang = await deps.db.get_language(actor_user_id)
+    except Exception:
+        user_lang = "pt"
+
     _edit_inline_status = build_inline_status_editor(
         bot=deps.bot,
         inline_message_id=inline_message_id,
         callback_data_factory=lambda _media_kind: f"inline:ytmusic:{token}",
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
-        button_text="Enviar áudio inline",
+        button_text=bm.inline_send_audio_button(lang=user_lang),
+        lang=user_lang,
     )
 
     try:
         yt = await _get_youtube_video_with_timeout(get_youtube_video_fn, request.source_url)
         if not yt:
             reset_inline_video_request(token)
-            await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+            await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         audio_duration = coerce_audio_duration_seconds(yt.get("duration"))
@@ -216,12 +224,12 @@ async def send_inline_youtube_music(
         bot_url = await get_bot_url_fn(deps.bot)
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             return None
 
         async def _download_audio():
             base_name = f"{yt.get('id', 'youtube_music')}_youtube_music_inline"
-            await _edit_inline_status(bm.downloading_audio_status())
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
             return await retry_async_operation_fn(
                 lambda: download_mp3_with_ytdlp_metrics_fn(
                     request.source_url,
@@ -236,11 +244,11 @@ async def send_inline_youtube_music(
 
         async def _on_missing_audio():
             reset_inline_video_request(token)
-            await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+            await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
 
         async def _on_too_large():
             complete_inline_video_request(token)
-            await _edit_inline_status(bm.audio_too_large())
+            await _edit_inline_status(bm.audio_too_large(lang=user_lang))
 
         async def _prepare_metadata(path: str):
             return await prepare_mp3_metadata(
@@ -255,7 +263,7 @@ async def send_inline_youtube_music(
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             bot_avatar = await get_bot_avatar_thumbnail_fn(deps.bot)
             audio_thumbnail = (
                 FSInputFile(str(prepared_metadata.thumbnail_path), filename="cover.jpg")
@@ -310,7 +318,7 @@ async def send_inline_youtube_music(
             return
 
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
     except DownloadRateLimitError as exc:
         reset_inline_video_request(token)
         await _edit_inline_status(build_rate_limit_text(exc.retry_after), with_retry_button=True)
@@ -319,7 +327,7 @@ async def send_inline_youtube_music(
         await _edit_inline_status(build_queue_busy_text(exc.position), with_retry_button=True)
     except asyncio.TimeoutError:
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.timeout_error(), with_retry_button=True)
+        await _edit_inline_status(bm.timeout_error(lang=user_lang), with_retry_button=True)
     except Exception as exc:
         logging.exception(
             "Error sending inline YouTube Music audio: inline_message_id=%s token=%s error=%s",
@@ -328,7 +336,7 @@ async def send_inline_youtube_music(
             exc,
         )
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
 
 
 async def send_inline_youtube_video(
@@ -354,10 +362,15 @@ async def send_inline_youtube_video(
     safe_edit_inline_text_fn=safe_edit_inline_text,
 ) -> None:
     async def _plan(request, edit_status, state) -> None:
+        try:
+            user_lang = await deps.db.get_language(actor_user_id)
+        except Exception:
+            user_lang = "pt"
+
         yt = await _get_youtube_video_with_timeout(get_youtube_video_fn, request.source_url)
         if not yt:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         views = safe_int_fn(yt.get("view_count"), 0)
@@ -440,6 +453,7 @@ async def send_inline_youtube_video(
             safe_edit_inline_media_fn=safe_edit_inline_media_fn,
             metrics_log_key=None,
             log=logging,
+            lang=user_lang,
         )
 
     await run_inline_send_flow(
@@ -452,6 +466,6 @@ async def send_inline_youtube_video(
         callback_data=f"inline:youtube:{token}",
         plan_fn=_plan,
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
-        button_text="Enviar vídeo inline",
+        button_text=None,
         log=logging,
     )

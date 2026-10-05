@@ -62,6 +62,7 @@ async def handle_tiktok_inline_query(
             summarize_text_for_log(query.query),
         )
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         bot_url = await get_bot_url_fn(deps.bot)
 
         match = re.search(r"(https?://(?:www\.|vm\.|vt\.|vn\.)?tiktok\.com/\S+)", query.query)
@@ -93,14 +94,14 @@ async def handle_tiktok_inline_query(
             results.append(
                 InlineQueryResultArticle(
                     id=f"tiktok_inline:{token}",
-                    title="TikTok Vídeo",
-                    description=info.description or "Toque no botão para enviar este vídeo inline.",
+                    title=bm.inline_video_title("TikTok", lang=user_lang),
+                    description=info.description or bm.inline_send_video_description(lang=user_lang),
                     thumbnail_url=info.cover or get_inline_service_icon("tiktok"),
                     input_message_content=types.InputTextMessageContent(
-                        message_text=bm.inline_send_video_prompt("TikTok"),
+                        message_text=bm.inline_send_video_prompt("TikTok", lang=user_lang),
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Enviar vídeo inline",
+                        bm.inline_send_video_button(lang=user_lang),
                         f"inline:tiktok:{token}",
                     ),
                 )
@@ -127,14 +128,14 @@ async def handle_tiktok_inline_query(
                 results.append(
                     InlineQueryResultArticle(
                         id=f"tiktok_inline:{token}",
-                        title="TikTok Foto",
-                        description=info.description if info and info.description else "Toque no botão para enviar esta foto inline.",
+                        title=bm.inline_photo_title("TikTok", lang=user_lang),
+                        description=info.description if info and info.description else bm.inline_send_photo_description(lang=user_lang),
                         thumbnail_url=first_photo,
                         input_message_content=types.InputTextMessageContent(
-                            message_text="A foto do TikTok está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo.",
+                            message_text=bm.inline_send_photo_prompt("TikTok", lang=user_lang),
                         ),
                         reply_markup=kb.inline_send_media_keyboard(
-                            "Enviar foto inline",
+                            bm.inline_send_photo_button(lang=user_lang),
                             f"inline:tiktok:{token}",
                         ),
                     )
@@ -159,13 +160,18 @@ async def handle_tiktok_inline_query(
             )
             results.append(
                 build_inline_album_result(
-                    "tiktok",
-                    token,
-                    deep_link,
-                    len(images),
+                    result_id=f"tiktok_album:{token}",
+                    service_name="TikTok",
+                    deep_link=deep_link,
+                    message_text=bm.captions(
+                        user_settings["captions"],
+                        info.description if info else None,
+                        bot_url,
+                    ),
                     preview_url=first_photo,
                     preview_file_id=preview_file_id,
-                    description=info.description if info else None,
+                    thumbnail_url=first_photo,
+                    lang=user_lang,
                 )
             )
             await safe_answer_inline_query_fn(query, results, cache_time=10, is_personal=True)
@@ -198,6 +204,11 @@ async def send_inline_tiktok_media(
     safe_edit_inline_text_fn=safe_edit_inline_text,
 ) -> None:
     async def _plan(request, edit_status: StatusEditor, state: InlineFlowState) -> None:
+        try:
+            user_lang = await deps.db.get_language(actor_user_id)
+        except Exception:
+            user_lang = "pt"
+
         source_url = request.source_url
         user_settings = request.user_settings
         bot_url = await get_bot_url_fn(deps.bot)
@@ -206,7 +217,7 @@ async def send_inline_tiktok_media(
         info = await video_info_fn(data)
         if not info:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         db_video_url = build_tiktok_video_url_fn(info)
@@ -268,6 +279,7 @@ async def send_inline_tiktok_media(
             safe_edit_inline_media_fn=safe_edit_inline_media_fn,
             metrics_log_key="tiktok_inline",
             log=logging,
+            lang=user_lang,
         )
 
     await run_inline_send_flow(

@@ -5,6 +5,7 @@ def test_detect_supported_service_covers_all_supported_group_guard_links():
     assert detect_supported_service("https://www.instagram.com/p/demo") == "instagram"
     assert detect_supported_service("https://www.threads.com/@demo/post/Abc_123") == "threads"
     assert detect_supported_service("https://www.tiktok.com/@demo/video/1") == "tiktok"
+    assert detect_supported_service("https://k.kwai.com/p/BCwOlWCA") == "kwai"
     assert detect_supported_service("https://soundcloud.com/artist/track") == "soundcloud"
     assert detect_supported_service("https://open.spotify.com/track/abc123?si=demo") == "spotify"
     assert detect_supported_service("https://pin.it/demo123") == "pinterest"

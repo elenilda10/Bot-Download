@@ -27,6 +27,7 @@ _ALBUM_SERVICES = {"instagram", "threads", "tiktok", "pinterest", "twitter"}
 
 
 async def _process_inline_album_deeplink(message: types.Message, payload: str) -> bool:
+    user_lang = await db.get_language(message.from_user.id)
     if not payload.startswith("album_"):
         return False
     token = payload.removeprefix("album_").strip()
@@ -35,7 +36,7 @@ async def _process_inline_album_deeplink(message: types.Message, payload: str) -
 
     request = get_inline_album_request(token)
     if not request:
-        await message.reply(bm.inline_album_link_invalid())
+        await message.reply(bm.inline_album_link_invalid(lang=user_lang))
         return True
 
     try:
@@ -49,10 +50,10 @@ async def _process_inline_album_deeplink(message: types.Message, payload: str) -
             request.service,
             summarize_url_for_log(request.url),
         )
-        await message.reply(bm.something_went_wrong())
+        await message.reply(bm.something_went_wrong(lang=user_lang))
         return True
 
-    await message.reply(bm.inline_album_link_invalid())
+    await message.reply(bm.inline_album_link_invalid(lang=user_lang))
     return True
 
 
@@ -69,6 +70,15 @@ async def _process_supported_link(message: types.Message, service: str, url: str
     if service == "tiktok":
         from handlers import tiktok
         await tiktok.process_tiktok(message, direct_url=url)
+        return
+
+    if service == "kwai":
+        from handlers import universal
+
+        await universal.process_universal_link(
+            message,
+            direct_url=url,
+        )
         return
 
     if service == "instagram":
@@ -126,6 +136,7 @@ def _resolve_batch_concurrency() -> int:
 
 
 async def process_batch_links(message: types.Message):
+    user_lang = await db.get_language(message.from_user.id)
     links = extract_supported_links(get_message_text(message))
     if len(links) <= 1:
         return
@@ -140,21 +151,21 @@ async def process_batch_links(message: types.Message):
 
     concurrency = min(len(selected_links), _resolve_batch_concurrency())
     status_message = await message.answer(
-        bm.batch_links_started(len(selected_links), len(links)),
+        bm.batch_links_started(len(selected_links), len(links), lang=user_lang),
         parse_mode="HTML",
     )
     try:
         if concurrency > 1:
             await safe_delete_message(status_message)
             await _process_batch_links_parallel(message, selected_links, concurrency)
-            status_message = await message.answer(bm.batch_links_finished(len(selected_links)))
+            status_message = await message.answer(bm.batch_links_finished(len(selected_links), lang=user_lang))
             return
 
         for index, (service, url) in enumerate(selected_links, start=1):
             service_name = SERVICE_DISPLAY_NAMES.get(service, service.title())
             await safe_delete_message(status_message)
             status_message = await message.answer(
-                bm.batch_link_progress(index, len(selected_links), service_name),
+                bm.batch_link_progress(index, len(selected_links), service_name, lang=user_lang),
             )
             try:
                 await _process_supported_link(message, service, url)
@@ -166,10 +177,10 @@ async def process_batch_links(message: types.Message):
                     summarize_url_for_log(url),
                     exc,
                 )
-                await message.reply(bm.something_went_wrong())
+                await message.reply(bm.something_went_wrong(lang=user_lang))
 
         await safe_delete_message(status_message)
-        status_message = await message.answer(bm.batch_links_finished(len(selected_links)))
+        status_message = await message.answer(bm.batch_links_finished(len(selected_links), lang=user_lang))
     finally:
         await asyncio.sleep(2)
         await safe_delete_message(status_message)
@@ -180,6 +191,7 @@ async def _process_batch_links_parallel(
     links: list[tuple[str, str]],
     concurrency: int,
 ) -> None:
+    user_lang = await db.get_language(message.from_user.id)
     semaphore = asyncio.Semaphore(max(1, int(concurrency)))
     total = len(links)
 
@@ -187,7 +199,7 @@ async def _process_batch_links_parallel(
         async with semaphore:
             service_name = SERVICE_DISPLAY_NAMES.get(service, service.title())
             status_message = await message.answer(
-                bm.batch_link_progress(index, total, service_name),
+                bm.batch_link_progress(index, total, service_name, lang=user_lang),
             )
             try:
                 await _process_supported_link(message, service, url)
@@ -199,7 +211,7 @@ async def _process_batch_links_parallel(
                     summarize_url_for_log(url),
                     exc,
                 )
-                await message.reply(bm.something_went_wrong())
+                await message.reply(bm.something_went_wrong(lang=user_lang))
             finally:
                 await safe_delete_message(status_message)
 
@@ -209,9 +221,10 @@ async def _process_batch_links_parallel(
 
 
 async def show_supported_sites(call: types.CallbackQuery):
+    user_lang = await db.get_language(call.from_user.id)
     bot_username = await get_bot_username(bot)
     await call.message.edit_text(
-        bm.help_message(bot_username),
+        bm.help_message(bot_username, lang=user_lang),
         reply_markup=kb.start_keyboard(bot_username, ref_user_id=call.from_user.id),
         parse_mode="HTML",
     )

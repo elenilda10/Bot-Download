@@ -12,6 +12,15 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"(https?://(www\.|vm\.|vt\.|vn\.)?tiktok\.com/\S+)", re.IGNORECASE),
     ),
     (
+        "kwai",
+        re.compile(
+            r"(https?://(?:[\\w-]+\\.)?kwai\\.com/\\S+|"
+            r"https?://(?:[\\w-]+\\.)?kwai-video\\.com/\\S+|"
+            r"https?://(?:[\\w-]+\\.)?kw\\.ai/\\S+)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
         "instagram",
         re.compile(r"(https?://(www\.)?instagram\.com/\S+)", re.IGNORECASE),
     ),

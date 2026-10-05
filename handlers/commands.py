@@ -184,8 +184,11 @@ async def ban_command(message: types.Message):
     if not message.from_user or not _is_admin(message.from_user.id):
         return
 
+    user_lang = await user_mod.db.get_language(message.from_user.id)
+    is_en = str(user_lang).lower().startswith("en")
+
     target_id: Optional[int] = None
-    target_name = "Alvo"
+    target_name = "Target" if is_en else "Alvo"
 
     # Permite banir respondendo a uma mensagem encaminhada no PV
     if message.reply_to_message:
@@ -205,15 +208,35 @@ async def ban_command(message: types.Message):
                 target_id = int(parts[1])
                 target_name = str(target_id)
             except ValueError:
-                await message.reply("❌ ID numérico inválido. Envie ex: <code>/ban 123456789</code> ou <code>/ban -100123456789</code>")
+                await message.reply(
+                        "❌ Invalid numeric ID. Example: <code>/ban 123456789</code> "
+                        "or <code>/ban -100123456789</code>"
+                        if is_en
+                        else
+                        "❌ ID numérico inválido. Exemplo: <code>/ban 123456789</code> "
+                        "ou <code>/ban -100123456789</code>"
+                    )
                 return
 
     if not target_id:
-        await message.reply("⚠️ Envie o comando com o ID:\n<code>/ban &lt;id_usuario_ou_grupo&gt;</code>\n\nOu responda a uma mensagem encaminhada com <code>/ban</code>.")
+        await message.reply(
+            "⚠️ Send the command with the ID:\n"
+            "<code>/ban &lt;user_or_group_id&gt;</code>\n\n"
+            "Or reply to a forwarded message with <code>/ban</code>."
+            if is_en
+            else
+            "⚠️ Envie o comando com o ID:\n"
+            "<code>/ban &lt;id_usuario_ou_grupo&gt;</code>\n\n"
+            "Ou responda a uma mensagem encaminhada com <code>/ban</code>."
+        )
         return
 
     if _is_admin(target_id):
-        await message.reply("🚫 Administradores não podem ser banidos.")
+        await message.reply(
+            "🚫 Administrators cannot be banned."
+            if is_en
+            else "🚫 Administradores não podem ser banidos."
+        )
         return
 
     try:
@@ -226,10 +249,21 @@ async def ban_command(message: types.Message):
         )
         await user_mod.db.ban_user(target_id)
         logging.info("Ban aplicado pelo admin no PV: target_id=%s", target_id)
-        await message.reply(f"🚫 <b>{target_name}</b> (<code>{target_id}</code>) foi <b>banido</b> do bot.")
+        await message.reply(
+            f"🚫 <b>{target_name}</b> (<code>{target_id}</code>) "
+            f"was <b>banned</b> from the bot."
+            if is_en
+            else
+            f"🚫 <b>{target_name}</b> (<code>{target_id}</code>) "
+            f"foi <b>banido</b> do bot."
+        )
     except Exception as exc:
         logging.exception("Erro ao banir target_id=%s: %s", target_id, exc)
-        await message.reply(f"❌ Erro ao banir: {exc}")
+        await message.reply(
+            f"❌ Error banning: {exc}"
+            if is_en
+            else f"❌ Erro ao banir: {exc}"
+        )
 
 
 async def unban_command(message: types.Message):
@@ -240,8 +274,11 @@ async def unban_command(message: types.Message):
     if not message.from_user or not _is_admin(message.from_user.id):
         return
 
+    user_lang = await user_mod.db.get_language(message.from_user.id)
+    is_en = str(user_lang).lower().startswith("en")
+
     target_id: Optional[int] = None
-    target_name = "Alvo"
+    target_name = "Target" if is_en else "Alvo"
 
     if message.reply_to_message:
         fwd_user = getattr(message.reply_to_message, "forward_from", None)
@@ -259,20 +296,43 @@ async def unban_command(message: types.Message):
                 target_id = int(parts[1])
                 target_name = str(target_id)
             except ValueError:
-                await message.reply("❌ ID numérico inválido. Envie ex: <code>/unban 123456789</code>")
+                await message.reply(
+                        "❌ Invalid numeric ID. Example: <code>/unban 123456789</code>"
+                        if is_en
+                        else
+                        "❌ ID numérico inválido. Exemplo: <code>/unban 123456789</code>"
+                    )
                 return
 
     if not target_id:
-        await message.reply("⚠️ Envie o comando com o ID:\n<code>/unban &lt;id_usuario_ou_grupo&gt;</code>\n\nOu responda a uma mensagem com <code>/unban</code>.")
+        await message.reply(
+            "⚠️ Send the command with the ID:\n"
+            "<code>/unban &lt;user_or_group_id&gt;</code>\n\n"
+            "Or reply to a message with <code>/unban</code>."
+            if is_en
+            else
+            "⚠️ Envie o comando com o ID:\n"
+            "<code>/unban &lt;id_usuario_ou_grupo&gt;</code>\n\n"
+            "Ou responda a uma mensagem com <code>/unban</code>."
+        )
         return
 
     try:
         await user_mod.db.set_active(target_id)
         logging.info("Desban aplicado pelo admin no PV: target_id=%s", target_id)
-        await message.reply(f"✅ <b>{target_name}</b> (<code>{target_id}</code>) foi <b>desbanido</b>.")
+        await message.reply(
+            f"✅ <b>{target_name}</b> (<code>{target_id}</code>) was <b>unbanned</b>."
+            if is_en
+            else
+            f"✅ <b>{target_name}</b> (<code>{target_id}</code>) foi <b>desbanido</b>."
+        )
     except Exception as exc:
         logging.exception("Erro ao desbanir target_id=%s: %s", target_id, exc)
-        await message.reply(f"❌ Erro ao desbanir: {exc}")
+        await message.reply(
+            f"❌ Error unbanning: {exc}"
+            if is_en
+            else f"❌ Erro ao desbanir: {exc}"
+        )
 
 
 async def handle_bot_membership(update: ChatMemberUpdated):
@@ -304,13 +364,13 @@ async def handle_bot_membership(update: ChatMemberUpdated):
             if became_member:
                 await user_mod.bot.send_message(
                     chat_id=chat_id,
-                    text=bm.join_group(chat_title),
+                    text=bm.join_group(chat_title, lang=language),
                     parse_mode="HTML",
                 )
             if became_admin:
                 await user_mod.bot.send_message(
                     chat_id=chat_id,
-                    text=bm.admin_rights_granted(chat_title),
+                    text=bm.admin_rights_granted(chat_title, lang=language),
                     parse_mode="HTML",
                 )
     elif new_status in {ChatMemberStatus.KICKED, ChatMemberStatus.LEFT, ChatMemberStatus.RESTRICTED}:
@@ -318,7 +378,11 @@ async def handle_bot_membership(update: ChatMemberUpdated):
 
 
 async def remove_reply_keyboard(message: types.Message):
-    await message.reply(text=bm.keyboard_removed(), reply_markup=types.ReplyKeyboardRemove())
+    user_lang = await user_mod.db.get_language(message.from_user.id)
+    await message.reply(
+        text=bm.keyboard_removed(lang=user_lang),
+        reply_markup=types.ReplyKeyboardRemove(),
+    )
 
 
 async def stats_command(message: types.Message):
@@ -328,10 +392,25 @@ async def stats_command(message: types.Message):
     period = "Week"
     mode = "total"
     try:
-        chart_bytes, caption = await user_mod._render_stats(period, mode)
-        await _send_stats_photo(message, period, mode, chart_bytes, caption)
+        user_lang = await user_mod.db.get_language(message.from_user.id)
+        chart_bytes, caption = await user_mod._render_stats(
+            period,
+            mode,
+            user_lang,
+        )
+        await _send_stats_photo(
+            message,
+            period,
+            mode,
+            chart_bytes,
+            caption,
+            user_lang,
+        )
     except Exception:
-        await message.answer(bm.stats_temporarily_unavailable())
+        user_lang = await user_mod.db.get_language(message.from_user.id)
+        await message.answer(
+            bm.stats_temporarily_unavailable(lang=user_lang)
+        )
         logging.exception("Error handling /stats")
 
 

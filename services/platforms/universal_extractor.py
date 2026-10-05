@@ -9,6 +9,7 @@ from typing import Optional, Any, Callable
 import aiohttp
 
 from services.logger import logger as logging
+from services.platforms.kwai_media import extract_kwai_video_page, is_kwai_url
 
 logging = logging.bind(service="universal_extractor")
 
@@ -166,6 +167,132 @@ async def _generate_thumbnail(video_path: str, output_thumb_path: str) -> Option
     return None
 
 
+
+async def _download_kwai(
+    url: str,
+    output_dir: str,
+    post_id: str,
+    on_progress: Optional[
+        Callable[[int, Optional[int], Optional[float]], None]
+    ] = None,
+) -> Optional[UniversalMediaResult]:
+    info = await extract_kwai_video_page(url)
+    if not info:
+        return None
+
+    media_url = info["media_url"]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    target_video = os.path.join(
+        output_dir,
+        f"{post_id}_kwai.mp4",
+    )
+
+    thumb_path = os.path.join(
+        output_dir,
+        f"{post_id}_kwai_thumb.jpg",
+    )
+
+    headers = {
+        "User-Agent": _DEFAULT_UA,
+        "Referer": "https://www.kwai.com/",
+        "Accept": "*/*",
+    }
+
+    timeout = aiohttp.ClientTimeout(
+        connect=15,
+        sock_read=180,
+        total=600,
+    )
+
+    downloaded = 0
+
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(
+                media_url,
+                allow_redirects=True,
+                timeout=timeout,
+            ) as response:
+
+                if response.status != 200:
+                    logging.warning(
+                        "Kwai CDN returned status=%s",
+                        response.status,
+                    )
+                    return None
+
+                total_header = response.headers.get("Content-Length")
+
+                try:
+                    total = int(total_header) if total_header else None
+                except (TypeError, ValueError):
+                    total = None
+
+                with open(target_video, "wb") as output:
+                    async for chunk in response.content.iter_chunked(
+                        256 * 1024
+                    ):
+                        if not chunk:
+                            continue
+
+                        output.write(chunk)
+                        downloaded += len(chunk)
+
+                        if on_progress:
+                            on_progress(
+                                downloaded,
+                                total,
+                                None,
+                            )
+
+    except Exception as exc:
+        logging.warning(
+            "Kwai download failed url=%s error=%s",
+            url,
+            exc,
+        )
+
+        try:
+            if os.path.exists(target_video):
+                os.remove(target_video)
+        except OSError:
+            pass
+
+        return None
+
+    if (
+        not os.path.exists(target_video)
+        or os.path.getsize(target_video) == 0
+    ):
+        return None
+
+    meta = await _get_video_metadata(target_video)
+
+    thumb = await _generate_thumbnail(
+        target_video,
+        thumb_path,
+    )
+
+    return UniversalMediaResult(
+        id=post_id,
+        description=info.get("title") or "Vídeo do Kwai",
+        author=info.get("author") or "Kwai",
+        media_list=[
+            UniversalMediaItem(
+                url=target_video,
+                type="video",
+                thumb=thumb,
+                width=meta["width"],
+                height=meta["height"],
+                duration=meta["duration"],
+                index=0,
+            )
+        ],
+    )
+
+
 async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> Optional[UniversalMediaResult]:
     target_dir = os.path.join(output_dir, f"gdl_{post_id}")
     os.makedirs(target_dir, exist_ok=True)
@@ -253,7 +380,7 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
 
 async def _download_with_ytdlp(
     url: str,
-    output_dir: str = "/root/Bot-Download/downloads",
+    output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
     **kwargs: Any,
@@ -400,7 +527,7 @@ async def _download_with_ytdlp(
 
 async def download_universal_media(
     url: str,
-    output_dir: str = "/root/Bot-Download/downloads",
+    output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
     **kwargs: Any,
@@ -410,6 +537,16 @@ async def download_universal_media(
     if not post_id:
         clean = _clean_url(url)
         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
+
+    if is_kwai_url(url):
+        res_kwai = await _download_kwai(
+            url,
+            output_dir,
+            post_id,
+            on_progress=on_progress,
+        )
+        if res_kwai:
+            return res_kwai
 
     res_direct = await _download_direct_image(url, output_dir, post_id=post_id)
     if res_direct:

@@ -136,7 +136,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             )
             youtube_track = await asyncio.to_thread(search_youtube_track, query)
             if not youtube_track or not youtube_track.get("webpage_url"):
-                await message.reply(bm.spotify_source_not_found())
+                await message.reply(bm.spotify_source_not_found(lang=user_lang))
                 return False
             return True
 
@@ -192,7 +192,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large())
+            await message.reply(bm.audio_too_large(lang=user_lang))
 
         await run_audio_flow(
             cache_key=cache_key,
@@ -210,17 +210,17 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
         )
     except SpotifyError as exc:
         logging.warning("Spotify metadata error: url=%s error=%s", source_url, exc)
-        await message.reply(bm.spotify_metadata_failed())
+        await message.reply(bm.spotify_metadata_failed(lang=user_lang))
     except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError) as exc:
         await handle_download_backpressure_error(
             exc,
             message=message,
             show_service_status=show_service_status,
-            too_large_text=bm.audio_too_large(),
+            too_large_text=bm.audio_too_large(lang=user_lang),
         )
     except asyncio.TimeoutError:
         await handle_download_error(
-            message, business_id=business_id, text=bm.timeout_error()
+            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
         )
     except Exception as exc:
         logging.exception("Spotify download failed: error=%s", exc)

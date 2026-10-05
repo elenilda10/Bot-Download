@@ -69,9 +69,13 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
     await react_to_message(message, "👾", business_id=business_id)
     await bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.UPLOAD_VIDEO, business_connection_id=business_id)
 
+    user_lang = await db.get_language(message.from_user.id)
+
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status())
+        status_message = await message.answer(
+            bm.downloading_video_status(lang=user_lang)
+        )
 
     try:
         await send_analytics(user_id=message.from_user.id, chat_type=message.chat.type, action_name="instagram")
@@ -87,7 +91,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
             return
 
         if status_message:
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
 
         user_captions_mode = user_settings.get("captions", "on")
         caption = bm.captions(user_captions_mode, video_data.description, bot_url)
@@ -103,6 +107,11 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
             preview_url,
             url,
             user_settings,
+            has_video=(
+                media_count == 1
+                and video_data.media_list[0].type == "video"
+            ),
+            platform="instagram",
         )
 
         local_files_to_clean = []

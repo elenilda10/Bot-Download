@@ -120,6 +120,12 @@ async def run_inline_send_flow(
         return
 
     log = log or logging
+
+    try:
+        user_lang = await deps.db.get_language(actor_user_id)
+    except Exception:
+        user_lang = "pt"
+
     utils = _handler_utils()
     state = InlineFlowState()
     edit_status = utils.build_inline_status_editor(
@@ -128,6 +134,7 @@ async def run_inline_send_flow(
         callback_data_factory=lambda _media_kind: callback_data,
         safe_edit_inline_text_fn=safe_edit_inline_text_fn,
         button_text=button_text,
+        lang=user_lang,
     )
 
     try:
@@ -140,7 +147,7 @@ async def run_inline_send_flow(
         await edit_status(utils.build_queue_busy_text(exc.position), with_retry_button=True)
     except asyncio.TimeoutError:
         reset_inline_video_request(token)
-        await edit_status(bm.timeout_error(), with_retry_button=True)
+        await edit_status(bm.timeout_error(lang=user_lang), with_retry_button=True)
     except Exception as exc:
         log.exception(
             "Error sending inline %s media: inline_message_id=%s token=%s error=%s",
@@ -150,7 +157,7 @@ async def run_inline_send_flow(
             exc,
         )
         reset_inline_video_request(token)
-        await edit_status(bm.something_went_wrong(), with_retry_button=True)
+        await edit_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
     finally:
         for callback in state.cleanup_callbacks:
             callback()
@@ -172,6 +179,7 @@ async def deliver_inline_photo(
     reply_markup,
     edit_status: StatusEditor,
     safe_edit_inline_media_fn,
+    lang: str = "pt",
     log=None,
 ) -> None:
     """Serve a single photo inline, uploading it to the cache channel once."""
@@ -181,10 +189,10 @@ async def deliver_inline_photo(
         if not channel_id:
             log.error("CHANNEL_ID is not configured; %s inline upload is disabled", service_name)
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True, media_kind="photo")
+            await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True, media_kind="photo")
             return
 
-        await edit_status(bm.uploading_status(), media_kind="photo")
+        await edit_status(bm.uploading_status(lang=lang), media_kind="photo")
         sent = await deps.bot.send_photo(
             chat_id=channel_id,
             photo=FSInputFile(photo_url) if (isinstance(photo_url, str) and os.path.exists(photo_url)) else photo_url,
@@ -192,12 +200,12 @@ async def deliver_inline_photo(
         )
         if not sent.photo:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True, media_kind="photo")
+            await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True, media_kind="photo")
             return
         db_id = sent.photo[-1].file_id
         await deps.db.add_file(cache_key, db_id, "photo")
     else:
-        await edit_status(bm.uploading_status(), media_kind="photo")
+        await edit_status(bm.uploading_status(lang=lang), media_kind="photo")
 
     edited = await safe_edit_inline_media_fn(
         deps.bot,
@@ -214,7 +222,7 @@ async def deliver_inline_photo(
         return
 
     reset_inline_video_request(token)
-    await edit_status(bm.something_went_wrong(), with_retry_button=True, media_kind="photo")
+    await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True, media_kind="photo")
 
 
 async def deliver_inline_video(
@@ -235,6 +243,7 @@ async def deliver_inline_video(
     state: InlineFlowState,
     safe_edit_inline_media_fn,
     metrics_log_key: Optional[str] = None,
+    lang: str = "pt",
     log=None,
 ) -> None:
     """Serve a single video inline, downloading and uploading it to the cache
@@ -248,10 +257,11 @@ async def deliver_inline_video(
         if not channel_id:
             log.error("CHANNEL_ID is not configured; %s inline upload is disabled", service_name)
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True)
             return
 
-        await edit_status(bm.downloading_video_status())
+        await edit_status(bm.downloading_video_status(lang=lang))
+
         # Inline messages keep a static download status. Avoid percentage/ETA edits
         # during the transfer to reduce Telegram Bot API edit traffic and 429 risk.
         async def _ignore_inline_progress(*_args, **_kwargs) -> None:
@@ -260,11 +270,11 @@ async def deliver_inline_video(
         metrics = await download_fn(_ignore_inline_progress)
         if metrics is VIDEO_TOO_LARGE:
             complete_inline_video_request(token)
-            await edit_status(bm.video_too_large())
+            await edit_status(bm.video_too_large(lang=lang))
             return
         if not metrics:
             reset_inline_video_request(token)
-            await edit_status(bm.something_went_wrong(), with_retry_button=True)
+            await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True)
             return
 
         if metrics_log_key:
@@ -272,10 +282,10 @@ async def deliver_inline_video(
         state.register_download_path(metrics.path)
         if metrics.size >= max_file_size:
             complete_inline_video_request(token)
-            await edit_status(bm.video_too_large())
+            await edit_status(bm.video_too_large(lang=lang))
             return
 
-        await edit_status(bm.uploading_status())
+        await edit_status(bm.uploading_status(lang=lang))
         
         # Otimiza o container de vídeo para streaming instantâneo
         _optimize_video_for_streaming(metrics.path)
@@ -311,7 +321,7 @@ async def deliver_inline_video(
             db_id,
         )
     else:
-        await edit_status(bm.uploading_status())
+        await edit_status(bm.uploading_status(lang=lang))
 
     edited = await safe_edit_inline_media_fn(
         deps.bot,
@@ -339,7 +349,7 @@ async def deliver_inline_video(
         return
 
     reset_inline_video_request(token)
-    await edit_status(bm.something_went_wrong(), with_retry_button=True)
+    await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True)
 
 
 async def ensure_album_preview_file_id(
@@ -409,6 +419,7 @@ async def handle_post_inline_query(
             return
         source_url = strip_url_fn(match.group(0))
         user_settings = await deps.db.user_settings(query.from_user.id)
+        user_lang = await deps.db.get_language(query.from_user.id)
         bot_url = await get_bot_url_fn(deps.bot)
 
         post = await service.fetch_post(source_url)
@@ -454,14 +465,14 @@ async def handle_post_inline_query(
             results = [
                 types.InlineQueryResultArticle(
                     id=f"{service_key}_inline:{token}",
-                    title=f"{service_name} Photo",
-                    description=post.description or "Press the button to send this photo inline.",
+                    title=bm.inline_photo_title(service_name, lang=user_lang),
+                    description=post.description or bm.inline_send_photo_description(lang=user_lang),
                     thumbnail_url=first_preview,
                     input_message_content=types.InputTextMessageContent(
-                        message_text=f"{service_name} photo is being prepared...\nIf it does not start automatically, tap the button below.",
+                        message_text=bm.inline_send_photo_prompt(service_name, lang=user_lang),
                     ),
                     reply_markup=kb.inline_send_media_keyboard(
-                        "Enviar foto inline",
+                        bm.inline_send_photo_button(lang=user_lang),
                         f"inline:{service_key}:{token}",
                     ),
                 )
@@ -492,6 +503,7 @@ async def handle_post_inline_query(
                     message_text=bm.captions(user_settings["captions"], post.description, bot_url),
                     preview_file_id=preview_file_id,
                     preview_url=first_preview,
+                    lang=user_lang,
                     thumbnail_url=first_preview or get_inline_service_icon(service_key),
                 )
             ]
@@ -506,8 +518,8 @@ async def handle_post_inline_query(
                         id=f"{service_key}_photo_{post.id}",
                         photo_url=first_photo.url,
                         thumbnail_url=preview_url,
-                        title=bm.inline_photo_title(service_name),
-                        description=post.description or bm.inline_photo_description(),
+                        title=bm.inline_photo_title(service_name, lang=user_lang),
+                        description=post.description or bm.inline_photo_description(lang=user_lang),
                         caption=bm.captions(user_settings["captions"], post.description, bot_url),
                         reply_markup=kb.return_video_info_keyboard(
                             None, None, None, None, None, source_url, user_settings,
@@ -523,9 +535,9 @@ async def handle_post_inline_query(
                 types.InlineQueryResultArticle(
                     id=f"unsupported_{service_key}_content",
                     title=f"{service_name} Content",
-                    description="Only single videos are supported inline.",
+                    description=bm.inline_single_video_only(service_name, lang=user_lang),
                     input_message_content=types.InputTextMessageContent(
-                        message_text=f"Only single {service_name} videos are supported inline.",
+                        message_text=bm.inline_single_video_only(service_name, lang=user_lang),
                     ),
                 )
             ]
@@ -537,14 +549,14 @@ async def handle_post_inline_query(
         results = [
             types.InlineQueryResultArticle(
                 id=f"{service_key}_inline:{token}",
-                title=f"{service_name} Video",
-                description=post.description or "Press the button to send this video inline.",
+                title=bm.inline_video_title(service_name, lang=user_lang),
+                description=post.description or bm.inline_send_video_description(lang=user_lang),
                 thumbnail_url=preview_url,
                 input_message_content=types.InputTextMessageContent(
-                    message_text=bm.inline_send_video_prompt(service_name),
+                    message_text=bm.inline_send_video_prompt(service_name, lang=user_lang),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Enviar vídeo inline",
+                    bm.inline_send_video_button(lang=user_lang),
                     f"inline:{service_key}:{token}",
                 ),
             )
@@ -582,11 +594,16 @@ async def send_inline_post_media(
 ) -> None:
     log = log or logging
 
+    try:
+        user_lang = await deps.db.get_language(actor_user_id)
+    except Exception:
+        user_lang = "pt"
+
     async def _plan(request, edit_status, state: InlineFlowState) -> None:
         post = await service.fetch_post(request.source_url)
         if not post or len(post.media_list) != 1:
             complete_inline_video_request(token)
-            await edit_status(bm.inline_photos_not_supported(service_name))
+            await edit_status(bm.inline_photos_not_supported(service_name, lang=user_lang))
             return
 
         async def _build_caption() -> Optional[str]:
@@ -623,12 +640,13 @@ async def send_inline_post_media(
                 edit_status=edit_status,
                 safe_edit_inline_media_fn=safe_edit_inline_media_fn,
                 log=log,
+                lang=user_lang,
             )
             return
 
         if first_item.type != "video":
             complete_inline_video_request(token)
-            await edit_status(bm.inline_photos_not_supported(service_name))
+            await edit_status(bm.inline_photos_not_supported(service_name, lang=user_lang))
             return
 
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -661,6 +679,7 @@ async def send_inline_post_media(
             safe_edit_inline_media_fn=safe_edit_inline_media_fn,
             metrics_log_key=f"{service_key}_inline",
             log=log,
+                lang=user_lang,
         )
 
     await run_inline_send_flow(

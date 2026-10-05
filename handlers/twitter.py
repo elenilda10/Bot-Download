@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import html
 from typing import Optional
 
 from aiogram import F, Router, types
@@ -36,6 +37,48 @@ _TWITTER_LINK_REGEX = r"(https?://(www\.)?(twitter|x)\.com/\S+|https?://t\.co/\S
 router = Router()
 
 
+async def fetch_twitter_text_post(url: str) -> Optional[str]:
+    """Extrai o texto de uma publicação pública do X via oEmbed."""
+    import aiohttp
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://publish.twitter.com/oembed",
+                params={"url": url, "omit_script": "true"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as response:
+                if response.status != 200:
+                    return None
+
+                data = await response.json()
+                embed_html = data.get("html") or ""
+
+        match = re.search(
+            r"<p[^>]*>(.*?)</p>",
+            embed_html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            return None
+
+        post_text = match.group(1)
+        post_text = re.sub(
+            r"<br\s*/?>",
+            "\n",
+            post_text,
+            flags=re.IGNORECASE,
+        )
+        post_text = re.sub(r"<[^>]+>", "", post_text)
+        post_text = html.unescape(post_text).strip()
+
+        return post_text or None
+
+    except Exception as exc:
+        logging.warning("Twitter oEmbed text fallback failed: %s", exc)
+        return None
+
+
 @router.message(
     F.text.regexp(_TWITTER_LINK_REGEX) | (F.caption & F.caption.regexp(_TWITTER_LINK_REGEX))
 )
@@ -68,11 +111,46 @@ async def handle_twitter_message(message: types.Message, **kwargs):
         else:
             await bot.send_chat_action(message.chat.id, ChatAction.RECORD_VIDEO)
 
-        status_message = await message.reply(bm.downloading_video_status())
+        user_lang = await db.get_language(message.from_user.id)
+        status_message = await message.reply(
+            bm.downloading_video_status(lang=user_lang)
+        )
 
         media_result = await download_twitter_media(url, output_dir=OUTPUT_DIR)
         if not media_result or not media_result.media_list:
-            if status_message: await safe_delete_message(status_message)
+            if status_message:
+                await safe_delete_message(status_message)
+
+            post_text = await fetch_twitter_text_post(url)
+            if post_text:
+                reply_markup = kb.return_video_info_keyboard(
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    url,
+                    user_settings,
+                    lang=user_lang,
+                    has_video=False,
+                    platform="twitter",
+                )
+
+                text_caption = bm.captions(
+                    user_settings.get("captions", "on"),
+                    post_text,
+                    bot_url,
+                )
+
+                await message.reply(
+                    text_caption,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup,
+                )
+                await react_to_message(message, "👍", business_id=business_id)
+                return
+
             await handle_download_error(message, business_id=business_id)
             await react_to_message(message, "👎", business_id=business_id)
             return

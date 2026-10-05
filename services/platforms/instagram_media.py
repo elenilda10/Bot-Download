@@ -1,3 +1,4 @@
+import time
 import asyncio
 import glob
 import hashlib
@@ -180,11 +181,169 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
 
 
 def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVideo]:
+    """Extrai vídeos, fotos e carrosséis do Instagram usando yt-dlp.
+
+    Para vídeos, deixa o yt-dlp fazer o download normalmente.
+    Para fotos/carrosséis, usa o JSON extraído pelo yt-dlp e baixa
+    diretamente a melhor imagem disponível no CDN do Instagram.
+    """
     try:
-        out_template = os.path.join(output_dir, f"{post_id}_ytdlp_%(autonumber)s.%(ext)s")
         binary = YTDLP_BIN if os.path.exists(YTDLP_BIN) else "yt-dlp"
 
-        cmd = [
+        # Primeiro extrai os metadados do post inteiro. Isso também permite
+        # detectar fotos/carrosséis, que o yt-dlp não baixa como formatos.
+        metadata_cmd = [
+            binary,
+            "--ignore-no-formats-error",
+            "--skip-download",
+            "--dump-single-json",
+            "--no-warnings",
+            "--user-agent", BROWSER_UA,
+        ]
+
+        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
+            metadata_cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
+
+        metadata_cmd.append(url)
+
+        metadata_proc = subprocess.run(
+            metadata_cmd,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+
+        data = None
+        if metadata_proc.stdout.strip():
+            try:
+                data = json.loads(metadata_proc.stdout)
+            except json.JSONDecodeError:
+                logger.warning("yt-dlp retornou JSON inválido para Instagram")
+
+        if not isinstance(data, dict):
+            data = {}
+
+        caption = data.get("description") or ""
+        author = (
+            data.get("uploader")
+            or data.get("channel")
+            or data.get("uploader_id")
+            or "instagram_user"
+        )
+
+        entries = data.get("entries")
+        if not isinstance(entries, list) or not entries:
+            entries = [data] if data else []
+
+        media_items: list[InstagramMedia] = []
+
+        # Fotos/carrosséis: entradas sem formatos de vídeo ainda contêm
+        # thumbnails do CDN em resolução original/alta.
+        for idx, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+
+            formats = entry.get("formats") or []
+            has_video = bool(formats) or bool(entry.get("url"))
+
+            if has_video:
+                continue
+
+            thumbnails = [
+                thumb
+                for thumb in (entry.get("thumbnails") or [])
+                if isinstance(thumb, dict) and thumb.get("url")
+            ]
+
+            if thumbnails:
+                best = max(
+                    thumbnails,
+                    key=lambda thumb: (
+                        (thumb.get("width") or 0) * (thumb.get("height") or 0),
+                        thumb.get("width") or 0,
+                        thumb.get("height") or 0,
+                    ),
+                )
+                image_url = best.get("url")
+                width = best.get("width")
+                height = best.get("height")
+            else:
+                image_url = entry.get("thumbnail")
+                width = None
+                height = None
+
+            if not image_url:
+                continue
+
+            try:
+                headers = {
+                    "User-Agent": BROWSER_UA,
+                    "Referer": "https://www.instagram.com/",
+                }
+                with httpx.Client(
+                    timeout=20.0,
+                    follow_redirects=True,
+                    headers=headers,
+                ) as client:
+                    response = client.get(image_url)
+                    response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "").lower()
+                ext = "jpg"
+                if "png" in content_type:
+                    ext = "png"
+                elif "webp" in content_type:
+                    ext = "webp"
+
+                target_file = os.path.join(
+                    output_dir,
+                    f"{post_id}_ytdlp_{idx + 1}.{ext}",
+                )
+
+                with open(target_file, "wb") as f:
+                    f.write(response.content)
+
+                if os.path.getsize(target_file) <= 0:
+                    try:
+                        os.remove(target_file)
+                    except OSError:
+                        pass
+                    continue
+
+                media_items.append(
+                    InstagramMedia(
+                        url=target_file,
+                        type="photo",
+                        thumb=None,
+                        width=width or 1080,
+                        height=height or 1080,
+                        duration=0,
+                        index=idx,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Falha ao baixar imagem %s via yt-dlp/CDN: %s",
+                    idx + 1,
+                    exc,
+                )
+
+        # Se encontramos fotos, o post é foto/carrossel e já está completo.
+        if media_items:
+            return InstagramVideo(
+                id=post_id,
+                description=caption.strip(),
+                author=author,
+                media_list=media_items,
+            )
+
+        # Não havia fotos: executa o fluxo normal de download de vídeo.
+        out_template = os.path.join(
+            output_dir,
+            f"{post_id}_ytdlp_%(autonumber)s.%(ext)s",
+        )
+
+        download_cmd = [
             binary,
             "--yes-playlist",
             "--no-warnings",
@@ -196,68 +355,80 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
         ]
 
         if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
-            cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
+            download_cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
 
-        cmd.append(url)
+        download_cmd.append(url)
 
-        subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        subprocess.run(
+            download_cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
 
-        info_json_pattern = os.path.join(output_dir, f"{post_id}_ytdlp_*.info.json")
+        info_json_pattern = os.path.join(
+            output_dir,
+            f"{post_id}_ytdlp_*.info.json",
+        )
         info_files = sorted(glob.glob(info_json_pattern))
 
-        media_items = []
-        caption = ""
-        author = "instagram_user"
+        for idx, info_path in enumerate(info_files):
+            try:
+                with open(info_path, "r", encoding="utf-8") as f:
+                    info = json.load(f)
 
-        if info_files:
-            for idx, info_path in enumerate(info_files):
-                try:
-                    with open(info_path, "r", encoding="utf-8") as f:
-                        info = json.load(f)
+                caption = caption or info.get("description") or ""
+                author = (
+                    info.get("uploader")
+                    or info.get("channel")
+                    or author
+                )
 
-                    caption = caption or info.get("description") or ""
-                    author = info.get("uploader") or info.get("channel") or author
+                base_name = info_path.replace(".info.json", "")
+                target_file = None
 
-                    base_name = info_path.replace(".info.json", "")
-                    target_file = None
-                    for ext in ["mp4", "jpg", "jpeg", "webp", "png"]:
-                        candidate = f"{base_name}.{ext}"
-                        if os.path.exists(candidate):
-                            target_file = candidate
-                            break
+                for ext in ("mp4", "mov", "mkv", "webm"):
+                    candidate = f"{base_name}.{ext}"
+                    if os.path.exists(candidate):
+                        target_file = candidate
+                        break
 
-                    if not target_file:
-                        continue
+                if not target_file:
+                    continue
 
-                    is_vid = target_file.endswith(".mp4")
-                    thumb_candidate = f"{base_name}.jpg"
-                    thumb = thumb_candidate if (is_vid and os.path.exists(thumb_candidate)) else None
-
-                    media_items.append(
-                        InstagramMedia(
-                            url=target_file,
-                            type="video" if is_vid else "photo",
-                            thumb=thumb,
-                            width=info.get("width") or 1080,
-                            height=info.get("height") or 1080,
-                            duration=int(info.get("duration") or 0),
-                            index=idx,
-                        )
+                media_items.append(
+                    InstagramMedia(
+                        url=target_file,
+                        type="video",
+                        thumb=None,
+                        width=info.get("width") or 1080,
+                        height=info.get("height") or 1920,
+                        duration=int(info.get("duration") or 0),
+                        index=idx,
                     )
-                except Exception as file_err:
-                    logger.warning("Erro processando info do yt-dlp: %s", file_err)
-                finally:
-                    if os.path.exists(info_path):
-                        try:
-                            os.remove(info_path)
-                        except Exception:
-                            pass
+                )
+            except Exception as file_err:
+                logger.warning(
+                    "Erro processando info do yt-dlp: %s",
+                    file_err,
+                )
+            finally:
+                try:
+                    os.remove(info_path)
+                except OSError:
+                    pass
 
         if media_items:
-            return InstagramVideo(id=post_id, description=caption.strip(), author=author, media_list=media_items)
+            return InstagramVideo(
+                id=post_id,
+                description=caption.strip(),
+                author=author,
+                media_list=media_items,
+            )
 
     except Exception as exc:
         logger.warning("yt-dlp falhou: %s", exc)
+
     return None
 
 
@@ -319,46 +490,129 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
 async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
     story_id = _extract_story_target_id(url)
     clean_url = strip_instagram_url(url)
-    post_id = _extract_instagram_post_id(url) or hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
+    post_id = _extract_instagram_post_id(url) or hashlib.blake2s(
+        clean_url.encode("utf-8"),
+        digest_size=8,
+    ).hexdigest()
     is_reel = "/reel/" in url or "/reels/" in url
-    is_album_or_story = "/p/" in url or "/stories/" in url
+
     os.makedirs(output_dir, exist_ok=True)
     loop = asyncio.get_running_loop()
 
-    # Prioridade para o gallery-dl: com os cookies da extensão, ele extrai o carrossel completo
-    res_gdl = await loop.run_in_executor(None, _run_gallery_dl, clean_url, output_dir, post_id, story_id)
+    # 1. gallery-dl continua sendo a primeira tentativa.
+    _t = time.monotonic()
+    res_gdl = await loop.run_in_executor(
+        None,
+        _run_gallery_dl,
+        clean_url,
+        output_dir,
+        post_id,
+        story_id,
+    )
+    logger.warning(
+        "Instagram fallback timing: stage=gallery_dl duration=%.2fs success=%s",
+        time.monotonic() - _t,
+        bool(res_gdl and res_gdl.media_list),
+    )
     if res_gdl and res_gdl.media_list:
         return res_gdl
 
-    # Fallback 1: Cobalt local
-    payload = {"url": clean_url, "videoQuality": "1080", "downloadMode": "auto"}
+    # 2. yt-dlp: resolve Reel/vídeo e também foto/carrossel via CDN.
+    _t = time.monotonic()
+    res_ytdlp = await loop.run_in_executor(
+        None,
+        _run_ytdlp,
+        clean_url,
+        output_dir,
+        post_id,
+    )
+    logger.warning(
+        "Instagram fallback timing: stage=yt_dlp duration=%.2fs success=%s",
+        time.monotonic() - _t,
+        bool(res_ytdlp and res_ytdlp.media_list),
+    )
+    if res_ytdlp and res_ytdlp.media_list:
+        return res_ytdlp
+
+    # 3. Cobalt local.
+    payload = {
+        "url": clean_url,
+        "videoQuality": "1080",
+        "downloadMode": "auto",
+    }
+
+    _t = time.monotonic()
     try:
-        data = await fetch_cobalt_data(COBALT_API_URL, COBALT_API_KEY, payload, source="instagram")
-        if data and isinstance(data, dict) and data.get("status") != "error":
-            res = await _download_cobalt_payload(data, post_id, output_dir, is_reel=is_reel)
+        data = await fetch_cobalt_data(
+            COBALT_API_URL,
+            COBALT_API_KEY,
+            payload,
+            source="instagram",
+        )
+        if (
+            data
+            and isinstance(data, dict)
+            and data.get("status") != "error"
+        ):
+            res = await _download_cobalt_payload(
+                data,
+                post_id,
+                output_dir,
+                is_reel=is_reel,
+            )
             if res and res.media_list:
                 return res
     except Exception as exc:
         logger.warning("Cobalt local falhou: %s", exc)
+    finally:
+        logger.warning(
+            "Instagram fallback timing: stage=cobalt_local duration=%.2fs",
+            time.monotonic() - _t,
+        )
 
-    # Fallback 2: yt-dlp
-    res_ytdlp = await loop.run_in_executor(None, _run_ytdlp, clean_url, output_dir, post_id)
-    if res_ytdlp and res_ytdlp.media_list:
-        return res_ytdlp
+    # 4. Instâncias públicas do Cobalt.
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
 
-    # Fallback 3: Instâncias públicas do Cobalt
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+    _t_public = time.monotonic()
+
+    async with httpx.AsyncClient(
+        timeout=10.0,
+        follow_redirects=True,
+    ) as client:
         for base_url in PUBLIC_COBALT_INSTANCES:
             try:
-                resp = await client.post(f"{base_url.rstrip('/')}/", json=payload, headers=headers)
-                if resp.status_code == 200:
-                    pub_data = resp.json()
-                    if pub_data.get("status") != "error":
-                        res = await _download_cobalt_payload(pub_data, post_id, output_dir, is_reel=is_reel)
-                        if res and res.media_list:
-                            return res
+                resp = await client.post(
+                    f"{base_url.rstrip('/')}/",
+                    json=payload,
+                    headers=headers,
+                )
+
+                if resp.status_code != 200:
+                    continue
+
+                pub_data = resp.json()
+                if pub_data.get("status") == "error":
+                    continue
+
+                res = await _download_cobalt_payload(
+                    pub_data,
+                    post_id,
+                    output_dir,
+                    is_reel=is_reel,
+                )
+
+                if res and res.media_list:
+                    return res
+
             except Exception:
                 continue
+
+    logger.warning(
+        "Instagram fallback timing: stage=cobalt_public duration=%.2fs success=False",
+        time.monotonic() - _t_public,
+    )
 
     return None

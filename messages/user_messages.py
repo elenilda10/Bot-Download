@@ -92,7 +92,7 @@ def get_field_text(field: str, lang: str = DEFAULT_LANG):
         ),
         "music_button": (
             "<b>🎵 Botão Shazam</b>\n"
-            "Ativar ou desativar o botão 'Identificar Música' abaixo dos vídeos baixados para reconhecer a faixa via Shazam."
+            "Ativar ou desativar o botão 'Identificar Música' em vídeos do Instagram e TikTok para reconhecer a faixa via Shazam."
         ),
         "file_button": (
             "<b>📄 Botão de Arquivo</b>\n"
@@ -142,7 +142,7 @@ def get_field_text(field: str, lang: str = DEFAULT_LANG):
         ),
         "music_button": (
             "<b>🎵 Shazam Button</b>\n"
-            "Toggle the 'Identify Music' button under downloaded videos to recognize tracks via Shazam."
+            "Toggle the 'Identify Music' button for Instagram and TikTok videos to recognize tracks via Shazam."
         ),
         "file_button": (
             "<b>📄 File Button</b>\n"
@@ -248,7 +248,7 @@ def settings_admin_only(lang: str = DEFAULT_LANG):
 
 
 def invalid_settings_option(lang: str = DEFAULT_LANG):
-    return "Opção de configuração inválida." if _normalize_lang(lang) == "pt" else "Opção de configuração inválida."
+    return "Opção de configuração inválida." if _normalize_lang(lang) == "pt" else "Invalid settings option."
 
 
 def join_group(chat_title: str, lang: str = DEFAULT_LANG) -> str:
@@ -360,7 +360,29 @@ def inline_photos_not_supported(service_name: str, lang: str = DEFAULT_LANG):
 
 
 def inline_send_video_button(lang: str = DEFAULT_LANG):
-    return "Enviar vídeo inline" if _normalize_lang(lang) == "pt" else "Enviar vídeo inline"
+    return "Enviar vídeo inline" if _normalize_lang(lang) == "pt" else "Send video inline"
+
+
+def inline_video_title(service_name: str, lang: str = DEFAULT_LANG):
+    return f"{service_name} Vídeo" if _normalize_lang(lang) == "pt" else f"{service_name} Video"
+
+
+def inline_send_video_description(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Toque no botão para enviar este vídeo inline."
+    return "Tap the button to send this video inline."
+
+
+def inline_send_photo_description(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Toque no botão para enviar esta foto inline."
+    return "Tap the button to send this photo inline."
+
+
+def inline_send_photo_prompt(service_name: str, lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return f"A foto do {service_name} está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo."
+    return f"{service_name} photo is being prepared...\nIf it does not start automatically, tap the button below."
 
 
 def inline_send_video_prompt(service_name: str, lang: str = DEFAULT_LANG):
@@ -396,7 +418,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Configure a resolução de vídeo, formato de arquivo e opções de áudio:"
             )
         return (
-            "<b>🎬 Mídia e Qualidade Settings</b>\n\n"
+            "<b>🎬 Media & Quality Settings</b>\n\n"
             "Configure video resolution, file format, and audio options:"
         )
     if category == "appearance":
@@ -406,7 +428,7 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Personalize descrições de posts, links originais e botões de ação:"
             )
         return (
-            "<b>🎨 Aparência e Botões</b>\n\n"
+            "<b>🎨 Appearance & Buttons</b>\n\n"
             "Customize post descriptions, original URL links, and action buttons:"
         )
     if category == "chat":
@@ -416,14 +438,14 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
                 "Gerencie o comportamento do bot em grupos e a exclusão automática de mensagens:"
             )
         return (
-            "<b>💬 Chat e Limpeza</b>\n\n"
+            "<b>💬 Chat & Cleanup</b>\n\n"
             "Manage group chat behavior and message cleanup settings:"
         )
     return settings(lang=lang)
 
 
 def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> str:
-    username = bot_username or "Save Vídeo DL BotBot"
+    username = bot_username or "SaveVidDLBot"
     if _normalize_lang(lang) == "pt":
         return (
             "<b>📖 Guia & Ajuda do Save Vídeo DL Bot</b>\n\n"
@@ -446,7 +468,7 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
             "<blockquote expandable><b>🎧 SoundCloud &  🟢 Spotify</b>\n"
             "• Faixas de áudio do SoundCloud em alta qualidade\n"
             "• Identificação de faixas e download do Spotify</blockquote>\n\n"
-            f"<blockquote expandable><b>⚡ Modo Inline</b>\n"
+            f"<blockquote expandable><b>⚡ Inline Mode</b>\n"
             f"• Digite <code>@{username} [link]</code> em qualquer chat\n"
             "• Prévia instantânea e envio direto de mídia</blockquote>\n\n"
             "<blockquote expandable><b>📦 Download em Lote (Batch)</b>\n"
@@ -474,8 +496,8 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
         "<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n"
         "• High quality SoundCloud audio tracks\n"
         "• Spotify track matching & audio download</blockquote>\n\n"
-        f"<blockquote expandable><b>⚡ Modo Inline</b>\n"
-        f"• Type <code>@{username} [link]</code> em any chat\n"
+        f"<blockquote expandable><b>⚡ Inline Mode</b>\n"
+        f"• Type <code>@{username} [link]</code> in any chat\n"
         "• Instant preview and direct media sharing</blockquote>\n\n"
         "<blockquote expandable><b>📦 Batch Downloading</b>\n"
         "• Paste up to 6 links in a single message\n"
@@ -484,7 +506,7 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
 
 
 def referral_message(bot_username: str, user_id: int, invited_count: int, lang: str = DEFAULT_LANG) -> str:
-    username = bot_username or "Save Vídeo DL BotBot"
+    username = bot_username or "SaveVidDLBot"
     ref_link = f"https://t.me/{username}?start=ref_{user_id}"
     if _normalize_lang(lang) == "pt":
         return (
@@ -565,3 +587,67 @@ def nothing_found(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return "Nenhuma mídia encontrada. Verifique se o link é público, não expirou e aponta diretamente para um post ou vídeo."
     return "No media found. Check that the link is public, not expired, and points directly to a post or video."
+
+
+def inline_open_result(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Abra este resultado no bot."
+    return "Open this result in the bot."
+
+
+def inline_media_title(lang: str = DEFAULT_LANG):
+    return "Mídia" if _normalize_lang(lang) == "pt" else "Media"
+
+
+def inline_only_button_warning(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Este botão funciona apenas no modo inline."
+    return "This button works only in inline mode."
+
+
+def inline_send_photo_button(lang: str = DEFAULT_LANG):
+    return "Enviar foto inline" if _normalize_lang(lang) == "pt" else "Send photo inline"
+
+
+def inline_send_audio_button(lang: str = DEFAULT_LANG):
+    return "Enviar áudio inline" if _normalize_lang(lang) == "pt" else "Send audio inline"
+
+
+def inline_send_audio_description(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Toque no botão para enviar este áudio inline."
+    return "Tap the button to send this audio inline."
+
+
+def inline_single_video_only(service_name: str, lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return f"Apenas vídeos individuais do {service_name} são suportados no modo inline."
+    return f"Only single {service_name} videos are supported inline."
+
+
+def open_bot_to_download_mp3(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Abra o bot para baixar o MP3."
+    return "Open the bot to download MP3."
+
+def unknown_data(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Dados desconhecidos."
+    return "Unknown data."
+
+def callback_processing_error(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "Erro ao processar a ação."
+    return "Error processing callback."
+
+def tiktok_stat_label(stat: str, lang: str = DEFAULT_LANG):
+    is_pt = _normalize_lang(lang) == "pt"
+    labels = {
+        "followers": "Seguidores" if is_pt else "Followers",
+        "videos": "Vídeos" if is_pt else "Videos",
+        "likes": "Curtidas" if is_pt else "Likes",
+        "views": "Visualizações" if is_pt else "Views",
+        "comments": "Comentários" if is_pt else "Comments",
+        "shares": "Compartilhamentos" if is_pt else "Shares",
+    }
+    return labels.get(stat, stat)

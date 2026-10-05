@@ -173,11 +173,12 @@ async def process_threads_single_media(
     user_settings: dict,
     business_id: Optional[int],
 ) -> bool:
+    user_lang = await db.get_language(message.from_user.id)
     media = post.media_list[0]
     media_kind = media.type
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status())
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     extension = "mp4" if media_kind == "video" else "jpg"
@@ -241,7 +242,7 @@ async def process_threads_single_media(
     async def _inspect_metrics(metrics: DownloadMetrics) -> bool:
         log_download_metrics(f"threads_{media_kind}", metrics)
         if metrics.size >= MAX_FILE_SIZE:
-            await handle_download_error(message, business_id=business_id, text=bm.video_too_large())
+            await handle_download_error(message, business_id=business_id, text=bm.video_too_large(lang=user_lang))
             return False
         return True
 
@@ -257,7 +258,7 @@ async def process_threads_single_media(
         cache_key=cache_key,
         cache_file_type=media_kind,
         db_service=db,
-        upload_status_text=bm.uploading_status(),
+        upload_status_text=bm.uploading_status(lang=user_lang),
         upload_action="upload_video" if media_kind == "video" else "upload_photo",
         update_status=_edit_status,
         send_chat_action=lambda action: send_chat_action_if_needed(bot, message.chat.id, action, business_id),
@@ -288,9 +289,10 @@ async def process_threads_media_group(
     user_settings: dict,
     business_id: Optional[int],
 ) -> bool:
+    user_lang = await db.get_language(message.from_user.id)
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status())
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
     await send_chat_action_if_needed(bot, message.chat.id, "upload_photo", business_id)
     request_id = f"threads_group:{message.chat.id}:{message.message_id}:{post.id}"
 
@@ -326,7 +328,7 @@ async def process_threads_media_group(
         metrics_label="threads_group",
         error_label="Threads",
         update_status=lambda text: safe_edit_text(status_message, text),
-        upload_status_text=bm.uploading_status(),
+        upload_status_text=bm.uploading_status(lang=user_lang),
         send_entries=_send_entries,
         on_empty=lambda: handle_download_error(message, business_id=business_id),
         delete_status_message=lambda: safe_delete_message(status_message),

@@ -720,12 +720,17 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
 
 @router.callback_query(F.data.startswith("audio:youtube:"))
 async def download_youtube_mp3_callback(call: types.CallbackQuery):
+    user_lang = await db.get_language(call.from_user.id)
     if not call.message:
-        await call.answer("Open the bot to download MP3", show_alert=True)
+        text = (
+            "Abra o bot para baixar o MP3"
+            if str(user_lang).lower().startswith("pt")
+            else "Open the bot to download MP3"
+        )
+        await call.answer(text, show_alert=True)
         return
     await call.answer()
     business_id = call.message.business_connection_id
-    user_lang = await db.get_language(call.from_user.id)
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:

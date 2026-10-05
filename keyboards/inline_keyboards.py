@@ -533,6 +533,7 @@ def return_video_info_keyboard(
     file_callback_data: str | None = None,
     lang: str = DEFAULT_LANG,
     has_video: bool = True,
+    platform: str | None = None,
 ):
     builder = InlineKeyboardBuilder()
     is_pt = _normalize_lang(lang) == "pt"
@@ -575,7 +576,10 @@ def return_video_info_keyboard(
             builder.row(*row1)
 
     # Condicionado às configurações do usuário (padrão 'off') e só se for vídeo
-    if has_video and user_settings.get("music_button", "off") == "on":
+    # Shazam somente para vídeos do Instagram e TikTok.
+    # Nunca exibir em imagens ou em outras plataformas.
+    music_supported = (platform or "").lower() in {"instagram", "tiktok"}
+    if has_video and music_supported and user_settings.get("music_button", "off") == "on":
         builder.row(
             InlineKeyboardButton(
                 text="🎵 Identificar Música" if is_pt else "🎵 Identify Music",

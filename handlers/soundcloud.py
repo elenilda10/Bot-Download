@@ -146,10 +146,11 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
         )
         await react_to_message(message, "\U0001f47e", business_id=business_id)
         user_settings = await load_user_settings(db, message)
+        user_lang = await db.get_language(message.from_user.id)
         bot_url = await get_bot_url(bot)
         bot_avatar = await get_bot_avatar_thumbnail(bot)
         if show_service_status:
-            status_message = await message.answer(bm.downloading_audio_status())
+            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang))
 
         cache_key = build_audio_cache_key(source_url)
         track: Optional[SoundCloudTrack] = None
@@ -158,7 +159,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             await safe_edit_text(status_message, text)
 
         async def _send_cached(file_id: str):
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -218,7 +219,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await safe_edit_text(status_message, bm.uploading_status())
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -253,7 +254,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large())
+            await message.reply(bm.audio_too_large(lang=user_lang))
 
         async def _on_cache_store_error(exc: Exception) -> None:
             logging.error(
@@ -318,6 +319,7 @@ async def inline_soundcloud_query(query: types.InlineQuery):
 
         source_url = strip_soundcloud_url(match.group(0))
         user_settings = await db.user_settings(query.from_user.id)
+        user_lang = await db.get_language(query.from_user.id)
         track = await soundcloud_service.fetch_track(source_url)
         if not track:
             await query.answer([], cache_time=1, is_personal=True)
@@ -329,16 +331,20 @@ async def inline_soundcloud_query(query: types.InlineQuery):
         results = [
             types.InlineQueryResultArticle(
                 id=f"soundcloud_inline:{token}",
-                title="SoundCloud Audio",
+                title=(
+                    "Áudio do SoundCloud"
+                    if not str(user_lang).lower().startswith("en")
+                    else "SoundCloud Audio"
+                ),
                 description=track.title
-                or "Press the button to send this audio inline.",
+                or bm.inline_send_audio_description(lang=user_lang),
                 thumbnail_url=track.thumbnail_url
                 or get_inline_service_icon("soundcloud"),
                 input_message_content=types.InputTextMessageContent(
-                    message_text=bm.inline_send_audio_prompt("SoundCloud"),
+                    message_text=bm.inline_send_audio_prompt("SoundCloud", lang=user_lang),
                 ),
                 reply_markup=kb.inline_send_media_keyboard(
-                    "Enviar áudio inline",
+                    bm.inline_send_audio_button(lang=user_lang),
                     f"inline:soundcloud:{token}",
                 ),
             )
@@ -374,12 +380,17 @@ async def _send_inline_soundcloud_audio(
     if request is None:
         return
 
+    try:
+        user_lang = await db.get_language(actor_user_id)
+    except Exception:
+        user_lang = "pt"
+
     async def _edit_inline_status(
         text: str, *, with_retry_button: bool = False
     ) -> None:
         reply_markup = (
             kb.inline_send_media_keyboard(
-                "Enviar áudio inline", f"inline:soundcloud:{token}"
+                bm.inline_send_audio_button(lang=user_lang), f"inline:soundcloud:{token}"
             )
             if with_retry_button
             else None
@@ -396,11 +407,11 @@ async def _send_inline_soundcloud_audio(
         bot_url = await get_bot_url(bot)
         if not track:
             reset_inline_video_request(token)
-            await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+            await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
             return
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             return None
 
         async def _download_audio():
@@ -408,7 +419,7 @@ async def _send_inline_soundcloud_audio(
             request_id = f"soundcloud_inline:{request.owner_user_id}:{request_event_id}:{track.id}"
             audio_name = f"{track.id}_{timestamp}_soundcloud_inline.mp3"
 
-            await _edit_inline_status(bm.downloading_audio_status())
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
 
             on_progress = make_status_text_progress_updater(
                 "SoundCloud audio", _edit_inline_status
@@ -425,12 +436,12 @@ async def _send_inline_soundcloud_audio(
         async def _on_missing_audio():
             reset_inline_video_request(token)
             await _edit_inline_status(
-                bm.something_went_wrong(), with_retry_button=True
+                bm.something_went_wrong(lang=user_lang), with_retry_button=True
             )
 
         async def _on_too_large():
             complete_inline_video_request(token)
-            await _edit_inline_status(bm.audio_too_large())
+            await _edit_inline_status(bm.audio_too_large(lang=user_lang))
 
         async def _prepare_metadata(path: str):
             return await prepare_mp3_metadata(
@@ -444,7 +455,7 @@ async def _send_inline_soundcloud_audio(
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await _edit_inline_status(bm.uploading_status())
+            await _edit_inline_status(bm.uploading_status(lang=user_lang))
             audio_thumbnail = (
                 FSInputFile(str(prepared_metadata.thumbnail_path), filename="cover.jpg")
                 if prepared_metadata.thumbnail_path
@@ -497,7 +508,7 @@ async def _send_inline_soundcloud_audio(
             return
 
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
     except DownloadRateLimitError as e:
         reset_inline_video_request(token)
         await _edit_inline_status(
@@ -510,7 +521,7 @@ async def _send_inline_soundcloud_audio(
         )
     except Exception:
         reset_inline_video_request(token)
-        await _edit_inline_status(bm.something_went_wrong(), with_retry_button=True)
+        await _edit_inline_status(bm.something_went_wrong(lang=user_lang), with_retry_button=True)
 
 
 chosen_inline_soundcloud_result, send_inline_soundcloud_audio_callback = (

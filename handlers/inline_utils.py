@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramAPIError
 
 import keyboards as kb
 import messages as bm
+from app_context import db
 from handlers.logging_utils import with_callback_logging, with_chosen_inline_logging
 from services.logger import logger as logging, summarize_text_for_log
 
@@ -28,12 +29,12 @@ class RawAnswerInlineQuery(TelegramMethod[bool]):
     switch_pm_text: str | None = None
 
 
-def _default_inline_button_text(media_kind: str) -> str:
+def _default_inline_button_text(media_kind: str, lang: str = "pt") -> str:
     if media_kind == "photo":
-        return "Enviar foto inline"
+        return bm.inline_send_photo_button(lang=lang)
     if media_kind == "audio":
-        return "Enviar áudio inline"
-    return "Enviar vídeo inline"
+        return bm.inline_send_audio_button(lang=lang)
+    return bm.inline_send_video_button(lang=lang)
 
 
 def build_inline_status_editor(
@@ -43,6 +44,7 @@ def build_inline_status_editor(
     callback_data_factory: Callable[[str], str],
     safe_edit_inline_text_fn: Callable[..., Awaitable[Any]],
     button_text: Optional[str] = None,
+    lang: str = "pt",
 ) -> Callable[..., Awaitable[None]]:
     async def _edit_inline_status(
         text: str,
@@ -53,7 +55,7 @@ def build_inline_status_editor(
         reply_markup = None
         if with_retry_button:
             reply_markup = kb.inline_send_media_keyboard(
-                button_text or _default_inline_button_text(media_kind),
+                button_text or _default_inline_button_text(media_kind, lang=lang),
                 callback_data_factory(media_kind),
             )
         await safe_edit_inline_text_fn(bot, inline_message_id, text, reply_markup=reply_markup)
@@ -164,18 +166,19 @@ def _build_inline_article_from_photo(
     result: types.InlineQueryResultPhoto,
     *,
     thumbnail_url: Optional[str],
+    lang: str = "pt",
 ) -> types.InlineQueryResultArticle:
     payload = result.model_dump(exclude_none=True)
     message_text = (
         payload.get("caption")
         or payload.get("description")
         or payload.get("title")
-        or "Open this result in the bot."
+        or bm.inline_open_result(lang=lang)
     )
     parse_mode = payload.get("parse_mode")
     return types.InlineQueryResultArticle(
         id=payload["id"],
-        title=payload.get("title") or "Media",
+        title=payload.get("title") or bm.inline_media_title(lang=lang),
         description=payload.get("description"),
         thumbnail_url=thumbnail_url,
         input_message_content=types.InputTextMessageContent(
@@ -190,6 +193,7 @@ def sanitize_inline_results(
     results: list[Any],
     *,
     force_remove_web_preview_urls: bool = False,
+    lang: str = "pt",
 ) -> list[Any]:
     sanitized: list[Any] = []
     for result in results:
@@ -212,7 +216,11 @@ def sanitize_inline_results(
                 sanitized.append(types.InlineQueryResultPhoto(**payload))
             else:
                 sanitized.append(
-                    _build_inline_article_from_photo(result, thumbnail_url=thumbnail_url)
+                    _build_inline_article_from_photo(
+                        result,
+                        thumbnail_url=thumbnail_url,
+                        lang=lang,
+                    )
                 )
             continue
 
@@ -234,7 +242,13 @@ async def safe_answer_inline_query(
     results: list[Any],
     **answer_kwargs: Any,
 ) -> None:
-    sanitized_results = sanitize_inline_results(results)
+    query_user = getattr(query, "from_user", None)
+    try:
+        user_lang = await db.get_language(query_user.id) if query_user is not None else "pt"
+    except Exception:
+        user_lang = getattr(query_user, "language_code", None) or "pt"
+
+    sanitized_results = sanitize_inline_results(results, lang=user_lang)
     try:
         await _answer_inline_query(query, sanitized_results, **answer_kwargs)
     except TelegramAPIError as exc:
@@ -254,6 +268,7 @@ async def safe_answer_inline_query(
         degraded_results = sanitize_inline_results(
             sanitized_results,
             force_remove_web_preview_urls=True,
+            lang=user_lang,
         )
         await _answer_inline_query(query, degraded_results, **answer_kwargs)
 
@@ -274,11 +289,12 @@ def build_inline_album_result(
     preview_file_id: Optional[str] = None,
     preview_url: Optional[str] = None,
     thumbnail_url: Optional[str] = None,
+    lang: str = "pt",
 ) -> types.InlineQueryResultCachedPhoto | types.InlineQueryResultPhoto | types.InlineQueryResultArticle:
     reply_markup = types.InlineKeyboardMarkup(
         inline_keyboard=[[
             types.InlineKeyboardButton(
-                text=bm.inline_open_full_album_button(),
+                text=bm.inline_open_full_album_button(lang=lang),
                 url=deep_link,
             )
         ]]
@@ -287,8 +303,8 @@ def build_inline_album_result(
         return types.InlineQueryResultCachedPhoto(
             id=result_id,
             photo_file_id=str(preview_file_id),
-            title=bm.inline_album_title(service_name),
-            description=bm.inline_album_description(),
+            title=bm.inline_album_title(service_name, lang=lang),
+            description=bm.inline_album_description(lang=lang),
             caption=message_text,
             reply_markup=reply_markup,
             parse_mode="HTML",
@@ -298,8 +314,8 @@ def build_inline_album_result(
             id=result_id,
             photo_url=str(preview_url),
             thumbnail_url=str(thumbnail_url or preview_url),
-            title=bm.inline_album_title(service_name),
-            description=bm.inline_album_description(),
+            title=bm.inline_album_title(service_name, lang=lang),
+            description=bm.inline_album_description(lang=lang),
             caption=message_text,
             reply_markup=reply_markup,
             parse_mode="HTML",
@@ -307,8 +323,8 @@ def build_inline_album_result(
 
     return types.InlineQueryResultArticle(
         id=result_id,
-        title=bm.inline_album_title(service_name),
-        description=bm.inline_album_description(),
+        title=bm.inline_album_title(service_name, lang=lang),
+        description=bm.inline_album_description(lang=lang),
         thumbnail_url=thumbnail_url or preview_url,
         input_message_content=types.InputTextMessageContent(
             message_text=message_text,
@@ -323,8 +339,18 @@ async def run_inline_send_callback(
     prefix: str,
     sender_fn: Callable[..., Awaitable[None]],
 ) -> None:
+    try:
+        user_lang = await db.get_language(call.from_user.id)
+        if not isinstance(user_lang, str):
+            user_lang = "pt"
+    except Exception:
+        user_lang = getattr(call.from_user, "language_code", None) or "pt"
+
     if not call.inline_message_id:
-        await call.answer("This button works only in inline mode.", show_alert=True)
+        await call.answer(
+            bm.inline_only_button_warning(lang=user_lang),
+            show_alert=True,
+        )
         return
 
     token = call.data.removeprefix(prefix)
@@ -339,14 +365,14 @@ async def run_inline_send_callback(
             duplicate_handler="callback",
         )
     except PermissionError:
-        await call.answer(bm.something_went_wrong(), show_alert=True)
+        await call.answer(bm.something_went_wrong(lang=user_lang), show_alert=True)
     except ValueError as exc:
         if str(exc) == "already_processing":
-            await call.answer(bm.inline_video_already_processing(), show_alert=False)
+            await call.answer(bm.inline_video_already_processing(lang=user_lang), show_alert=False)
         elif str(exc) == "already_completed":
-            await call.answer(bm.inline_video_already_sent(), show_alert=False)
+            await call.answer(bm.inline_video_already_sent(lang=user_lang), show_alert=False)
         else:
-            await call.answer(bm.something_went_wrong(), show_alert=True)
+            await call.answer(bm.something_went_wrong(lang=user_lang), show_alert=True)
 
 
 def register_inline_send_handlers(
