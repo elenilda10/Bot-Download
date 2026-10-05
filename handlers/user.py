@@ -34,6 +34,7 @@ _MESSAGE_NOT_MODIFIED_MARKERS = (
 # Route definitions
 router.message(Command("start"))(cmd_mod.send_welcome)
 router.message(Command("help"))(cmd_mod.send_help)
+router.message(Command("trad"))(cmd_mod.translate_command)
 
 # Comandos de banimento exclusivos para o PV do Admin
 router.message(Command("ban"), F.chat.type == "private")(cmd_mod.ban_command)

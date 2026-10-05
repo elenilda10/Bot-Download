@@ -1,3 +1,6 @@
+import asyncio
+import re
+import shutil
 import time
 from copy import copy
 from typing import Optional
@@ -427,3 +430,213 @@ async def switch_stats(call: types.CallbackQuery):
 async def switch_period(call: types.CallbackQuery):
     period = call.data.split("_")[1]
     await _handle_stats_update(call, period, "total")
+
+
+
+# ============================================================
+# /trad
+# ============================================================
+
+_TRAD_MAX_INPUT = 3500
+_TRAD_TIMEOUT_SECONDS = 25
+
+_TRAD_LANGUAGE_RE = re.compile(
+    r"^[A-Za-z]{2,3}(?:[-_][A-Za-z]{2,4})?$"
+)
+
+
+def _normalize_translation_language(value: str) -> Optional[str]:
+    value = (value or "").strip()
+
+    if not _TRAD_LANGUAGE_RE.fullmatch(value):
+        return None
+
+    parts = value.replace("_", "-").split("-")
+
+    if len(parts) == 1:
+        return parts[0].lower()
+
+    return f"{parts[0].lower()}-{parts[1].upper()}"
+
+
+async def translate_command(message: types.Message):
+    if await is_banned(
+        message.from_user.id if message.from_user else None,
+        message.chat.id,
+    ):
+        return
+
+    # Mensagens de ajuda/erro seguem o idioma configurado
+    # no bot. Em grupos, usa a configuração do grupo.
+    target_id = (
+        message.from_user.id
+        if message.chat.type == ChatType.PRIVATE
+        else message.chat.id
+    )
+
+    try:
+        user_lang = await user_mod.db.get_language(target_id)
+    except Exception:
+        user_lang = None
+
+    user_lang = (
+        user_lang
+        or getattr(message.from_user, "language_code", None)
+        or "pt"
+    )
+
+    raw_text = (message.text or message.caption or "").strip()
+    parts = raw_text.split(maxsplit=2)
+
+    if len(parts) < 2:
+        await message.reply(
+            bm.translation_usage(lang=user_lang)
+        )
+        return
+
+    target_language = _normalize_translation_language(parts[1])
+
+    if not target_language:
+        await message.reply(
+            bm.translation_invalid_language(lang=user_lang)
+        )
+        return
+
+    text_to_translate = ""
+
+    # Exemplo:
+    # /trad es Hello
+    if len(parts) >= 3:
+        text_to_translate = parts[2].strip()
+
+    # Exemplo respondendo uma mensagem:
+    # /trad es
+    if not text_to_translate and message.reply_to_message:
+        text_to_translate = (
+            message.reply_to_message.text
+            or message.reply_to_message.caption
+            or ""
+        ).strip()
+
+    if not text_to_translate:
+        await message.reply(
+            bm.translation_usage(lang=user_lang)
+        )
+        return
+
+    if len(text_to_translate) > _TRAD_MAX_INPUT:
+        await message.reply(
+            bm.translation_text_too_long(
+                _TRAD_MAX_INPUT,
+                lang=user_lang,
+            )
+        )
+        return
+
+    trans_bin = shutil.which("trans")
+
+    if not trans_bin:
+        logging.error("Translate Shell executable 'trans' not found")
+        await message.reply(
+            bm.translation_service_unavailable(lang=user_lang)
+        )
+        return
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            trans_bin,
+            "-brief",
+            f":{target_language}",
+            text_to_translate,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=_TRAD_TIMEOUT_SECONDS,
+            )
+
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+
+            logging.warning(
+                "Translation timed out: target=%s",
+                target_language,
+            )
+
+            await message.reply(
+                bm.translation_timeout(lang=user_lang)
+            )
+            return
+
+        translated = stdout.decode(
+            "utf-8",
+            errors="ignore",
+        ).strip()
+
+        stderr_text = stderr.decode(
+            "utf-8",
+            errors="ignore",
+        ).strip()
+
+        # Warnings do Translate Shell ficam somente no log.
+        # Não são enviados ao usuário.
+        if stderr_text:
+            logging.debug(
+                "Translate Shell stderr: %s",
+                stderr_text[:500],
+            )
+
+        if not translated:
+            logging.warning(
+                "Translation returned no text: target=%s returncode=%s stderr=%s",
+                target_language,
+                proc.returncode,
+                stderr_text[:300],
+            )
+
+            await message.reply(
+                bm.translation_failed(lang=user_lang)
+            )
+            return
+
+        if message.from_user:
+            try:
+                await user_mod.send_analytics(
+                    user_id=message.from_user.id,
+                    chat_type=message.chat.type,
+                    action_name="translate",
+                )
+            except Exception:
+                pass
+
+        # Telegram tem limite por mensagem.
+        chunks = [
+            translated[i:i + 4000]
+            for i in range(0, len(translated), 4000)
+        ]
+
+        for index, chunk in enumerate(chunks):
+            if index == 0:
+                await message.reply(
+                    chunk,
+                    parse_mode=None,
+                )
+            else:
+                await message.answer(
+                    chunk,
+                    parse_mode=None,
+                )
+
+    except Exception as exc:
+        logging.exception(
+            "Error handling /trad: %s",
+            exc,
+        )
+
+        await message.reply(
+            bm.translation_error(lang=user_lang)
+        )

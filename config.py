@@ -234,6 +234,7 @@ MAX_FILE_SIZE = _read_int_env("MAX_FILE_SIZE") or int(1.5 * 1024 * 1024 * 1024)
 BOT_COMMANDS = [
     {"command": "start", "description": "Get started"},
     {"command": "help", "description": "Supported sites and tips"},
+    {"command": "trad", "description": "Translate text"},
     {"command": "settings", "description": "Settings"},
     {"command": "stats", "description": "Statistics"},
 ]

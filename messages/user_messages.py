@@ -651,3 +651,73 @@ def tiktok_stat_label(stat: str, lang: str = DEFAULT_LANG):
         "shares": "Compartilhamentos" if is_pt else "Shares",
     }
     return labels.get(stat, stat)
+
+
+
+# ============================================================
+# /trad
+# ============================================================
+
+def translation_usage(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return (
+            "🌐 <b>Tradutor</b>\n\n"
+            "Envie:\n"
+            "<code>/trad pt-BR Hello, how are you?</code>\n\n"
+            "Ou responda a uma mensagem com:\n"
+            "<code>/trad es</code>\n\n"
+            "O idioma original é detectado automaticamente."
+        )
+
+    return (
+        "🌐 <b>Translator</b>\n\n"
+        "Send:\n"
+        "<code>/trad pt-BR Hello, how are you?</code>\n\n"
+        "Or reply to a message with:\n"
+        "<code>/trad es</code>\n\n"
+        "The source language is detected automatically."
+    )
+
+
+def translation_invalid_language(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return (
+            "❌ Código de idioma inválido.\n\n"
+            "Exemplos: <code>pt-BR</code>, <code>en</code>, "
+            "<code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>"
+        )
+    return (
+        "❌ Invalid language code.\n\n"
+        "Examples: <code>pt-BR</code>, <code>en</code>, "
+        "<code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>"
+    )
+
+
+def translation_text_too_long(limit: int, lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return f"❌ Texto muito grande para tradução.\nLimite: {limit} caracteres."
+    return f"❌ Text is too long for translation.\nLimit: {limit} characters."
+
+
+def translation_service_unavailable(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "❌ O serviço de tradução não está disponível no momento."
+    return "❌ Translation service is currently unavailable."
+
+
+def translation_timeout(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "⏳ A tradução demorou demais. Tente novamente."
+    return "⏳ Translation timed out. Please try again."
+
+
+def translation_failed(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "❌ Não consegui traduzir esse texto agora."
+    return "❌ I couldn't translate this text right now."
+
+
+def translation_error(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "❌ Ocorreu um erro durante a tradução."
+    return "❌ An error occurred while translating."
