@@ -22,6 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       gcc \
       build-essential \
+      libasound2-dev \
       libffi-dev \
       libssl-dev \
     && rm -rf /var/lib/apt/lists/*
