@@ -1,0 +1,54 @@
+name: Guest Mode checks
+
+on:
+  pull_request:
+    paths:
+      - "handlers/guest.py"
+      - "handlers/__init__.py"
+      - "messages/user_messages.py"
+      - "tests/test_guest_mode.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".github/workflows/guest-mode.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BOT_TOKEN: "123456:TESTTOKEN"
+  ADMIN_ID: "1"
+  CUSTOM_API_URL: "https://api.example.com"
+  CHANNEL_ID: "-1001234567890"
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/downloader_bot_test"
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  guest-mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -r requirements-dev.txt ruff audioop-lts==0.2.2
+
+      - name: Compile Guest Mode
+        run: |
+          python -m py_compile             handlers/guest.py             handlers/__init__.py             messages/user_messages.py             tests/test_guest_mode.py
+
+      - name: Lint Guest Mode changes
+        run: |
+          ruff check             handlers/guest.py             tests/test_guest_mode.py             --select=E,F,W             --ignore=E501
+
+      - name: Run Guest Mode tests
+        run: pytest tests/test_guest_mode.py -q

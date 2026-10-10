@@ -721,3 +721,110 @@ def translation_error(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return "❌ Ocorreu um erro durante a tradução."
     return "❌ An error occurred while translating."
+
+
+
+def guest_no_link_title(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Link não encontrado"
+        if _normalize_lang(lang) == "pt"
+        else "No link found"
+    )
+
+
+def guest_no_link_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Envie ou responda uma mensagem com um link compatível."
+        if _normalize_lang(lang) == "pt"
+        else "Send or reply to a message with a supported link."
+    )
+
+
+def guest_no_link_message(lang: str = DEFAULT_LANG) -> str:
+    if _normalize_lang(lang) == "pt":
+        return (
+            "❌ <b>Não encontrei um link compatível.</b>\n\n"
+            "Chame o bot junto com um link ou responda a uma mensagem "
+            "que contenha o link."
+        )
+    return (
+        "❌ <b>I couldn't find a supported link.</b>\n\n"
+        "Call the bot together with a link, or reply to a message "
+        "that contains the link."
+    )
+
+
+def guest_open_private_button(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Abrir no privado"
+        if _normalize_lang(lang) == "pt"
+        else "Open private chat"
+    )
+
+
+def guest_unavailable_title(
+    service_name: str,
+    lang: str = DEFAULT_LANG,
+) -> str:
+    service = service_name or "Guest Mode"
+    if _normalize_lang(lang) == "pt":
+        return f"{service} no modo convidado"
+    return f"{service} in Guest Mode"
+
+
+def guest_unavailable_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Abra o bot no privado para continuar."
+        if _normalize_lang(lang) == "pt"
+        else "Open the bot in private chat to continue."
+    )
+
+
+def guest_unavailable_message(
+    service_name: str,
+    lang: str = DEFAULT_LANG,
+) -> str:
+    service = service_name or "este serviço"
+    if _normalize_lang(lang) == "pt":
+        return (
+            f"ℹ️ <b>{service}</b> ainda não pode concluir este pedido "
+            "diretamente pelo modo convidado.\n\n"
+            "Abra o bot no privado e envie o link por lá."
+        )
+    return (
+        f"ℹ️ <b>{service}</b> can't complete this request directly "
+        "through Guest Mode yet.\n\n"
+        "Open the bot in private chat and send the link there."
+    )
+
+
+def guest_slow_down_title(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Muitas solicitações"
+        if _normalize_lang(lang) == "pt"
+        else "Too many requests"
+    )
+
+
+def guest_slow_down_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Aguarde um instante antes de tentar novamente."
+        if _normalize_lang(lang) == "pt"
+        else "Wait a moment before trying again."
+    )
+
+
+def guest_slow_down_message(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "⏳ Aguarde um instante e tente novamente."
+        if _normalize_lang(lang) == "pt"
+        else "⏳ Wait a moment and try again."
+    )
+
+
+def guest_restricted_service_name(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Serviço indisponível"
+        if _normalize_lang(lang) == "pt"
+        else "Service unavailable"
+    )
