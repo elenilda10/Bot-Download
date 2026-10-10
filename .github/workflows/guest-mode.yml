@@ -20,6 +20,7 @@ env:
   ADMIN_ID: "1"
   CUSTOM_API_URL: "https://api.example.com"
   CHANNEL_ID: "-1001234567890"
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/downloader_bot_test"
   PYTHONPATH: ${{ github.workspace }}
 
 jobs:
