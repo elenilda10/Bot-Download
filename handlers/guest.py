@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from typing import Any
@@ -53,6 +54,19 @@ _GUEST_INLINE_SERVICES = {
 
 _GUEST_MIN_INTERVAL_SECONDS = 1.5
 _guest_last_request: dict[int, float] = {}
+_guest_download_tasks: set[asyncio.Task] = set()
+
+_GUEST_AUTO_RESULT_PREFIXES = {
+    "tiktok_inline:": "tiktok",
+    "youtube_inline:": "youtube",
+    "ytmusic_inline:": "ytmusic",
+    "instagram_inline:": "instagram",
+    "twitter_inline:": "twitter",
+    "soundcloud_inline:": "soundcloud",
+    "pinterest_inline:": "pinterest",
+    "threads_inline:": "threads",
+    "deezer_inline:": "deezer",
+}
 
 
 def _normalize_lang(lang: str | None) -> str:
@@ -158,6 +172,135 @@ def _fallback_result(
     )
 
 
+def _guest_request_from_result_id(result_id: str | None) -> tuple[str, str] | None:
+    value = str(result_id or "")
+    for prefix, service in _GUEST_AUTO_RESULT_PREFIXES.items():
+        if value.startswith(prefix):
+            token = value.removeprefix(prefix)
+            if token:
+                return service, token
+    return None
+
+
+async def _start_guest_auto_download(
+    *,
+    service: str,
+    token: str,
+    inline_message_id: str,
+    message: types.Message,
+) -> None:
+    user = message.from_user
+    if user is None:
+        return
+
+    common = {
+        "token": token,
+        "inline_message_id": inline_message_id,
+        "actor_name": user.full_name,
+        "actor_user_id": int(user.id),
+        "request_event_id": str(message.guest_query_id or f"guest-{user.id}"),
+        "duplicate_handler": "guest",
+    }
+
+    try:
+        if service == "tiktok":
+            from handlers.tiktok import _send_inline_tiktok_video
+
+            await _send_inline_tiktok_video(**common)
+            return
+
+        if service == "youtube":
+            from handlers.youtube import _send_inline_youtube_video
+
+            await _send_inline_youtube_video(**common)
+            return
+
+        if service == "ytmusic":
+            from handlers.youtube import _send_inline_youtube_music
+
+            await _send_inline_youtube_music(**common)
+            return
+
+        if service == "instagram":
+            from handlers.instagram import _send_inline_instagram_video
+
+            await _send_inline_instagram_video(**common)
+            return
+
+        if service == "twitter":
+            from handlers.twitter import _send_inline_twitter_media
+
+            await _send_inline_twitter_media(**common)
+            return
+
+        if service == "soundcloud":
+            from handlers.soundcloud import _send_inline_soundcloud_audio
+
+            await _send_inline_soundcloud_audio(**common)
+            return
+
+        if service == "pinterest":
+            from handlers.pinterest import _send_inline_pinterest_video
+
+            await _send_inline_pinterest_video(**common)
+            return
+
+        if service == "threads":
+            from handlers.threads import _send_inline_threads_media
+
+            await _send_inline_threads_media(**common)
+            return
+
+        if service == "deezer":
+            from handlers.deezer import _send_inline_deezer_music
+
+            await _send_inline_deezer_music(**common)
+            return
+    except Exception as exc:
+        logging.exception(
+            "Guest auto-download failed: user_id=%s service=%s token=%s error=%s",
+            user.id,
+            service,
+            token,
+            exc,
+        )
+
+
+def _guest_download_task_done(task: asyncio.Task) -> None:
+    _guest_download_tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except Exception as exc:
+        logging.error("Unhandled Guest auto-download task error: %s", exc)
+
+
+def _schedule_guest_auto_download(
+    *,
+    result_id: str | None,
+    inline_message_id: str | None,
+    message: types.Message,
+) -> bool:
+    request = _guest_request_from_result_id(result_id)
+    if request is None or not inline_message_id:
+        return False
+
+    service, token = request
+    task = asyncio.create_task(
+        _start_guest_auto_download(
+            service=service,
+            token=token,
+            inline_message_id=inline_message_id,
+            message=message,
+        ),
+        name=f"guest-download-{service}-{token[:8]}",
+    )
+    _guest_download_tasks.add(task)
+    task.add_done_callback(_guest_download_task_done)
+    return True
+
+
 class GuestInlineQueryAdapter:
     """
     Makes existing inline handlers reusable for Guest Mode.
@@ -202,6 +345,12 @@ class GuestInlineQueryAdapter:
 
         sent = await self.message.answer_guest_query(result=result)
         self.answered = True
+
+        _schedule_guest_auto_download(
+            result_id=getattr(result, "id", None),
+            inline_message_id=getattr(sent, "inline_message_id", None),
+            message=self.message,
+        )
         return sent
 
 

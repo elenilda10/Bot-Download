@@ -4,11 +4,13 @@ import pytest
 from aiogram import Router, types
 
 import messages as bm
+import handlers.guest as guest_module
 from handlers.guest import (
     GuestInlineQueryAdapter,
     _collect_guest_text,
     _extract_guest_link,
     _fallback_result,
+    _guest_request_from_result_id,
 )
 
 
@@ -137,3 +139,101 @@ def test_guest_fallback_is_bilingual():
     assert "No link found" == en.title
     assert bm.guest_open_private_button(lang="pt") == "Abrir no privado"
     assert bm.guest_open_private_button(lang="en") == "Open private chat"
+
+
+
+@pytest.mark.parametrize(
+    ("result_id", "expected"),
+    [
+        ("tiktok_inline:tok1", ("tiktok", "tok1")),
+        ("youtube_inline:tok2", ("youtube", "tok2")),
+        ("ytmusic_inline:tok3", ("ytmusic", "tok3")),
+        ("instagram_inline:tok4", ("instagram", "tok4")),
+        ("twitter_inline:tok5", ("twitter", "tok5")),
+        ("soundcloud_inline:tok6", ("soundcloud", "tok6")),
+        ("pinterest_inline:tok7", ("pinterest", "tok7")),
+        ("threads_inline:tok8", ("threads", "tok8")),
+        ("deezer_inline:tok9", ("deezer", "tok9")),
+        ("instagram_album:album1", None),
+        ("guest-fallback", None),
+    ],
+)
+def test_guest_result_id_maps_to_auto_download(result_id, expected):
+    assert _guest_request_from_result_id(result_id) == expected
+
+
+@pytest.mark.asyncio
+async def test_guest_adapter_schedules_automatic_download(monkeypatch):
+    message = FakeGuestMessage(lang="pt")
+    scheduled = {}
+
+    def fake_schedule(*, result_id, inline_message_id, message):
+        scheduled.update(
+            result_id=result_id,
+            inline_message_id=inline_message_id,
+            message=message,
+        )
+        return True
+
+    monkeypatch.setattr(
+        guest_module,
+        "_schedule_guest_auto_download",
+        fake_schedule,
+    )
+
+    adapter = GuestInlineQueryAdapter(
+        message=message,
+        query="https://vm.tiktok.com/abc123/",
+        lang="pt",
+        bot_url="https://t.me/TestBot",
+        service_name="TikTok",
+    )
+    result = types.InlineQueryResultArticle(
+        id="tiktok_inline:guest-token",
+        title="TikTok",
+        input_message_content=types.InputTextMessageContent(
+            message_text="Preparando"
+        ),
+    )
+
+    await adapter.answer([result])
+
+    assert scheduled["result_id"] == "tiktok_inline:guest-token"
+    assert scheduled["inline_message_id"] == "inline-guest-1"
+    assert scheduled["message"] is message
+
+
+@pytest.mark.asyncio
+async def test_guest_adapter_does_not_auto_download_album(monkeypatch):
+    message = FakeGuestMessage(lang="en")
+    called = False
+
+    def fake_schedule(*, result_id, inline_message_id, message):
+        nonlocal called
+        called = True
+        return False
+
+    monkeypatch.setattr(
+        guest_module,
+        "_schedule_guest_auto_download",
+        fake_schedule,
+    )
+
+    adapter = GuestInlineQueryAdapter(
+        message=message,
+        query="https://www.instagram.com/p/album/",
+        lang="en",
+        bot_url="https://t.me/TestBot",
+        service_name="Instagram",
+    )
+    result = types.InlineQueryResultArticle(
+        id="instagram_album:album-token",
+        title="Instagram Album",
+        input_message_content=types.InputTextMessageContent(
+            message_text="Album"
+        ),
+    )
+
+    await adapter.answer([result])
+
+    assert called is True
