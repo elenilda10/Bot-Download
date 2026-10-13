@@ -50,6 +50,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg \
+      megatools \
     && rm -rf /var/lib/apt/lists/* \
     && addgroup --system appgroup \
     && adduser --system --ingroup appgroup --home /app appuser
