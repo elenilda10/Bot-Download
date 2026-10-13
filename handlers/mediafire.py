@@ -11,10 +11,10 @@ from handlers.request_dedupe import claim_message_request
 from services.platforms.mediafire import download_mediafire, is_mediafire_url
 
 router = Router(name="mediafire")
-URL = re.compile(r"https://[^\\s<>]+", re.I)
+URL = re.compile(r"https://[^\s<>]+", re.I)
 LIMIT = asyncio.Semaphore(2)
 
-@router.message(F.text.regexp(r"https://(?:www\\.|m\\.)?mediafire\\.com/", mode="search"))
+@router.message(F.text.regexp(r"https://(?:www\.|m\.)?mediafire\.com/", mode="search"))
 async def handle_mediafire(message: types.Message):
     if not message.from_user or await cmd_mod.is_banned(message.from_user.id, message.chat.id):
         return
