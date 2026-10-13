@@ -22,10 +22,10 @@ def is_mediafire_url(url: str) -> bool:
     try:
         p = urlparse(url)
         if p.scheme != "https" or p.username or p.password or p.port not in (None, 443):
-            return None
+            return False
         return p.hostname in HOSTS["mediafire"]
     except ValueError:
-        return None
+        return False
 
 async def _public_host(host: str) -> None:
     infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
