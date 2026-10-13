@@ -43,6 +43,7 @@ router.message(Command("unban"), F.chat.type == "private")(cmd_mod.unban_command
 router.my_chat_member()(cmd_mod.handle_bot_membership)
 router.message(Command("remove_keyboard"))(cmd_mod.remove_reply_keyboard)
 router.message(Command("stats"))(cmd_mod.stats_command)
+router.message(Command("ping"))(cmd_mod.ping_command)
 router.callback_query(F.data.startswith("stats:"))(cmd_mod.switch_stats)
 router.callback_query(F.data.startswith("date_"))(cmd_mod.switch_period)
 
