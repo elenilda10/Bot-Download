@@ -16,3 +16,5 @@ yt-dlp[default]==2026.7.4
 
 shazamio
 gallery-dl
+
+gdown>=5.2,<6
