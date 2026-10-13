@@ -46,7 +46,9 @@ class _MediaFireParser(HTMLParser):
             self.link = values.get("href")
 
 
-async def download_mediafire(url: str, folder: Path) -> Path:\n    if not is_mediafire_url(url):\n        raise ValueError("URL não permitida")
+async def download_mediafire(url: str, folder: Path) -> Path:
+    if not is_mediafire_url(url):
+        raise ValueError("URL não permitida")
     from html import unescape
     async with aiohttp.ClientSession(
         timeout=aiohttp.ClientTimeout(total=TIMEOUT),
