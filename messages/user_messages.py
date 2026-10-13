@@ -205,6 +205,33 @@ def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
     return _truncate_escaped(footer, limit)
 
 
+def downloading_file_status(lang: str = DEFAULT_LANG):
+    emoji = '<tg-emoji emoji-id="5854908544712707500">📦</tg-emoji>'
+    return (
+        f"{emoji} Baixando arquivo..."
+        if _normalize_lang(lang) == "pt"
+        else f"{emoji} Downloading file..."
+    )
+
+
+def uploading_file_status(lang: str = DEFAULT_LANG):
+    emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
+    return (
+        f"{emoji} Enviando arquivo para o Telegram..."
+        if _normalize_lang(lang) == "pt"
+        else f"{emoji} Uploading file to Telegram..."
+    )
+
+
+def mediafire_document_caption(lang: str = DEFAULT_LANG):
+    emoji = '<tg-emoji emoji-id="5431420628978641216">📄</tg-emoji>'
+    return (
+        f"{emoji} Arquivo baixado do MediaFire"
+        if _normalize_lang(lang) == "pt"
+        else f"{emoji} File downloaded from MediaFire"
+    )
+
+
 def downloading_audio_status(lang: str = DEFAULT_LANG):
     return "🎧 Baixando áudio..." if _normalize_lang(lang) == "pt" else "🎧 Downloading audio..."
 
@@ -721,3 +748,260 @@ def translation_error(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return "❌ Ocorreu um erro durante a tradução."
     return "❌ An error occurred while translating."
+
+
+
+def translation_result(
+    text: str,
+    source_lang: str,
+    target_lang: str,
+    bot_username: str | None = None,
+):
+    source = html.escape(
+        str(source_lang or "AUTO").replace("_", "-").upper()
+    )
+    target = html.escape(
+        str(target_lang or "").replace("_", "-").upper()
+    )
+
+    translated_text = html.escape(str(text or ""))
+
+    translator_icon = (
+        '<tg-emoji emoji-id="6017109689748164760">🌐</tg-emoji>'
+    )
+
+    rocket_icon = (
+        '<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji>'
+    )
+
+    username = (bot_username or "").lstrip("@").strip()
+
+    if username:
+        safe_username = html.escape(username, quote=True)
+        footer = (
+            f'{rocket_icon} Powered by '
+            f'<a href="https://t.me/{safe_username}">'
+            f'Save Vídeo DL Bot</a>'
+        )
+    else:
+        footer = (
+            f"{rocket_icon} Powered by Save Vídeo DL Bot"
+        )
+
+    return (
+        f"{translator_icon} | "
+        f"<b>{source} ➡️ {target}</b>\n\n"
+        f"{translated_text}\n\n"
+        f"{footer}"
+    )
+
+
+
+# ============================================================
+# /ping
+# ============================================================
+
+def ping_message(
+    latency_ms: int,
+    status: str,
+    lang: str = DEFAULT_LANG,
+    bot_username: str | None = None,
+):
+    is_pt = _normalize_lang(lang) == "pt"
+
+    # Premium / Custom Emoji IDs
+    pong_icon = (
+        '<tg-emoji emoji-id="6320820489539295521">🏓</tg-emoji>'
+    )
+    ping_icon = (
+        '<tg-emoji emoji-id="6321040305965505933">🧭</tg-emoji>'
+    )
+    status_icon = (
+        '<tg-emoji emoji-id="6320953010755214903">💨</tg-emoji>'
+    )
+    green_icon = (
+        '<tg-emoji emoji-id="6321328167558585449">🟢</tg-emoji>'
+    )
+    note_icon = (
+        '<tg-emoji emoji-id="5408905620139028881">📝</tg-emoji>'
+    )
+    delete_icon = (
+        '<tg-emoji emoji-id="5408832111773757273">🗑️</tg-emoji>'
+    )
+
+    rocket_icon = (
+        '<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji>'
+    )
+
+    if status == "good":
+        status_emoji = green_icon
+        status_text = "Bom" if is_pt else "Good"
+
+    elif status == "fair":
+        status_emoji = "🟡"
+        status_text = "Regular" if is_pt else "Fair"
+
+    else:
+        status_emoji = "🔴"
+        status_text = "Lento" if is_pt else "Slow"
+
+    if is_pt:
+        note_text = (
+            "Este ping mede o tempo de resposta entre "
+            "o bot e a API do Telegram."
+        )
+        delete_text = (
+            "Esta mensagem e seu comando serão apagados "
+            "após 5 minutos."
+        )
+        status_label = "Status"
+    else:
+        note_text = (
+            "This ping measures the response time between "
+            "the bot and the Telegram API."
+        )
+        delete_text = (
+            "This message and your command will be deleted "
+            "after 5 minutes."
+        )
+        status_label = "Status"
+
+    username = (bot_username or "").lstrip("@").strip()
+
+    if username:
+        safe_username = html.escape(username, quote=True)
+        footer = (
+            f'{rocket_icon} Powered by '
+            f'<a href="https://t.me/{safe_username}">'
+            f'Save Vídeo DL Bot</a>'
+        )
+    else:
+        footer = (
+            f"{rocket_icon} Powered by Save Vídeo DL Bot"
+        )
+
+    return (
+        f"{pong_icon} <b>Pong!</b>\n\n"
+        f"{ping_icon} <b>Ping:</b> "
+        f"<code>{int(latency_ms)} ms</code>\n\n"
+        f"{status_icon} <b>{status_label}:</b> "
+        f"{status_emoji} {status_text}\n\n"
+        f"<blockquote>"
+        f"{note_icon} <i><b>{'Nota' if is_pt else 'Note'}:</b> "
+        f"{html.escape(note_text)}</i>"
+        f"</blockquote>\n"
+        f"{delete_icon} <i>{html.escape(delete_text)}</i>\n\n"
+        f"{footer}"
+    )
+
+
+def ping_unavailable(lang: str = DEFAULT_LANG):
+    if _normalize_lang(lang) == "pt":
+        return "❌ Não foi possível medir o ping agora."
+    return "❌ Couldn't measure the ping right now."
+
+
+def guest_no_link_title(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Link não encontrado"
+        if _normalize_lang(lang) == "pt"
+        else "No link found"
+    )
+
+
+def guest_no_link_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Envie ou responda uma mensagem com um link compatível."
+        if _normalize_lang(lang) == "pt"
+        else "Send or reply to a message with a supported link."
+    )
+
+
+def guest_no_link_message(lang: str = DEFAULT_LANG) -> str:
+    if _normalize_lang(lang) == "pt":
+        return (
+            "❌ <b>Não encontrei um link compatível.</b>\n\n"
+            "Chame o bot junto com um link ou responda a uma mensagem "
+            "que contenha o link."
+        )
+    return (
+        "❌ <b>I couldn't find a supported link.</b>\n\n"
+        "Call the bot together with a link, or reply to a message "
+        "that contains the link."
+    )
+
+
+def guest_open_private_button(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Abrir no privado"
+        if _normalize_lang(lang) == "pt"
+        else "Open private chat"
+    )
+
+
+def guest_unavailable_title(
+    service_name: str,
+    lang: str = DEFAULT_LANG,
+) -> str:
+    service = service_name or "Guest Mode"
+    if _normalize_lang(lang) == "pt":
+        return f"{service} no modo convidado"
+    return f"{service} in Guest Mode"
+
+
+def guest_unavailable_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Abra o bot no privado para continuar."
+        if _normalize_lang(lang) == "pt"
+        else "Open the bot in private chat to continue."
+    )
+
+
+def guest_unavailable_message(
+    service_name: str,
+    lang: str = DEFAULT_LANG,
+) -> str:
+    service = service_name or "este serviço"
+    if _normalize_lang(lang) == "pt":
+        return (
+            f"ℹ️ <b>{service}</b> ainda não pode concluir este pedido "
+            "diretamente pelo modo convidado.\n\n"
+            "Abra o bot no privado e envie o link por lá."
+        )
+    return (
+        f"ℹ️ <b>{service}</b> can't complete this request directly "
+        "through Guest Mode yet.\n\n"
+        "Open the bot in private chat and send the link there."
+    )
+
+
+def guest_slow_down_title(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Muitas solicitações"
+        if _normalize_lang(lang) == "pt"
+        else "Too many requests"
+    )
+
+
+def guest_slow_down_description(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Aguarde um instante antes de tentar novamente."
+        if _normalize_lang(lang) == "pt"
+        else "Wait a moment before trying again."
+    )
+
+
+def guest_slow_down_message(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "⏳ Aguarde um instante e tente novamente."
+        if _normalize_lang(lang) == "pt"
+        else "⏳ Wait a moment and try again."
+    )
+
+
+def guest_restricted_service_name(lang: str = DEFAULT_LANG) -> str:
+    return (
+        "Serviço indisponível"
+        if _normalize_lang(lang) == "pt"
+        else "Service unavailable"
+    )

@@ -459,6 +459,322 @@ def _normalize_translation_language(value: str) -> Optional[str]:
     return f"{parts[0].lower()}-{parts[1].upper()}"
 
 
+async def _identify_translation_language(
+    trans_bin: str,
+    text: str,
+) -> str:
+    proc = None
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            trans_bin,
+            "-4",
+            "-no-bidi",
+            "-no-ansi",
+            "-e",
+            "google",
+            "-brief",
+            "-identify",
+            text,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=10,
+        )
+
+        stderr_text = stderr.decode(
+            "utf-8",
+            errors="ignore",
+        ).strip()
+
+        if stderr_text:
+            logging.debug(
+                "Translate identify stderr: %s",
+                stderr_text[:300],
+            )
+
+        identified = stdout.decode(
+            "utf-8",
+            errors="ignore",
+        ).strip()
+
+        for line in reversed(identified.splitlines()):
+            candidate = line.strip()
+
+            if re.fullmatch(
+                r"[A-Za-z]{2,3}(?:[-_][A-Za-z]{2,4})?",
+                candidate,
+            ):
+                return candidate.replace("_", "-")
+
+    except asyncio.TimeoutError:
+        if proc is not None:
+            proc.kill()
+            await proc.communicate()
+
+        logging.debug(
+            "Language identification timed out"
+        )
+
+    except Exception as exc:
+        logging.debug(
+            "Language identification failed: %s",
+            exc,
+        )
+
+    return "AUTO"
+
+
+
+
+def _clean_translation_input(text: str) -> str:
+    """Remove elementos gerados pelo próprio bot antes da tradução."""
+    lines = (text or "").splitlines()
+    cleaned = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Não manda o nosso próprio rodapé novamente ao tradutor.
+        if (
+            "Powered by Save Vídeo DL Bot" in stripped
+            or "Powered by Save Video DL Bot" in stripped
+        ):
+            continue
+
+        cleaned.append(line)
+
+    return "\n".join(cleaned).strip()
+
+
+def _translation_chunks(text: str, max_chars: int = 700) -> list[str]:
+    """Divide textos maiores preservando parágrafos sempre que possível."""
+    text = (text or "").strip()
+
+    if not text:
+        return []
+
+    paragraphs = text.split("\n")
+    chunks = []
+    current = ""
+
+    for paragraph in paragraphs:
+        paragraph = paragraph.strip()
+
+        if not paragraph:
+            if current:
+                current += "\n"
+            continue
+
+        candidate = (
+            f"{current.rstrip()}\n{paragraph}".strip()
+            if current.strip()
+            else paragraph
+        )
+
+        if len(candidate) <= max_chars:
+            current = candidate
+            continue
+
+        if current.strip():
+            chunks.append(current.strip())
+            current = ""
+
+        # Caso um único parágrafo seja muito grande.
+        while len(paragraph) > max_chars:
+            cut = paragraph.rfind(" ", 0, max_chars)
+
+            if cut < max_chars // 2:
+                cut = max_chars
+
+            chunks.append(paragraph[:cut].strip())
+            paragraph = paragraph[cut:].strip()
+
+        current = paragraph
+
+    if current.strip():
+        chunks.append(current.strip())
+
+    return chunks
+
+
+def _should_preserve_translation_line(text: str) -> bool:
+    """Preserva créditos, URLs e menções isoladas."""
+    value = (text or "").strip()
+
+    if not value:
+        return True
+
+    if value.startswith(("http://", "https://")):
+        return True
+
+    # Créditos típicos:
+    # 🗞 @usuario
+    # 📸 São Paulo FC
+    if value.startswith(("🗞", "📸")):
+        return True
+
+    # @username isolado
+    if value.startswith("@") and " " not in value:
+        return True
+
+    return False
+
+
+async def _translate_text_chunk(
+    trans_bin: str,
+    text: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    source = (
+        source_language.lower()
+        if source_language and source_language.upper() != "AUTO"
+        else ""
+    )
+
+    language_pair = (
+        f"{source}:{target_language}"
+        if source
+        else f":{target_language}"
+    )
+
+    proc = await asyncio.create_subprocess_exec(
+        trans_bin,
+        "-4",
+        "-no-bidi",
+        "-no-ansi",
+        "-e",
+        "google",
+        "-brief",
+        language_pair,
+        text,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    stdout, stderr = await asyncio.wait_for(
+        proc.communicate(),
+        timeout=_TRAD_TIMEOUT_SECONDS,
+    )
+
+    stderr_text = stderr.decode(
+        "utf-8",
+        errors="ignore",
+    ).strip()
+
+    if stderr_text:
+        logging.debug(
+            "Translate chunk stderr: %s",
+            stderr_text[:500],
+        )
+
+    translated = stdout.decode(
+        "utf-8",
+        errors="ignore",
+    ).strip()
+
+    if proc.returncode != 0 or not translated:
+        raise RuntimeError(
+            f"Translate Shell failed with returncode={proc.returncode}"
+        )
+
+    return translated
+
+
+async def _translate_long_text(
+    trans_bin: str,
+    text: str,
+    source_language: str,
+    target_language: str,
+) -> str:
+    """
+    Traduz por blocos e preserva a estrutura da mensagem original.
+
+    Exemplo:
+    título
+
+    parágrafo
+
+    parágrafo
+
+    créditos
+    """
+    text = (text or "").strip()
+
+    if not text:
+        return ""
+
+    # Cada bloco é separado por uma ou mais linhas vazias.
+    blocks = re.split(r"\n\s*\n", text)
+
+    translated_blocks = []
+
+    for block in blocks:
+        block = block.strip()
+
+        if not block:
+            continue
+
+        lines = block.splitlines()
+
+        # Bloco formado somente por créditos/menções/links:
+        # preserva exatamente como veio.
+        if all(
+            _should_preserve_translation_line(line)
+            for line in lines
+            if line.strip()
+        ):
+            translated_blocks.append(
+                "\n".join(line.strip() for line in lines if line.strip())
+            )
+            continue
+
+        # Caso haja créditos misturados no mesmo bloco,
+        # traduz o texto normal e preserva as linhas de crédito.
+        normal_lines = []
+        result_lines = []
+
+        async def flush_normal_lines():
+            if not normal_lines:
+                return
+
+            normal_text = "\n".join(normal_lines).strip()
+
+            translated = await _translate_text_chunk(
+                trans_bin,
+                normal_text,
+                source_language,
+                target_language,
+            )
+
+            result_lines.append(translated.strip())
+            normal_lines.clear()
+
+        for line in lines:
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            if _should_preserve_translation_line(stripped):
+                await flush_normal_lines()
+                result_lines.append(stripped)
+            else:
+                normal_lines.append(stripped)
+
+        await flush_normal_lines()
+
+        if result_lines:
+            translated_blocks.append("\n".join(result_lines))
+
+    # Recria exatamente a separação visual entre os blocos.
+    return "\n\n".join(translated_blocks)
+
+
 async def translate_command(message: types.Message):
     if await is_banned(
         message.from_user.id if message.from_user else None,
@@ -466,8 +782,7 @@ async def translate_command(message: types.Message):
     ):
         return
 
-    # Mensagens de ajuda/erro seguem o idioma configurado
-    # no bot. Em grupos, usa a configuração do grupo.
+    # Idioma da interface do bot.
     target_id = (
         message.from_user.id
         if message.chat.type == ChatType.PRIVATE
@@ -485,7 +800,12 @@ async def translate_command(message: types.Message):
         or "pt"
     )
 
-    raw_text = (message.text or message.caption or "").strip()
+    raw_text = (
+        message.text
+        or message.caption
+        or ""
+    ).strip()
+
     parts = raw_text.split(maxsplit=2)
 
     if len(parts) < 2:
@@ -494,29 +814,43 @@ async def translate_command(message: types.Message):
         )
         return
 
-    target_language = _normalize_translation_language(parts[1])
+    target_language = _normalize_translation_language(
+        parts[1]
+    )
 
     if not target_language:
         await message.reply(
-            bm.translation_invalid_language(lang=user_lang)
+            bm.translation_invalid_language(
+                lang=user_lang
+            )
         )
         return
 
     text_to_translate = ""
+    translated_from_reply = False
 
-    # Exemplo:
-    # /trad es Hello
+    # /trad pt-BR Hello
     if len(parts) >= 3:
         text_to_translate = parts[2].strip()
 
-    # Exemplo respondendo uma mensagem:
-    # /trad es
-    if not text_to_translate and message.reply_to_message:
+    # Respondendo uma mensagem:
+    # /trad pt-BR
+    if (
+        not text_to_translate
+        and message.reply_to_message
+    ):
         text_to_translate = (
             message.reply_to_message.text
             or message.reply_to_message.caption
             or ""
         ).strip()
+
+        if text_to_translate:
+            translated_from_reply = True
+
+    text_to_translate = _clean_translation_input(
+        text_to_translate
+    )
 
     if not text_to_translate:
         await message.reply(
@@ -536,72 +870,56 @@ async def translate_command(message: types.Message):
     trans_bin = shutil.which("trans")
 
     if not trans_bin:
-        logging.error("Translate Shell executable 'trans' not found")
+        logging.error(
+            "Translate Shell executable 'trans' not found"
+        )
+
         await message.reply(
-            bm.translation_service_unavailable(lang=user_lang)
+            bm.translation_service_unavailable(
+                lang=user_lang
+            )
         )
         return
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            trans_bin,
-            "-brief",
-            f":{target_language}",
-            text_to_translate,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        source_language = (
+            await _identify_translation_language(
+                trans_bin,
+                text_to_translate,
+            )
         )
 
-        try:
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=_TRAD_TIMEOUT_SECONDS,
-            )
+        translated = await _translate_long_text(
+            trans_bin,
+            text_to_translate,
+            source_language,
+            target_language,
+        )
 
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-
-            logging.warning(
-                "Translation timed out: target=%s",
-                target_language,
-            )
-
-            await message.reply(
-                bm.translation_timeout(lang=user_lang)
-            )
-            return
-
-        translated = stdout.decode(
-            "utf-8",
-            errors="ignore",
-        ).strip()
-
-        stderr_text = stderr.decode(
-            "utf-8",
-            errors="ignore",
-        ).strip()
-
-        # Warnings do Translate Shell ficam somente no log.
-        # Não são enviados ao usuário.
-        if stderr_text:
-            logging.debug(
-                "Translate Shell stderr: %s",
-                stderr_text[:500],
-            )
+        stderr_text = ""
 
         if not translated:
             logging.warning(
-                "Translation returned no text: target=%s returncode=%s stderr=%s",
+                "Translation returned no text: "
+                "target=%s returncode=%s stderr=%s",
                 target_language,
                 proc.returncode,
                 stderr_text[:300],
             )
 
             await message.reply(
-                bm.translation_failed(lang=user_lang)
+                bm.translation_failed(
+                    lang=user_lang
+                )
             )
             return
+
+        try:
+            bot_username = await get_bot_username(
+                user_mod.bot
+            )
+        except Exception:
+            bot_username = None
 
         if message.from_user:
             try:
@@ -613,22 +931,55 @@ async def translate_command(message: types.Message):
             except Exception:
                 pass
 
-        # Telegram tem limite por mensagem.
+        # Mantemos margem para o HTML,
+        # cabeçalho e rodapé do Telegram.
         chunks = [
-            translated[i:i + 4000]
-            for i in range(0, len(translated), 4000)
+            translated[i:i + 3000]
+            for i in range(
+                0,
+                len(translated),
+                3000,
+            )
         ]
 
         for index, chunk in enumerate(chunks):
+            result_text = bm.translation_result(
+                chunk,
+                source_language,
+                target_language,
+                bot_username,
+            )
+
             if index == 0:
-                await message.reply(
-                    chunk,
-                    parse_mode=None,
-                )
+                # Se /trad foi usado como reply,
+                # responde diretamente à mensagem original.
+                if (
+                    translated_from_reply
+                    and message.reply_to_message
+                ):
+                    await message.reply_to_message.reply(
+                        result_text,
+                        parse_mode="HTML",
+                        link_preview_options=types.LinkPreviewOptions(
+                            is_disabled=True
+                        ),
+                    )
+                else:
+                    await message.reply(
+                        result_text,
+                        parse_mode="HTML",
+                        link_preview_options=types.LinkPreviewOptions(
+                            is_disabled=True
+                        ),
+                    )
+
             else:
                 await message.answer(
-                    chunk,
-                    parse_mode=None,
+                    result_text,
+                    parse_mode="HTML",
+                    link_preview_options=types.LinkPreviewOptions(
+                        is_disabled=True
+                    ),
                 )
 
     except Exception as exc:
@@ -638,5 +989,130 @@ async def translate_command(message: types.Message):
         )
 
         await message.reply(
-            bm.translation_error(lang=user_lang)
+            bm.translation_error(
+                lang=user_lang
+            )
+        )
+
+
+
+
+# ============================================================
+# /ping
+# ============================================================
+
+async def _delete_ping_later(
+    command_message: types.Message,
+    response_message: types.Message,
+    delay: int = 300,
+):
+    await asyncio.sleep(delay)
+
+    # Primeiro apaga a resposta do bot.
+    try:
+        await response_message.delete()
+    except Exception:
+        pass
+
+    # Depois tenta apagar o comando do usuário.
+    # Em grupos isso depende das permissões do bot.
+    try:
+        await command_message.delete()
+    except Exception:
+        pass
+
+
+async def ping_command(message: types.Message):
+    if await is_banned(
+        message.from_user.id if message.from_user else None,
+        message.chat.id,
+    ):
+        return
+
+    # Segue o idioma configurado no bot.
+    target_id = (
+        message.from_user.id
+        if message.chat.type == ChatType.PRIVATE
+        else message.chat.id
+    )
+
+    try:
+        user_lang = await user_mod.db.get_language(target_id)
+    except Exception:
+        user_lang = None
+
+    user_lang = (
+        user_lang
+        or getattr(message.from_user, "language_code", None)
+        or "pt"
+    )
+
+    try:
+        # Mede o round-trip real entre o bot e sua API Telegram.
+        started = time.perf_counter()
+
+        await user_mod.bot.get_me()
+
+        latency_ms = max(
+            1,
+            round(
+                (time.perf_counter() - started) * 1000
+            ),
+        )
+
+        if latency_ms <= 250:
+            status = "good"
+        elif latency_ms <= 600:
+            status = "fair"
+        else:
+            status = "slow"
+
+        try:
+            bot_username = await get_bot_username(
+                user_mod.bot
+            )
+        except Exception:
+            bot_username = None
+
+        response = await message.reply(
+            bm.ping_message(
+                latency_ms,
+                status,
+                lang=user_lang,
+                bot_username=bot_username,
+            ),
+            parse_mode="HTML",
+            link_preview_options=types.LinkPreviewOptions(
+                is_disabled=True
+            ),
+        )
+
+        if message.from_user:
+            try:
+                await user_mod.send_analytics(
+                    user_id=message.from_user.id,
+                    chat_type=message.chat.type,
+                    action_name="ping",
+                )
+            except Exception:
+                pass
+
+        # Apaga o /ping e a resposta após 5 minutos,
+        # sem bloquear o handler.
+        asyncio.create_task(
+            _delete_ping_later(
+                message,
+                response,
+                300,
+            )
+        )
+
+    except Exception as exc:
+        logging.exception(
+            "Error handling /ping: %s",
+            exc,
+        )
+
+        await message.reply(
+            bm.ping_unavailable(lang=user_lang)
         )

@@ -237,5 +237,6 @@ BOT_COMMANDS = [
     {"command": "trad", "description": "Translate text"},
     {"command": "settings", "description": "Settings"},
     {"command": "stats", "description": "Statistics"},
+    {"command": "ping", "description": "Check bot latency"},
 ]
 ADMINS_UID = [ADMIN_ID]
