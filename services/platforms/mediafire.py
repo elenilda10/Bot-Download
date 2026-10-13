@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-MAX_BYTES = int(os.getenv("CLOUD_FILE_MAX_BYTES", str(500 * 1024 * 1024)))
+MAX_BYTES = int(os.getenv("CLOUD_FILE_MAX_BYTES", str(2000 * 1024 * 1024)))
 TIMEOUT = int(os.getenv("CLOUD_FILE_TIMEOUT", "600"))
 HOSTS = {
     "mediafire": {"mediafire.com", "www.mediafire.com", "m.mediafire.com"},

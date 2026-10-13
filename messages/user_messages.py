@@ -233,15 +233,18 @@ def mediafire_document_caption(lang: str = DEFAULT_LANG):
 
 
 def downloading_audio_status(lang: str = DEFAULT_LANG):
-    return "🎧 Baixando áudio..." if _normalize_lang(lang) == "pt" else "🎧 Downloading audio..."
+    emoji = '<tg-emoji emoji-id="6024055893111345718">😄</tg-emoji>'
+    return f"{emoji} Baixando áudio..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading audio..."
 
 
 def downloading_video_status(lang: str = DEFAULT_LANG):
-    return "<tg-emoji emoji-id='5375464961822695044'>🎬</tg-emoji> Baixando vídeo..." if _normalize_lang(lang) == "pt" else "<tg-emoji emoji-id='5375464961822695044'>🎬</tg-emoji> Downloading video..."
+    emoji = '<tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji>'
+    return f"{emoji} Baixando vídeo..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading video..."
 
 
 def uploading_status(lang: str = DEFAULT_LANG):
-    return "☁️ Enviando arquivo para o Telegram..." if _normalize_lang(lang) == "pt" else "☁️ Uploading file to Telegram..."
+    emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
+    return f"{emoji} Enviando arquivo para o Telegram..." if _normalize_lang(lang) == "pt" else f"{emoji} Uploading file to Telegram..."
 
 
 def retrying_again_status(next_attempt: int, total_attempts: int, lang: str = DEFAULT_LANG):
