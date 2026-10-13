@@ -11,10 +11,10 @@ from handlers.request_dedupe import claim_message_request
 from services.platforms.cloud_files import download_cloud_file, provider_for
 
 router = Router(name="cloud_files")
-URL = re.compile(r"https://[^\\s<>]+", re.I)
+URL = re.compile(r"https://[^\s<>]+", re.I)
 LIMIT = asyncio.Semaphore(2)
 
-@router.message(F.text.regexp(r"https://(?:www\\.|m\\.)?(?:mega\\.nz|mega\\.co\\.nz|mediafire\\.com|drive\\.google\\.com|docs\\.google\\.com)/", mode="search"))
+@router.message(F.text.regexp(r"https://(?:www\.|m\.)?(?:mega\.nz|mega\.co\.nz|mediafire\.com|drive\.google\.com|docs\.google\.com)/", mode="search"))
 async def handle_cloud_file(message: types.Message):
     if not message.from_user or await cmd_mod.is_banned(message.from_user.id, message.chat.id):
         return
