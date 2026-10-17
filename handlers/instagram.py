@@ -130,6 +130,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                     local_files_to_clean.append(item.thumb)
 
                 await message.reply_video(
+                    allow_sending_without_reply=True,
                     video=video_file,
                     thumbnail=thumb_file,
                     caption=caption or None,
@@ -143,6 +144,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
             else:
                 photo_file = FSInputFile(item.url) if is_local else URLInputFile(item.url)
                 await message.reply_photo(
+                    allow_sending_without_reply=True,
                     photo=photo_file,
                     caption=caption or None,
                     parse_mode=ParseMode.HTML,
@@ -182,7 +184,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                     )
 
             if media_group:
-                await message.reply_media_group(media=media_group)
+                await message.reply_media_group(media=media_group, allow_sending_without_reply=True)
 
         if status_message:
             await safe_delete_message(status_message)

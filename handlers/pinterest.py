@@ -218,12 +218,14 @@ async def process_pinterest_single_media(
             if media_kind == "video":
                 return await message.reply_video(
                     video=file_id,
+                    allow_sending_without_reply=True,
                     caption=bm.captions(user_settings["captions"], post.description, bot_url),
                     reply_markup=_reply_markup(),
                     parse_mode="HTML",
                 )
             return await message.reply_photo(
                 photo=file_id,
+                allow_sending_without_reply=True,
                 caption=bm.captions(user_settings["captions"], post.description, bot_url),
                 reply_markup=_reply_markup(),
                 parse_mode="HTML",
@@ -235,6 +237,7 @@ async def process_pinterest_single_media(
         if media_kind == "video":
             return await message.reply_video(
                 video=FSInputFile(path),
+                allow_sending_without_reply=True,
                 caption=bm.captions(user_settings["captions"], post.description, bot_url),
                 reply_markup=_reply_markup(),
                 parse_mode="HTML",
@@ -242,6 +245,7 @@ async def process_pinterest_single_media(
             )
         return await message.reply_photo(
             photo=FSInputFile(path),
+            allow_sending_without_reply=True,
             caption=bm.captions(user_settings["captions"], post.description, bot_url),
             reply_markup=_reply_markup(),
             parse_mode="HTML",

@@ -38,8 +38,35 @@ router = Router()
 
 
 async def fetch_twitter_text_post(url: str) -> Optional[str]:
-    """Extrai o texto de uma publicação pública do X via oEmbed."""
+    """Obtém o texto de uma publicação pública do X."""
     import aiohttp
+    from urllib.parse import urlparse
+
+    match = re.search(r"/status/(\d+)", url)
+    parsed = urlparse(url)
+
+    if match:
+        username = parsed.path.strip("/").split("/")[0]
+        if re.fullmatch(r"[A-Za-z0-9_]{1,15}", username):
+            api_url = (
+                f"https://api.fxtwitter.com/{username}/status/"
+                f"{match.group(1)}"
+            )
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        api_url,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            tweet = data.get("tweet") or {}
+                            text = tweet.get("text") or ""
+                            if text.strip():
+                                return text.strip()
+            except Exception as exc:
+                logging.warning("FxTwitter text failed: %s", exc)
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -62,17 +89,12 @@ async def fetch_twitter_text_post(url: str) -> Optional[str]:
         if not match:
             return None
 
-        post_text = match.group(1)
         post_text = re.sub(
-            r"<br\s*/?>",
-            "\n",
-            post_text,
+            r"<br\s*/?>", "\n", match.group(1),
             flags=re.IGNORECASE,
         )
         post_text = re.sub(r"<[^>]+>", "", post_text)
-        post_text = html.unescape(post_text).strip()
-
-        return post_text or None
+        return html.unescape(post_text).strip() or None
 
     except Exception as exc:
         logging.warning("Twitter oEmbed text fallback failed: %s", exc)
@@ -113,7 +135,8 @@ async def handle_twitter_message(message: types.Message, **kwargs):
 
         user_lang = await db.get_language(message.from_user.id)
         status_message = await message.reply(
-            bm.downloading_video_status(lang=user_lang)
+            bm.downloading_video_status(lang=user_lang),
+            allow_sending_without_reply=True,
         )
 
         media_result = await download_twitter_media(url, output_dir=OUTPUT_DIR)
@@ -140,10 +163,12 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                     user_settings.get("captions", "on"),
                     post_text,
                     bot_url,
+                    limit=4096,
                 )
 
                 await message.reply(
                     text_caption,
+                    allow_sending_without_reply=True,
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=True,
                     reply_markup=reply_markup,
@@ -186,6 +211,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                 thumb_input = FSInputFile(item.thumb) if item.thumb and os.path.exists(item.thumb) else None
                 await message.reply_video(
                     video=file_input,
+                    allow_sending_without_reply=True,
                     caption=caption,
                     parse_mode=ParseMode.HTML,
                     thumbnail=thumb_input,
@@ -198,6 +224,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
             else:
                 await message.reply_photo(
                     photo=file_input,
+                    allow_sending_without_reply=True,
                     caption=caption,
                     parse_mode=ParseMode.HTML,
                     reply_markup=reply_markup,
@@ -232,7 +259,10 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                     )
 
             if media_group:
-                await message.reply_media_group(media=media_group)
+                await message.reply_media_group(
+                    media=media_group,
+                    allow_sending_without_reply=True,
+                )
 
         if status_message:
             await safe_delete_message(status_message)

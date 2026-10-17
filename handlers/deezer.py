@@ -125,6 +125,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
 
         await message.reply_audio(
             audio=audio_file,
+            allow_sending_without_reply=True,
             title=track.title,
             performer=clean_artist,
             duration=track.duration or None,

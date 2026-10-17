@@ -225,7 +225,7 @@ async def process_tiktok(message: types.Message, direct_url: Optional[str] = Non
 
         parsed_url = urlparse(url)
         if "/live" in (parsed_url.path or "").lower():
-            await message.reply(bm.tiktok_live_not_supported(lang=user_lang))
+            await message.reply(bm.tiktok_live_not_supported(lang=user_lang), allow_sending_without_reply=True)
             return
 
         retry_notice_sent = {"value": False}
@@ -238,7 +238,8 @@ async def process_tiktok(message: types.Message, direct_url: Optional[str] = Non
             ):
                 retry_notice_sent["value"] = True
                 await message.reply(
-                    bm.retrying_again_status(failed_attempt + 1, total_attempts, lang=user_lang)
+                    bm.retrying_again_status(failed_attempt + 1, total_attempts, lang=user_lang),
+                    allow_sending_without_reply=True,
                 )
 
         data = await fetch_tiktok_data_with_retry(url, on_retry=_on_retry_fetch)
@@ -513,6 +514,7 @@ async def process_tiktok_photos(
                 create_photos_zip(photo_paths, zip_path)
                 await message.reply_document(
                     document=FSInputFile(zip_path),
+                    allow_sending_without_reply=True,
                     caption=bm.captions(
                         user_settings["captions"] if isinstance(user_settings, dict) else "off",
                         info.description if info else None,
@@ -617,7 +619,7 @@ async def process_tiktok_profile(
     user = await tiktok_service.fetch_user_info(username)
     if not user:
         logging.error("TikTok profile lookup failed: target=%s", username)
-        await message.reply(bm.something_went_wrong(lang=user_lang))
+        await message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
         return
     display = user.nickname.strip() or username
     pic = user.profile_pic.replace("q:100:100", "q:750:750")
@@ -626,6 +628,7 @@ async def process_tiktok_profile(
         cached_file_id = await db.get_file_id(profile_cache_key)
         sent_message = await message.reply_photo(
             photo=cached_file_id or pic,
+            allow_sending_without_reply=True,
             caption=bm.captions(user_captions, user.description, bot_url),
             reply_markup=kb.return_user_info_keyboard(
                 display, user.followers, user.videos, user.likes, full_url
@@ -643,6 +646,7 @@ async def process_tiktok_profile(
         cached_logo_id = await db.get_file_id(fallback_cache_key)
         sent_message = await message.reply_photo(
             photo=cached_logo_id or logo,
+            allow_sending_without_reply=True,
             caption=bm.captions(user_captions, user.description, bot_url),
             reply_markup=kb.return_user_info_keyboard(
                 display, user.followers, user.videos, user.likes, full_url
@@ -675,6 +679,7 @@ async def download_tiktok_doc_callback(call: types.CallbackQuery):
         try:
             await call.message.reply_document(
                 document=file_id,
+                allow_sending_without_reply=True,
                 caption=(
                     "📄 Arquivo de vídeo original"
                     if not str(user_lang).lower().startswith("en")
@@ -709,7 +714,7 @@ async def download_tiktok_doc_callback(call: types.CallbackQuery):
     except Exception as exc:
         logging.error("Falha ao processar doc:tiktok callback: video_id=%s error=%s", video_id, exc)
         user_lang = await db.get_language(call.from_user.id)
-        await call.message.reply(bm.something_went_wrong(lang=user_lang))
+        await call.message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
 
 
 @router.callback_query(F.data.startswith("audio:tiktok:"))
@@ -806,7 +811,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
             await handle_download_error(call.message, lang=user_lang)
             return
         if metrics.size >= MAX_FILE_SIZE:
-            await call.message.reply(bm.audio_too_large(lang=user_lang))
+            await call.message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
             await remove_file(metrics.path)
             return
 

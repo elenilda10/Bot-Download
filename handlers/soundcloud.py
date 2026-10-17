@@ -254,7 +254,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large(lang=user_lang))
+            await message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
 
         async def _on_cache_store_error(exc: Exception) -> None:
             logging.error(

@@ -316,6 +316,7 @@ async def process_universal_link(
 
                 sent_message = await message.reply_video(
                     video=video_file,
+                    allow_sending_without_reply=True,
                     thumbnail=thumb_file,
                     caption=caption or None,
                     parse_mode=ParseMode.HTML,
@@ -332,6 +333,7 @@ async def process_universal_link(
                 photo_file = FSInputFile(item.url) if is_local else URLInputFile(item.url)
                 sent_message = await message.reply_photo(
                     photo=photo_file,
+                    allow_sending_without_reply=True,
                     caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard,
@@ -377,7 +379,10 @@ async def process_universal_link(
                     )
 
             if media_group:
-                await message.reply_media_group(media=media_group)
+                await message.reply_media_group(
+                    media=media_group,
+                    allow_sending_without_reply=True,
+                )
 
         if status_message:
             await safe_delete_message(status_message)
@@ -412,6 +417,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     if not call.message:
         return
     await call.answer()
+    user_lang = await db.get_language(call.from_user.id)
     url_hash = call.data.removeprefix("doc:univ:")
     doc_cache_key = build_media_cache_key("universal", variant=f"doc:{url_hash}")
     cached_file_id = await db.get_file_id(doc_cache_key)
@@ -419,6 +425,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
         try:
             await call.message.reply_document(
                 document=cached_file_id,
+                allow_sending_without_reply=True,
                 caption=(
                 "📄 Arquivo original"
                 if not str(user_lang).lower().startswith("en")
@@ -433,7 +440,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     original_url = _get_url_from_hash(url_hash)
     if not original_url:
         user_lang = await db.get_language(call.from_user.id)
-        await call.message.reply(bm.something_went_wrong(lang=user_lang))
+        await call.message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
         return
 
     status_message = await call.message.answer(
@@ -451,6 +458,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
 
         sent = await call.message.reply_document(
             document=file_input,
+            allow_sending_without_reply=True,
             caption=(
                 "📄 Arquivo original"
                 if not str(user_lang).lower().startswith("en")
@@ -479,7 +487,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     original_url = _get_url_from_hash(url_hash)
     user_lang = await db.get_language(call.from_user.id)
     if not original_url:
-        await call.message.reply(bm.something_went_wrong(lang=user_lang))
+        await call.message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
         return
 
     status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang))
@@ -532,7 +540,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
             return
 
         if os.path.getsize(output_mp3_path) >= MAX_FILE_SIZE:
-            await call.message.reply(bm.audio_too_large(lang=user_lang))
+            await call.message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
             await remove_file(output_mp3_path)
             await safe_delete_message(status_message)
             return

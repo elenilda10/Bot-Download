@@ -283,7 +283,7 @@ async def handle_download_backpressure_error(
     """Handle download queue/rate-limit errors with consistent UX."""
     if isinstance(exc, DownloadRateLimitError):
         if show_service_status:
-            await message.reply(build_rate_limit_text(exc.retry_after))
+            await message.reply(build_rate_limit_text(exc.retry_after), allow_sending_without_reply=True)
         else:
             await handle_download_error(
                 message, business_id=message.business_connection_id
@@ -291,7 +291,7 @@ async def handle_download_backpressure_error(
         return
     if isinstance(exc, DownloadQueueBusyError):
         if show_service_status:
-            await message.reply(build_queue_busy_text(exc.position))
+            await message.reply(build_queue_busy_text(exc.position), allow_sending_without_reply=True)
         else:
             await handle_download_error(
                 message, business_id=message.business_connection_id
@@ -301,7 +301,7 @@ async def handle_download_backpressure_error(
         if too_large_handler is not None:
             await too_large_handler()
         elif too_large_text is not None:
-            await message.reply(too_large_text)
+            await message.reply(too_large_text, allow_sending_without_reply=True)
         else:
             await handle_video_too_large(
                 message, business_id=message.business_connection_id

@@ -206,6 +206,7 @@ async def send_audio_with_thumbnail(
     **kwargs: Any,
 ) -> types.Message:
     send_kwargs = dict(kwargs)
+    send_kwargs.setdefault("allow_sending_without_reply", True)
     embedded_audio_path = None
     audio_performer = normalize_artist_names(performer) or build_bot_audio_performer(bot_url)
     if audio_performer:
@@ -268,6 +269,7 @@ def make_video_or_document_senders(
             if as_document:
                 return await message.reply_document(
                     document=file_id,
+                    allow_sending_without_reply=True,
                     caption=caption,
                     reply_markup=reply_markup_fn(),
                     parse_mode=parse_mode or "HTML",
@@ -275,6 +277,7 @@ def make_video_or_document_senders(
                 )
             return await message.reply_video(
                 video=file_id,
+                allow_sending_without_reply=True,
                 caption=caption,
                 reply_markup=reply_markup_fn(),
                 parse_mode=parse_mode or "HTML",
@@ -286,6 +289,7 @@ def make_video_or_document_senders(
         if as_document:
             return await message.reply_document(
                 document=FSInputFile(path),
+                allow_sending_without_reply=True,
                 caption=caption,
                 reply_markup=reply_markup_fn(),
                 parse_mode=parse_mode or "HTML",
@@ -295,6 +299,7 @@ def make_video_or_document_senders(
         try:
             return await message.reply_video(
                 video=FSInputFile(path),
+                allow_sending_without_reply=True,
                 caption=caption,
                 reply_markup=reply_markup_fn(),
                 parse_mode=parse_mode or "HTML",

@@ -646,3 +646,24 @@ def _stats_keyboard_legacy_bottom(
         ],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
+    is_pt = _normalize_lang(lang) == "pt"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📢 Entrar no canal" if is_pt else "📢 Join Channel",
+                    url="https://t.me/SaveVideoDL",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✅ Verificar inscrição" if is_pt else "✅ Verify Subscription",
+                    callback_data="channel_sub:verify",
+                )
+            ],
+        ]
+    )

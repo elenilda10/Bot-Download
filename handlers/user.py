@@ -12,6 +12,7 @@ from services.runtime.pending_requests import pop_pending  # noqa: F401
 from services.stats.chart import _render_stats  # noqa: F401
 
 from handlers import commands as cmd_mod
+from handlers.channel_membership import handle_channel_membership
 from handlers import media_download as media_mod
 from handlers import settings_menu as settings_mod
 from handlers.settings_menu import (
@@ -41,6 +42,7 @@ router.message(Command("ban"), F.chat.type == "private")(cmd_mod.ban_command)
 router.message(Command("unban"), F.chat.type == "private")(cmd_mod.unban_command)
 
 router.my_chat_member()(cmd_mod.handle_bot_membership)
+router.chat_member()(handle_channel_membership)
 router.message(Command("remove_keyboard"))(cmd_mod.remove_reply_keyboard)
 router.message(Command("stats"))(cmd_mod.stats_command)
 router.message(Command("ping"))(cmd_mod.ping_command)

@@ -159,10 +159,14 @@ async def send_welcome(message: types.Message):
     if message.chat.type == ChatType.PRIVATE:
         pending = user_mod.pop_pending(message.from_user.id)
         if pending:
-            try:
-                await user_mod.bot.delete_message(pending.notice_chat_id, pending.notice_message_id)
-            except Exception:
-                pass
+            if pending.notice_message_id > 0:
+                try:
+                    await user_mod.bot.delete_message(
+                        pending.notice_chat_id,
+                        pending.notice_message_id,
+                    )
+                except Exception:
+                    pass
             await user_mod._process_pending_message(_build_pending_private_message(message, pending.url))
 
 

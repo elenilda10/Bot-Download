@@ -256,17 +256,81 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             ]
 
             if thumbnails:
-                best = max(
-                    thumbnails,
-                    key=lambda thumb: (
-                        (thumb.get("width") or 0) * (thumb.get("height") or 0),
-                        thumb.get("width") or 0,
-                        thumb.get("height") or 0,
+                from PIL import ImageFile
+
+                candidates = []
+                headers = {
+                    "User-Agent": BROWSER_UA,
+                    "Referer": "https://www.instagram.com/",
+                }
+
+                with httpx.Client(
+                    timeout=8.0,
+                    follow_redirects=True,
+                    headers=headers,
+                ) as probe_client:
+                    for thumb_index, thumb in enumerate(thumbnails):
+                        width_candidate = thumb.get("width") or 0
+                        height_candidate = thumb.get("height") or 0
+
+                        if not width_candidate or not height_candidate:
+                            try:
+                                parser = ImageFile.Parser()
+                                total = 0
+
+                                with probe_client.stream(
+                                    "GET", thumb["url"]
+                                ) as response:
+                                    response.raise_for_status()
+
+                                    for chunk in response.iter_bytes(16384):
+                                        parser.feed(chunk)
+                                        total += len(chunk)
+
+                                        if parser.image:
+                                            (
+                                                width_candidate,
+                                                height_candidate,
+                                            ) = parser.image.size
+                                            break
+
+                                        if total >= 262144:
+                                            break
+
+                            except Exception as exc:
+                                logger.debug(
+                                    "Falha ao verificar resolução: %s",
+                                    exc,
+                                )
+
+                        candidates.append((
+                            width_candidate * height_candidate,
+                            width_candidate,
+                            thumb_index,
+                            thumb,
+                            width_candidate,
+                            height_candidate,
+                        ))
+
+                selected = max(
+                    candidates,
+                    key=lambda item: (
+                        item[0],
+                        item[1],
+                        item[2],
                     ),
                 )
+
+                best = selected[3]
                 image_url = best.get("url")
-                width = best.get("width")
-                height = best.get("height")
+                width = selected[4] or None
+                height = selected[5] or None
+
+                logger.info(
+                    "Instagram imagem selecionada: %sx%s",
+                    width,
+                    height,
+                )
             else:
                 image_url = entry.get("thumbnail")
                 width = None
@@ -328,8 +392,16 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
                     exc,
                 )
 
-        # Se encontramos fotos, o post é foto/carrossel e já está completo.
-        if media_items:
+        # Detecta vídeos mesmo quando o carrossel contém fotos.
+        video_positions = [
+            pos
+            for pos, entry in enumerate(entries, start=1)
+            if isinstance(entry, dict)
+            and (entry.get("formats") or entry.get("url"))
+        ]
+        mixed_carousel = bool(media_items and video_positions)
+
+        if media_items and not video_positions:
             return InstagramVideo(
                 id=post_id,
                 description=caption.strip(),
@@ -337,10 +409,14 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
                 media_list=media_items,
             )
 
-        # Não havia fotos: executa o fluxo normal de download de vídeo.
+        # Em carrosséis mistos, preserva a posição original.
         out_template = os.path.join(
             output_dir,
-            f"{post_id}_ytdlp_%(autonumber)s.%(ext)s",
+            (
+                f"{post_id}_ytdlp_%(playlist_index)s_%(id)s.%(ext)s"
+                if mixed_carousel
+                else f"{post_id}_ytdlp_%(autonumber)s.%(ext)s"
+            ),
         )
 
         download_cmd = [
@@ -356,6 +432,12 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
 
         if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
             download_cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
+
+        if mixed_carousel:
+            download_cmd.extend([
+                "--playlist-items",
+                ",".join(str(pos) for pos in video_positions),
+            ])
 
         download_cmd.append(url)
 
@@ -396,6 +478,22 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
                 if not target_file:
                     continue
 
+                video_index = idx
+
+                if mixed_carousel:
+                    position_match = re.search(
+                        r"_ytdlp_(\d+)_",
+                        os.path.basename(info_path),
+                    )
+                    if not position_match:
+                        logger.warning(
+                            "Instagram: posição do vídeo desconhecida: %s",
+                            info_path,
+                        )
+                        continue
+
+                    video_index = int(position_match.group(1)) - 1
+
                 media_items.append(
                     InstagramMedia(
                         url=target_file,
@@ -404,7 +502,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
                         width=info.get("width") or 1080,
                         height=info.get("height") or 1920,
                         duration=int(info.get("duration") or 0),
-                        index=idx,
+                        index=video_index,
                     )
                 )
             except Exception as file_err:
@@ -419,6 +517,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
                     pass
 
         if media_items:
+            media_items.sort(key=lambda item: item.index)
             return InstagramVideo(
                 id=post_id,
                 description=caption.strip(),
