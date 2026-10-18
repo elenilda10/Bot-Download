@@ -19,7 +19,7 @@ import aiohttp
 from config import MAX_FILE_SIZE
 
 PAGE_HOSTS = frozenset({"xvideos.com", "www.xvideos.com", "m.xvideos.com"})
-LINK_RE = re.compile(r"https://(?:www\.|m\.)?xvideos\.com/video\.[a-z0-9]+(?:/[^\s<>\\"']*)?", re.I)
+LINK_RE = re.compile(r"https://(?:www\.|m\.)?xvideos\.com/video\.[a-z0-9]+(?:/[^\s<>\"']*)?", re.I)
 VIDEO_PATH_RE = re.compile(r"/video\.[a-z0-9]+(?:/[^?#]*)?", re.I)
 CDN_HOST_RE = re.compile(r"[a-z0-9-]+\.xvideos-cdn\.com", re.I)
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
@@ -75,7 +75,7 @@ def _cdn_media_url(value: object) -> str | None:
 
 
 def _player_arg(html: str, function: str) -> str | None:
-    pattern = rf"html5player\.{re.escape(function)}\(\s*(['\\"]?)([^,'\\")\s]+)\1\s*\)"
+    pattern = rf"html5player\.{re.escape(function)}\(\s*(['\"]?)([^,'\")\s]+)\1\s*\)"
     values = re.findall(pattern, html)
     return values[-1][1] if values else None
 
