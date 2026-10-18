@@ -120,7 +120,7 @@ def _allowed_site_url(url: str) -> bool:
         host = parsed.hostname or ""
         return (
             parsed.scheme == "https"
-            and bool(re.fullmatch(r"(?:[a-z0-9-]+\\.)*xvideos\\.com", host, re.I))
+            and bool(re.fullmatch(r"(?:[a-z0-9-]+\.)*xvideos\.com", host, re.I))
             and not parsed.username
             and not parsed.password
             and parsed.port in (None, 443)
