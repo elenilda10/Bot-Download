@@ -4,7 +4,12 @@ O router `handlers/xvideos.py` é registrado antes do handler universal. Recebe 
 
 ## Funcionamento
 
-- Prefere HLS e seleciona a melhor qualidade disponível até 1080p; se falhar, tenta MP4 de maior qualidade e depois MP4 inferior.
+- Prefere HLS, respeitando a preferência `video_quality` que o usuário escolheu em `/settings`:
+  - `best` — melhor resolução oferecida pela fonte (incluindo 1080p se disponível).
+  - `balanced` — melhor resolução até 720p.
+  - `saver` — melhor resolução até 480p.
+- Se não houver fonte HLS adequada, tenta `mp4_high` e `mp4_low`; no MP4 a resolução é verificada depois do download com `ffprobe`, e fontes acima do limite escolhido são rejeitadas.
+- Para o caso verificado (360p, 480p e 1080p), `balanced` seleciona 480p, enquanto `best` seleciona 1080p.
 - Mantém o fluxo de envio do bot existente (aiogram + `CUSTOM_API_URL`), respeitando bloqueios, deduplicação, configuração de legendas e limite de tamanho.
 - Não usa cookies do Firefox nem a modificação experimental do extrator de XVideos no `yt-dlp` instalado no ambiente de testes.
 - Limita downloads simultâneos a 2 e usa pastas temporárias que são apagadas após a tentativa de envio.
