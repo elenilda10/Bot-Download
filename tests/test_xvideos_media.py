@@ -59,6 +59,29 @@ class XVideosMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service._player_arg(html, "setIdCdnHLS"), "77")
         self.assertIsNone(service._player_arg(html, "setVideoHLS"))
 
+    def test_settings_quality_limits_and_selectors(self):
+        hls = "https://hls-cdn77.xvideos-cdn.com/master.m3u8"
+        mp4 = "https://mp4-cdn77.xvideos-cdn.com/high.mp4"
+        self.assertIsNone(service._max_height_for_quality(None))
+        self.assertIsNone(service._max_height_for_quality("best"))
+        self.assertEqual(service._max_height_for_quality("balanced"), 720)
+        self.assertEqual(service._max_height_for_quality("saver"), 480)
+        self.assertEqual(service._format_for_source(hls, "best"), "best")
+        self.assertEqual(service._format_for_source(hls, "balanced"), "best[height<=720]")
+        self.assertEqual(service._format_for_source(hls, "saver"), "best[height<=480]")
+        self.assertEqual(service._format_for_source(mp4, "saver"), "best")
+
+    async def test_quality_forwarded_to_download(self):
+        url = "https://www.xvideos.com/video.oltvhef0c13/title"
+        hls = "https://hls-cdn77.xvideos-cdn.com/master.m3u8"
+        expected = service.XVideosDownload(Path("/tmp/test.mp4"), 854, 480, 800)
+        with patch.object(service, "_discover_sources", AsyncMock(return_value=[hls])), \
+                patch.object(service, "_download_source", AsyncMock(return_value=expected)) as downloader:
+            await service.download_xvideos(url, Path("/tmp/test"), video_quality="saver")
+            downloader.assert_awaited_once_with(
+                hls, url, Path("/tmp/test") / "0", video_quality="saver"
+            )
+
     async def test_prefers_hls_without_calling_mp4_on_success(self):
         hls = "https://hls-cdn77.xvideos-cdn.com/index.m3u8"
         mp4 = "https://mp4-cdn77.xvideos-cdn.com/video.mp4"
