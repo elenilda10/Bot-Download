@@ -17,6 +17,11 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import aiohttp
 
 from config import MAX_FILE_SIZE
+from services.settings import (
+    VIDEO_QUALITY_BALANCED,
+    VIDEO_QUALITY_SAVER,
+    normalize_setting_value,
+)
 
 PAGE_HOSTS = frozenset({"xvideos.com", "www.xvideos.com", "m.xvideos.com"})
 LINK_RE = re.compile(r"https://(?:www\.|m\.)?xvideos\.com/video\.[a-z0-9]+(?:/[^\s<>\"']*)?", re.I)
@@ -34,6 +39,25 @@ class XVideosDownload:
     width: int
     height: int
     duration: int
+
+
+def _max_height_for_quality(video_quality: str | None) -> int | None:
+    """Use the same quality tiers as /settings without YouTube-specific formats."""
+    value = normalize_setting_value(video_quality)
+    if value == VIDEO_QUALITY_SAVER:
+        return 480
+    if value == VIDEO_QUALITY_BALANCED:
+        return 720
+    return None  # "best", missing, or invalid preference: highest available
+
+
+def _format_for_source(media_url: str, video_quality: str | None) -> str:
+    limit = _max_height_for_quality(video_quality)
+    host = urlsplit(media_url).hostname or ""
+    # HLS has resolution metadata; for MP4 URLs we verify after ffprobe.
+    if limit and host.startswith("hls-"):
+        return f"best[height<={limit}]"
+    return "best"
 
 
 def extract_xvideos_url(message: str) -> str | None:
@@ -155,7 +179,9 @@ async def _probe(path: Path) -> tuple[int, int, int]:
         return 0, 0, 0
 
 
-async def _download_source(media_url: str, page: str, dest: Path) -> XVideosDownload:
+async def _download_source(
+    media_url: str, page: str, dest: Path, *, video_quality: str | None = None
+) -> XVideosDownload:
     dest.mkdir(parents=True, exist_ok=True)
     binary = YTDLP_BIN if Path(YTDLP_BIN).is_file() else "yt-dlp"
     cmd = [
@@ -163,7 +189,7 @@ async def _download_source(media_url: str, page: str, dest: Path) -> XVideosDown
         "--socket-timeout", "30", "--retries", "2", "--fragment-retries", "3",
         "--concurrent-fragments", "4", "--max-filesize", str(MAX_FILE_SIZE),
         "--add-header", f"Referer:{page}",
-        "-f", "best[height<=1080]/best", "--merge-output-format", "mp4",
+        "-f", _format_for_source(media_url, video_quality), "--merge-output-format", "mp4",
         "--remux-video", "mp4", "-o", str(dest / "video.%(ext)s"),
         media_url,
     ]
@@ -195,17 +221,24 @@ async def _download_source(media_url: str, page: str, dest: Path) -> XVideosDown
     width, height, duration = await _probe(path)
     if not width or not height:
         raise RuntimeError("XVideos media is not a playable video")
+    limit = _max_height_for_quality(video_quality)
+    if limit is not None and height > limit:
+        raise RuntimeError("XVideos media exceeds requested quality tier")
     return XVideosDownload(path=path, width=width, height=height, duration=duration)
 
 
-async def download_xvideos(page: str, folder: Path) -> XVideosDownload:
-    """Try HLS first, falling back to high and low MP4 when needed."""
+async def download_xvideos(
+    page: str, folder: Path, *, video_quality: str | None = None
+) -> XVideosDownload:
+    """Prefer HLS, then MP4, respecting the user's /settings quality limit."""
     if extract_xvideos_url(page) != page:
         raise ValueError("Invalid XVideos video page")
     sources = await _discover_sources(page)
     for index, media_url in enumerate(sources):
         try:
-            return await _download_source(media_url, page, folder / str(index))
+            return await _download_source(
+                media_url, page, folder / str(index), video_quality=video_quality
+            )
         except (RuntimeError, OSError, asyncio.TimeoutError):
             if index == len(sources) - 1:
                 raise
