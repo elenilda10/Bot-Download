@@ -10,23 +10,39 @@ MODULE_PATH = Path(__file__).resolve().parents[1] / "services" / "platforms" / "
 
 
 def load_module():
-    # Avoid requiring production secrets just to test pure parsing helpers.
-    original = sys.modules.get("config")
-    dummy = types.ModuleType("config")
-    dummy.MAX_FILE_SIZE = 1500 * 1024 * 1024
-    sys.modules["config"] = dummy
+    # Test the real settings.py without importing services/__init__.py.
+    # The package initializer imports the download queue and production config.
+    # Fake only the enclosing package and config, not the settings implementation.
+    original_modules = {
+        key: sys.modules.get(key)
+        for key in ("config", "services", "services.settings")
+    }
+    config_stub = types.ModuleType("config")
+    config_stub.MAX_FILE_SIZE = 1500 * 1024 * 1024
+
+    services_package = types.ModuleType("services")
+    services_package.__path__ = [str(Path.cwd() / "services")]
+
     try:
+        sys.modules["config"] = config_stub
+        sys.modules["services"] = services_package
+        sys.modules.pop("services.settings", None)
+
+        from importlib import import_module
+        settings = import_module("services.settings")
+        assert settings.VIDEO_QUALITY_BALANCED == "balanced"
+
         spec = importlib.util.spec_from_file_location("xvideos_media_test", MODULE_PATH)
         module = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = module
         spec.loader.exec_module(module)
         return module
     finally:
-        if original is None:
-            sys.modules.pop("config", None)
-        else:
-            sys.modules["config"] = original
-
+        for key, previous in original_modules.items():
+            if previous is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = previous
 
 service = load_module()
 
