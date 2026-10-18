@@ -68,7 +68,9 @@ async def handle_xvideos(message: types.Message) -> None:
         )
         async with LIMIT:
             with tempfile.TemporaryDirectory(prefix="xvideos-") as directory:
-                media = await download_xvideos(page, Path(directory))
+                media = await download_xvideos(
+                    page, Path(directory), video_quality=settings.get("video_quality")
+                )
                 if status:
                     await safe_edit_text(status, bm.uploading_status(lang=language))
                 label = f"XVideos • {media.height}p"
