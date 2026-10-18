@@ -12,7 +12,7 @@ import re
 import ssl
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import aiohttp
 
@@ -113,17 +113,56 @@ def _ssl_context() -> ssl.SSLContext:
     return ssl.create_default_context()
 
 
-async def _get_limited(session: aiohttp.ClientSession, url: str, limit: int, *, referer: str | None = None) -> bytes:
+def _allowed_site_url(url: str) -> bool:
+    """Only HTTPS on XVideos-owned origins; reject redirects to other sites."""
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        return (
+            parsed.scheme == "https"
+            and bool(re.fullmatch(r"(?:[a-z0-9-]+\\.)*xvideos\\.com", host, re.I))
+            and not parsed.username
+            and not parsed.password
+            and parsed.port in (None, 443)
+        )
+    except ValueError:
+        return False
+
+
+async def _get_limited(
+    session: aiohttp.ClientSession,
+    url: str,
+    limit: int,
+    *,
+    referer: str | None = None,
+) -> tuple[bytes, str]:
+    """Follow at most four safe redirects; never fetch an unchecked target."""
     headers = {"Referer": referer} if referer else {}
-    async with session.get(url, headers=headers, allow_redirects=False) as response:
-        if response.status != 200:
-            raise RuntimeError(f"XVideos source returned HTTP {response.status}")
-        if response.content_length is not None and response.content_length > limit:
-            raise RuntimeError("XVideos source response too large")
-        body = await response.content.read(limit + 1)
-        if len(body) > limit:
-            raise RuntimeError("XVideos source response too large")
-        return body
+    current = url
+    for attempt in range(5):
+        if not _allowed_site_url(current):
+            raise RuntimeError("XVideos redirect target is not allowed")
+        async with session.get(current, headers=headers, allow_redirects=False) as response:
+            if response.status in (301, 302, 303, 307, 308):
+                if attempt >= 4:
+                    raise RuntimeError("XVideos redirect limit reached")
+                location = response.headers.get("Location")
+                if not location:
+                    raise RuntimeError("XVideos redirect missing Location header")
+                target = urljoin(current, location)
+                if not _allowed_site_url(target):
+                    raise RuntimeError("XVideos redirect target is not allowed")
+                current = target
+                continue
+            if response.status != 200:
+                raise RuntimeError(f"XVideos source returned HTTP {response.status}")
+            if response.content_length is not None and response.content_length > limit:
+                raise RuntimeError("XVideos source response too large")
+            body = await response.content.read(limit + 1)
+            if len(body) > limit:
+                raise RuntimeError("XVideos source response too large")
+            return body, current
+    raise RuntimeError("XVideos redirect limit reached")
 
 
 async def _discover_sources(page: str) -> list[str]:
@@ -135,7 +174,8 @@ async def _discover_sources(page: str) -> list[str]:
         headers={"User-Agent": USER_AGENT},
         trust_env=False,
     ) as session:
-        html = (await _get_limited(session, page, MAX_HTML_BYTES)).decode("utf-8", "replace")
+        html_body, resolved_page = await _get_limited(session, page, MAX_HTML_BYTES)
+        html = html_body.decode("utf-8", "replace")
         encoded = _player_arg(html, "setEncodedIdVideo")
         cdn = _player_arg(html, "setIdCdnHLS") or _player_arg(html, "setIdCDN")
         if (
@@ -147,7 +187,10 @@ async def _discover_sources(page: str) -> list[str]:
         ):
             raise RuntimeError("XVideos player parameters unavailable")
         endpoint = f"https://www.xvideos.com/html5player/getvideo/{quote(encoded, safe='')}/{cdn}"
-        data = json.loads((await _get_limited(session, endpoint, MAX_JSON_BYTES, referer=page)).decode("utf-8"))
+        json_body, _ = await _get_limited(
+            session, endpoint, MAX_JSON_BYTES, referer=resolved_page
+        )
+        data = json.loads(json_body.decode("utf-8"))
         if not isinstance(data, dict):
             raise RuntimeError("Invalid XVideos player response")
         sources = []
