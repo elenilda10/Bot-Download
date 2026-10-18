@@ -87,6 +87,74 @@ class XVideosMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service._format_for_source(hls, "saver"), "best[height<=480]")
         self.assertEqual(service._format_for_source(mp4, "saver"), "best")
 
+
+    def test_redirect_url_allowlist(self):
+        self.assertTrue(service._allowed_site_url("https://www.xvideos.com/video.abc/title"))
+        self.assertTrue(service._allowed_site_url("https://fr.xvideos.com/video.abc/title"))
+        self.assertFalse(service._allowed_site_url("http://www.xvideos.com/video.abc/title"))
+        self.assertFalse(service._allowed_site_url("https://xvideos.com.evil.invalid/video.abc/title"))
+        self.assertFalse(service._allowed_site_url("https://127.0.0.1/private"))
+        self.assertFalse(service._allowed_site_url("https://admin@www.xvideos.com/video.abc/title"))
+        self.assertFalse(service._allowed_site_url("https://www.xvideos.com:8443/video.abc/title"))
+
+    async def test_follows_one_safe_http_301_before_reading(self):
+        class Reply:
+            def __init__(self, status, location=None, payload=b""):
+                self.status = status
+                self.headers = {"Location": location} if location else {}
+                self.content_length = len(payload)
+                self.content = types.SimpleNamespace(read=AsyncMock(return_value=payload))
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def get(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                if len(self.calls) == 1:
+                    return Reply(301, "/video.abc/canonical")
+                return Reply(200, payload=b"player-html")
+
+        session = Session()
+        body, final_url = await service._get_limited(
+            session, "https://www.xvideos.com/video.abc/original", 1000
+        )
+        self.assertEqual(body, b"player-html")
+        self.assertEqual(final_url, "https://www.xvideos.com/video.abc/canonical")
+        self.assertEqual(len(session.calls), 2)
+        self.assertTrue(all(call[1]["allow_redirects"] is False for call in session.calls))
+
+    async def test_blocks_http_301_redirect_to_external_host(self):
+        class Reply:
+            status = 301
+            headers = {"Location": "https://localhost/private"}
+            content_length = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+        class Session:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, *args, **kwargs):
+                self.calls += 1
+                return Reply()
+
+        session = Session()
+        with self.assertRaisesRegex(RuntimeError, "not allowed"):
+            await service._get_limited(session, "https://www.xvideos.com/video.abc/original", 1000)
+        self.assertEqual(session.calls, 1)
+
     async def test_quality_forwarded_to_download(self):
         url = "https://www.xvideos.com/video.oltvhef0c13/title"
         hls = "https://hls-cdn77.xvideos-cdn.com/master.m3u8"
