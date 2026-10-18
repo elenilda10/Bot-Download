@@ -90,8 +90,10 @@ async def handle_xvideos(message: types.Message) -> None:
         lease.mark_success()
         await maybe_delete_user_message(message, settings.get("delete_message"))
     except Exception as exc:
-        # Source URLs and short-lived CDN tokens must never be written to logs.
-        logging.warning("XVideos request failed: %s", type(exc).__name__)
+        # Known RuntimeError messages never contain signed CDN URLs or tokens.
+        # Unknown exceptions are logged by type only to avoid leaking media URLs.
+        reason = str(exc)[:160] if isinstance(exc, RuntimeError) else type(exc).__name__
+        logging.warning("XVideos request failed: %s", reason)
         await handle_download_error(message, business_id=business_id)
     finally:
         if status:
