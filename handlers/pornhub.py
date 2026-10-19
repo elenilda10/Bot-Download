@@ -51,12 +51,12 @@ def _extract_video_url(text: str) -> str | None:
     return None
 
 
-@router.message(F.text.regexp(r"^/phvpn(?:@\\w+)?(?:\\s|$)"))
+@router.message(F.text.regexp(r"^/phvpn(?:@\w+)?(?:\s|$)"))
 async def show_pornhub_test_vpn(message: types.Message):
     if not message.from_user or message.from_user.id != ADMIN_ID:
         return
     await message.reply(
-        "🔒 Router Pornhub: VPN fixa via protonbot.\\n"
+        "🔒 Router Pornhub: VPN fixa via protonbot.\n"
         "Este comando agora é somente informativo. "
         "/phvpn on e /phvpn off não alteram a conexão."
     )
