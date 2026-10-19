@@ -1,8 +1,8 @@
-"""Admin-only PornHub download trial with manually selectable VPN route.
+"""Admin-only PornHub download trial pinned to an existing VPN route.
 
-This experimental handler never starts or stops WireGuard. Switching /phvpn on
-binds yt-dlp requests to a preconfigured Proton WireGuard source address.
-The default is off. Access stays restricted to the configured bot admin.
+Only this router binds yt-dlp to the Proton WireGuard source address.
+The handler never toggles WireGuard or changes system-wide routes.
+If the VPN route is unavailable, the download fails without direct fallback.
 """
 import asyncio
 import logging
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _DOWNLOAD_LIMIT = asyncio.Semaphore(1)
 _URL_RE = re.compile(r"https?://[^\s<>]+", re.I)
 _LINK_PATTERN = r"(?i)https?://(?:(?:www|pt|m)\.)?pornhub\.com/view_video\.php\?viewkey="
-_VPN_ENABLED = os.getenv("PORNHUB_TEST_USE_VPN", "0").strip() == "1"
+_VPN_INTERFACE = "protonbot"
 _VPN_ADDRESS = os.getenv("PORNHUB_TEST_VPN_SOURCE", "10.2.0.2")
 _MAX_DOWNLOAD_BYTES = min(MAX_FILE_SIZE, 450 * 1024 * 1024)
 _YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
@@ -51,28 +51,37 @@ def _extract_video_url(text: str) -> str | None:
     return None
 
 
-@router.message(F.text.regexp(r"^/phvpn(?:@\w+)?(?:\s|$)"))
-async def set_pornhub_test_vpn(message: types.Message):
-    global _VPN_ENABLED
+@router.message(F.text.regexp(r"^/phvpn(?:@\\w+)?(?:\\s|$)"))
+async def show_pornhub_test_vpn(message: types.Message):
     if not message.from_user or message.from_user.id != ADMIN_ID:
         return
-    parts = (message.text or "").strip().split()
-    option = parts[1].lower() if len(parts) > 1 else "status"
-    if option in ("on", "ligar"):
-        _VPN_ENABLED = True
-    elif option in ("off", "desligar"):
-        _VPN_ENABLED = False
-    elif option != "status":
-        await message.reply("Use /phvpn on, /phvpn off ou /phvpn status.")
-        return
-    mode = "VPN via protonbot" if _VPN_ENABLED else "Contabo (sem VPN)"
     await message.reply(
-        f"Teste Pornhub: {mode}.\n"
-        "Este comando altera apenas o modo do downloader; não liga/desliga o WireGuard."
+        "🔒 Router Pornhub: VPN fixa via protonbot.\\n"
+        "Este comando agora é somente informativo. "
+        "/phvpn on e /phvpn off não alteram a conexão."
     )
 
 
-async def _download_video(url: str, directory: Path, vpn: bool) -> Path:
+async def _ensure_vpn_route() -> None:
+    """Fail closed: prevent starting yt-dlp without the VPN-specific route."""
+    proc = await asyncio.create_subprocess_exec(
+        "ip", "-4", "route", "get", "1.1.1.1", "from", _VPN_ADDRESS,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        raise RuntimeError("Não foi possível validar a rota VPN")
+    route = stdout.decode("utf-8", errors="replace")
+    if proc.returncode != 0 or f"dev {_VPN_INTERFACE}" not in route:
+        raise RuntimeError("VPN indisponível: rota isolada não encontrada")
+
+
+async def _download_video(url: str, directory: Path) -> Path:
+    await _ensure_vpn_route()
     cmd = [
         _YTDLP_BIN,
         "-4",
@@ -89,8 +98,7 @@ async def _download_video(url: str, directory: Path, vpn: bool) -> Path:
         "--merge-output-format", "mp4",
         "-o", str(directory / "%(id)s.%(ext)s"),
     ]
-    if vpn:
-        cmd.extend(["--source-address", _VPN_ADDRESS])
+    cmd.extend(["--source-address", _VPN_ADDRESS])
     cmd.append(url)
 
     process = await asyncio.create_subprocess_exec(
@@ -143,12 +151,11 @@ async def download_pornhub_test(message: types.Message):
 
     status = None
     try:
-        vpn = _VPN_ENABLED  # snapshot: switching modes won't move an ongoing download
-        mode = "VPN" if vpn else "Contabo"
+        mode = "VPN"
         status = await message.reply(f"⏳ Baixando vídeo de teste via {mode}…")
         async with _DOWNLOAD_LIMIT:
             with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
-                file = await _download_video(url, Path(tmp), vpn=vpn)
+                file = await _download_video(url, Path(tmp))
                 with suppress(Exception):
                     await status.edit_text("🚀 Enviando vídeo ao Telegram…")
 
@@ -177,7 +184,7 @@ async def download_pornhub_test(message: types.Message):
             with suppress(Exception):
                 await status.edit_text(
                     "❌ Não foi possível baixar/enviar esse vídeo. "
-                    "Confira o modo com /phvpn status e os logs da VPS."
+                    "Verifique o túnel protonbot e os logs da VPS."
                 )
     finally:
         lease.finish()
