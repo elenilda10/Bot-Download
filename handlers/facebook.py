@@ -182,7 +182,8 @@ async def _send_cached(message: types.Message, cache: dict,
     sent = await message.reply_media_group(
         media=album, allow_sending_without_reply=True,
     )
-    await message.answer("🔗 Publicação original:", reply_markup=keyboard)
+    # Telegram doesn't support inline buttons on media groups. The user
+    # opted to omit an extra source-link message after a Facebook album.
     return sent
 
 
@@ -202,6 +203,11 @@ def _auth_profile(user_id: int | None, chat_type: str, business_id=None) -> str 
     if user_id == ADMIN_ID and chat_type == "private" and business_id is None:
         return os.environ.get("FACEBOOK_FIREFOX_PROFILE", "").strip() or None
     return None
+
+
+def _facebook_gallery_first_enabled() -> bool:
+    """Enabled by default; FB_GALLERY_FIRST=0 rolls back without changing files."""
+    return os.getenv("FB_GALLERY_FIRST", "1").strip().lower() not in {"0", "off", "false", "no"}
 
 
 def _progress_update(key: str, downloaded: int, total: int | None, speed: float | None):
@@ -300,7 +306,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
     work_dir = None
     try:
         bot_url = await get_bot_url(bot)
-        cached = await _load_cache(url, scope, kind)
+        cached = None if _facebook_gallery_first_enabled() else await _load_cache(url, scope, kind)
         if cached and len(cached["items"]) == 1:
             entry = cached["items"][0]
             if entry["kind"] == kind:
@@ -334,6 +340,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         work_dir = tempfile.mkdtemp(prefix="facebook-action-", dir=OUTPUT_DIR)
         result = await download_facebook_media(
             url, output_dir=work_dir, facebook_browser_profile=profile,
+            facebook_gallery_first=_facebook_gallery_first_enabled(),
         )
         if not result or len(result.media_list) != 1:
             await call.message.reply(
@@ -424,7 +431,8 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                 parse_mode=ParseMode.HTML,
             )
         entries = _file_id_entries(sent)
-        if entries and len(entries) == 1 and entries[0]["kind"] == kind:
+        if (not _facebook_gallery_first_enabled() and entries
+                and len(entries) == 1 and entries[0]["kind"] == kind):
             await _save_cache(url, scope, kind, result.description, entries)
     except Exception as exc:
         logging.exception(
@@ -531,14 +539,15 @@ async def process_facebook_link(
             return
         scope = fc.scope_for(profile, user_id)
         cache_kind = "document" if settings.get("as_document") == "on" else "media"
+        use_gallery_first = facebook_gallery_first_test or _facebook_gallery_first_enabled()
         token = (
             None if facebook_gallery_first_test else
             await _create_callback_token(target, scope, user_id, chat_id)
         )
 
-        # An experimental download must neither hit nor populate the normal
-        # Telegram file_id cache, even when the URL was requested before.
-        cached = None if facebook_gallery_first_test else await _load_cache(target, scope, cache_kind)
+        # This route can receive mismatched media from Facebook. Do not use
+        # or populate any persistent Telegram file_id cache until verified.
+        cached = None if use_gallery_first else await _load_cache(target, scope, cache_kind)
         if cached:
             cached_items = fc.media_entries(cached)
             cached_keyboard = _facebook_keyboard(
@@ -577,22 +586,16 @@ async def process_facebook_link(
             "percent": "0%", "downloaded": "0 MB", "total": "?",
             "speed": "--", "last_time": time.monotonic(), "last_bytes": 0,
         }
-        progress_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="📊 Ver Progresso", callback_data=f"fbprog:{progress_key}",
-            )
-        ]])
+        # No Facebook progress button: keep only the editable status message.
         if business_id is None:
-            status = await message.answer(
-                bm.downloading_video_status(lang=lang),
-                reply_markup=progress_keyboard,
-            )
+            status = await message.answer(bm.downloading_video_status(lang=lang))
 
         result = await download_facebook_media(
             target,
             output_dir=work_dir,
             facebook_browser_profile=profile,
             facebook_gallery_first_test=facebook_gallery_first_test,
+            facebook_gallery_first=use_gallery_first,
             on_progress=lambda downloaded, total=None, speed=None: _progress_update(
                 progress_key, downloaded, total, speed,
             ),
@@ -683,14 +686,11 @@ async def process_facebook_link(
             sent_media = await message.reply_media_group(
                 media=album, allow_sending_without_reply=True,
             )
-            # Albums cannot have inline keyboards; send the source link separately.
-            await message.answer(
-                "🔗 Publicação original:", reply_markup=keyboard,
-            )
+            # Album has no inline keyboard; no extra source-link message.
 
         # Cache only the proven scope: anonymous/public or authenticated/owner.
         # Never promote Firefox-authenticated content into a public cache.
-        entries = [] if facebook_gallery_first_test else _file_id_entries(sent_media)
+        entries = [] if use_gallery_first else _file_id_entries(sent_media)
         if entries:
             try:
                 cache_record = {
