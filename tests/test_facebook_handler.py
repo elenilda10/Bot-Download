@@ -1,5 +1,7 @@
 """Regression tests for dedicated Facebook routing and link resolution."""
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
+from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -82,20 +84,73 @@ async def test_direct_reel_skips_curl(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handler_delegates_canonical_url(monkeypatch):
-    monkeypatch.setattr(facebook, "process_universal_link", AsyncMock())
+async def test_handler_downloads_reel_directly_and_sends_original_caption(monkeypatch, tmp_path):
+    monkeypatch.setattr(facebook, "OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(
         facebook, "_resolve_facebook_short_link",
         AsyncMock(return_value="https://www.facebook.com/reel/2480096172822069/"),
     )
     monkeypatch.setattr(
         facebook, "get_message_text",
-        lambda message: "https://www.facebook.com/share/r/19gWxMNRKj/",
+        lambda _: "https://www.facebook.com/share/r/19gWxMNRKj/",
     )
-    await facebook.process_facebook_link(object())
-    assert facebook.process_universal_link.await_args.kwargs["direct_url"] == (
-        "https://www.facebook.com/reel/2480096172822069/"
+    monkeypatch.setattr(facebook.cmd_mod, "is_banned", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        facebook, "should_skip_duplicate_business_message",
+        AsyncMock(return_value=False),
     )
+    lease = SimpleNamespace(mark_success=Mock(), finish=Mock())
+    monkeypatch.setattr(
+        facebook, "claim_message_request", AsyncMock(return_value=lease),
+    )
+    monkeypatch.setattr(
+        facebook, "load_user_settings",
+        AsyncMock(return_value={"language": "pt", "captions": "on"}),
+    )
+    monkeypatch.setattr(facebook, "get_bot_url", AsyncMock(return_value="https://t.me/test_bot"))
+    monkeypatch.setattr(facebook, "react_to_message", AsyncMock())
+    monkeypatch.setattr(facebook, "send_analytics", AsyncMock())
+    monkeypatch.setattr(facebook, "safe_delete_message", AsyncMock())
+    monkeypatch.setattr(facebook, "safe_edit_text", AsyncMock())
+    monkeypatch.setattr(facebook, "maybe_delete_user_message", AsyncMock())
+    monkeypatch.setattr(
+        facebook, "bot",
+        SimpleNamespace(send_chat_action=AsyncMock()),
+    )
+    monkeypatch.setenv("FACEBOOK_FIREFOX_PROFILE", "/home/firefoxbot/profile")
+
+    async def download(url, *, output_dir, **kwargs):
+        path = Path(output_dir) / "fb-test.mp4"
+        path.write_bytes(b"fake mp4")
+        assert url == "https://www.facebook.com/reel/2480096172822069/"
+        assert kwargs["facebook_browser_profile"] == "/home/firefoxbot/profile"
+        return SimpleNamespace(
+            description="Legenda real do Reel",
+            media_list=[SimpleNamespace(
+                url=str(path), type="video", thumb=None,
+                width=720, height=1280, duration=10,
+            )],
+        )
+
+    specialized = AsyncMock(side_effect=download)
+    monkeypatch.setattr(facebook, "download_facebook_media", specialized)
+
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=facebook.ADMIN_ID),
+        chat=SimpleNamespace(id=42, type="private"),
+        message_id=12,
+        answer=AsyncMock(return_value=SimpleNamespace()),
+        reply_video=AsyncMock(),
+    )
+    await facebook.process_facebook_link(message)
+    specialized.assert_awaited_once()
+    message.reply_video.assert_awaited_once()
+    html_caption = message.reply_video.await_args.kwargs["caption"]
+    assert "Legenda real do Reel" in html_caption
+    assert "Powered by" in html_caption
+    lease.mark_success.assert_called_once()
+    lease.finish.assert_called_once()
+    assert not list(tmp_path.glob("facebook-*"))
 
 
 @pytest.mark.asyncio
