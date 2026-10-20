@@ -63,7 +63,7 @@ def _facebook_keyboard(
     settings: dict | None = None,
     token: str | None = None,
     *, has_video: bool = False, single: bool = True,
-) -> InlineKeyboardMarkup:
+) -> InlineKeyboardMarkup | None:
     portuguese = not lang or lang.lower().startswith("pt")
     settings = settings or {}
     buttons = []
@@ -83,11 +83,12 @@ def _facebook_keyboard(
         )])
     # Existing source button remains available. Never add direct authenticated
     # media URLs or reusable file IDs to a callback payload.
-    buttons.append([InlineKeyboardButton(
-        text="🔗 Abrir no Facebook" if portuguese else "🔗 Open Facebook",
-        url=url,
-    )])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    if settings.get("url_button", "on") != "off":
+        buttons.append([InlineKeyboardButton(
+            text="🔗 Abrir no Facebook" if portuguese else "🔗 Open Facebook",
+            url=url,
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
 
 
 async def _load_cache(url: str, scope: str, kind: str) -> dict | None:
