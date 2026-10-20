@@ -1,0 +1,104 @@
+"""Experimental admin-only Facebook gallery-first flow regressions."""
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from handlers import facebook
+from services.platforms import facebook_media, universal_extractor
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", [
+    "https://www.facebook.com/100044420049874/posts/1725673385589980/",
+    "https://www.facebook.com/groups/137676310429643/permalink/2237506800446573/",
+    "https://www.facebook.com/reel/1125782696733705/",
+])
+async def test_admin_gallery_first_uses_resolved_url_for_any_post(monkeypatch, url):
+    gallery_result = SimpleNamespace(
+        media_list=[SimpleNamespace(url="/tmp/photo.jpg", type="photo")],
+        description="Foto para teste",
+    )
+    gallery = AsyncMock(return_value=gallery_result)
+    video = AsyncMock()
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    monkeypatch.setattr(universal_extractor, "_download_with_ytdlp", video)
+
+    result = await facebook_media.download_facebook_media(
+        url, output_dir="/tmp", facebook_browser_profile="/firefox/admin",
+        facebook_gallery_first_test=True,
+    )
+    assert result is gallery_result
+    assert gallery.await_args.args[0] == url
+    assert gallery.await_args.kwargs["facebook_browser_profile"] == "/firefox/admin"
+    assert gallery.await_args.kwargs["facebook_gallery_test_skip_post_check"] is True
+    video.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_gallery_first_retries_video_only_when_gallery_is_empty(monkeypatch):
+    gallery = AsyncMock(return_value=None)
+    fallback_result = SimpleNamespace(
+        media_list=[SimpleNamespace(type="video")]
+    )
+    video = AsyncMock(return_value=fallback_result)
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    monkeypatch.setattr(universal_extractor, "_download_with_ytdlp", video)
+    url = "https://www.facebook.com/reel/1881222329921321/"
+    result = await facebook_media.download_facebook_media(
+        url, output_dir="/tmp", facebook_browser_profile="/firefox/admin",
+        facebook_gallery_first_test=True,
+    )
+    assert result is fallback_result
+    gallery.assert_awaited_once()
+    video.assert_awaited_once()
+    assert video.await_args.args[0] == url
+
+
+@pytest.mark.asyncio
+async def test_gallery_first_refuses_nonadmin_without_browser_profile(monkeypatch):
+    gallery = AsyncMock()
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    assert await facebook_media.download_facebook_media(
+        "https://www.facebook.com/100044420049874/posts/1725673385589980/",
+        output_dir="/tmp", facebook_gallery_first_test=True,
+    ) is None
+    gallery.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_command_only_invokes_experiment_in_admin_private_chat(monkeypatch):
+    handler = AsyncMock()
+    monkeypatch.setattr(facebook, "process_facebook_link", handler)
+    monkeypatch.setattr(facebook, "get_message_text", lambda _:
+        "/fbteste https://www.facebook.com/share/p/1GdzWY4FEU/")
+    monkeypatch.setattr(facebook, "_auth_profile", lambda *a, **kw: "/firefox/admin")
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=facebook.ADMIN_ID),
+        chat=SimpleNamespace(type="private"),
+        answer=AsyncMock(),
+    )
+    await facebook.facebook_gallery_first_test_command(message)
+    handler.assert_awaited_once_with(message, facebook_gallery_first_test=True)
+
+    handler.reset_mock()
+    monkeypatch.setattr(facebook, "_auth_profile", lambda *a, **kw: None)
+    message.chat.type = "group"
+    await facebook.facebook_gallery_first_test_command(message)
+    handler.assert_not_awaited()
+    assert message.answer.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_universal_bypass_requires_both_fb_url_and_browser_profile(tmp_path):
+    assert await universal_extractor._download_with_gallery_dl(
+        "https://www.facebook.com/100044420049874/posts/1725673385589980/",
+        str(tmp_path), "test",
+        facebook_gallery_test_skip_post_check=True,
+    ) is None
+    assert await universal_extractor._download_with_gallery_dl(
+        "https://example.com/test/post",
+        str(tmp_path), "test",
+        facebook_browser_profile="/firefox/admin",
+        facebook_gallery_test_skip_post_check=True,
+    ) is None
