@@ -216,7 +216,106 @@ def _facebook_profile_post_id(url: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def _verified_facebook_profile_photos(url: str, paths: list[str]) -> bool:
+def _facebook_profile_photo_link_id(linked: object) -> str | None:
+    if not isinstance(linked, str):
+        return None
+    link = unquote(unescape(linked.replace("\\/", "/")))
+    parsed = urlsplit(link)
+    if parsed.scheme != "https" or not _is_facebook_url(link):
+        return None
+    if parsed.path.lower().rstrip("/") not in {"/photo", "/photo.php"}:
+        return None
+    values = parse_qs(parsed.query).get("fbid", [])
+    return values[0] if len(values) == 1 and values[0].isdigit() else None
+
+
+def _facebook_login_prompt(metadata: dict) -> bool:
+    """Reject known login/remember-password UI as a fake post caption."""
+    strings = (metadata.get("post_text"), metadata.get("caption"))
+    return any(
+        isinstance(value, str)
+        and value.strip().casefold() in {
+            "remember password", "remember your password",
+            "log in to facebook", "login to facebook", "forgot password?",
+        }
+        for value in strings
+    )
+
+
+async def _facebook_profile_post_expected_photo_ids(
+    url: str, browser_profile: Optional[str] = None,
+) -> tuple[str, ...] | None:
+    """Get post-bound media IDs independently before the actual download.
+
+    A downloaded gallery sidecar can consistently reference its own photo
+    even if the Facebook session was redirected to an unrelated post or login
+    screen. Requiring a separate read of the *requested post* to identify the
+    same photo prevents accepting that sort of mismatch. Failure is denial.
+    """
+    if not _facebook_profile_post_id(url):
+        return None
+    from services.platforms.universal_extractor import GDL_BIN, _DEFAULT_UA
+    binary = GDL_BIN if os.path.isfile(GDL_BIN) else "gallery-dl"
+    command = [
+        binary, "--dump-json", "--range", "1-10",
+        "--user-agent", _DEFAULT_UA,
+        "-o", "extractor.facebook.videos=ytdl",
+        *(
+            ["--cookies-from-browser", f"firefox:{browser_profile}"]
+            if browser_profile else []
+        ),
+        url,
+    ]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *command, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=75)
+        if proc.returncode != 0 or len(stdout) > 2_000_000:
+            return None
+        data = json.loads(stdout)
+    except (OSError, ValueError, asyncio.TimeoutError):
+        logging.warning("Facebook profile post preflight failed")
+        return None
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
+
+    # gallery-dl emits a JSON array of directory/media entries; only the
+    # media entries with the post_photo link establish IDs.
+    records = []
+    def walk(value):
+        if isinstance(value, dict):
+            if "post_photo" in value and "id" in value:
+                records.append(value)
+            for inner in value.values():
+                walk(inner)
+        elif isinstance(value, list):
+            for inner in value:
+                walk(inner)
+    walk(data)
+    if not 1 <= len(records) <= 10:
+        logging.warning("Facebook profile preflight had no bounded media set")
+        return None
+    expected = []
+    for metadata in records:
+        media_id = str(metadata["id"])
+        link_id = _facebook_profile_photo_link_id(metadata.get("post_photo"))
+        if not media_id.isdigit() or link_id != media_id or _facebook_login_prompt(metadata):
+            logging.warning("Facebook profile preflight identity/login check failed")
+            return None
+        expected.append(media_id)
+    if len(set(expected)) != len(expected):
+        return None
+    return tuple(expected)
+
+
+def _verified_facebook_profile_photos(
+    url: str, paths: list[str], expected_ids: tuple[str, ...] | None = None,
+) -> bool:
     """Allow only photos traceable to the requested profile publication.
 
     The gallery-dl post parser places the photo link extracted from the
@@ -225,7 +324,15 @@ def _verified_facebook_profile_photos(url: str, paths: list[str]) -> bool:
     For multi-photo sets require pcb.<POST_ID> album identity.
     """
     post_id = _facebook_profile_post_id(url)
-    if not post_id or not 1 <= len(paths) <= 10:
+    # A sidecar validating against itself is not sufficient: require the
+    # separate post-bound metadata read to agree on the complete photo set.
+    if (
+        not post_id or not 1 <= len(paths) <= 10
+        or not expected_ids or len(paths) != len(expected_ids)
+        or set(expected_ids) != {
+            os.path.splitext(os.path.basename(path))[0] for path in paths
+        }
+    ):
         return False
     expected_set = f"pcb.{post_id}"
     multi = len(paths) > 1
@@ -240,19 +347,12 @@ def _verified_facebook_profile_photos(url: str, paths: list[str]) -> bool:
             return False
         if not isinstance(metadata, dict) or str(metadata.get("id")) != photo_id:
             return False
+        if _facebook_login_prompt(metadata):
+            return False
         set_id = str(metadata.get("set_id") or "")
         # Single photo with no album token: require exact source photo ID.
         if not multi and set_id == "":
-            linked = metadata.get("post_photo")
-            if not isinstance(linked, str):
-                return False
-            link = unquote(unescape(linked.replace("\\/", "/")))
-            parsed = urlsplit(link)
-            if parsed.scheme != "https" or not _is_facebook_url(link):
-                return False
-            if parsed.path.lower().rstrip("/") not in {"/photo", "/photo.php"}:
-                return False
-            if parse_qs(parsed.query).get("fbid") != [photo_id]:
+            if _facebook_profile_photo_link_id(metadata.get("post_photo")) != photo_id:
                 return False
         else:
             # Never allow a photo set belonging to a different publication.
@@ -431,10 +531,16 @@ async def download_facebook_media(
                 logging.warning("Facebook authenticated fallback requires direct media ID")
                 return None
             if is_verified_profile_post:
-                # Validate the gallery result against the requested post.
+                expected_ids = await _facebook_profile_post_expected_photo_ids(
+                    target, facebook_browser_profile,
+                )
+                if not expected_ids:
+                    logging.warning("Facebook profile post lacked verified preflight IDs")
+                    return None
                 profile_photos = await _download_with_gallery_dl(
                     target, output_dir, post_id,
                     facebook_browser_profile=facebook_browser_profile,
+                    facebook_expected_photo_ids=expected_ids,
                 )
                 if profile_photos and profile_photos.media_list:
                     logging.info("Facebook profile post photos verified")
@@ -480,8 +586,13 @@ async def download_facebook_media(
         # different posts. Without a direct photo ID we cannot verify them.
         if not _is_facebook_video_url(target):
             if _facebook_profile_post_id(target):
-                # Public data needs the same exact post/media verification.
-                return await _download_with_gallery_dl(target, output_dir, post_id)
+                expected_ids = await _facebook_profile_post_expected_photo_ids(target)
+                if not expected_ids:
+                    return None
+                return await _download_with_gallery_dl(
+                    target, output_dir, post_id,
+                    facebook_expected_photo_ids=expected_ids,
+                )
             match = re.search(
                 r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
             ) if urlsplit(target).path.lower() == "/photo.php" else None
