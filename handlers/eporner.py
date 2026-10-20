@@ -86,7 +86,7 @@ def _nonnegative_int(value: object) -> int | None:
 
 
 def _site_description(info: dict) -> str | None:
-    """Prefer the video's real title/description; SaveVid formats and escapes it."""
+    """Prefer the video title/description; SaveVid escapes HTML in the caption."""
     title = str(info.get("title") or "").strip()
     description = str(info.get("description") or "").strip()
     if description and description.casefold().startswith(title.casefold()) and title:
@@ -225,7 +225,7 @@ async def _download_video(
         "--no-progress",
         "--write-info-json",
         "--max-filesize", str(_MAX_DOWNLOAD_BYTES),
-        "-f", "best[height<=480][vcodec^=avc1]/best[height<=480][vcodec*=h264]/best[height<=480]/best[height<=720]",
+        "-f", "best[height<=480][format_id!^=av1]/best[height<=480]/best[height<=720]",
         "--merge-output-format", "mp4",
         "-o", str(directory / "%(id)s.%(ext)s"),
     ]
