@@ -295,13 +295,38 @@ async def process_facebook_link(message: types.Message) -> None:
             business_connection_id=business_id,
         )
 
-        profile = (
-            os.environ.get("FACEBOOK_FIREFOX_PROFILE", "").strip() or None
-        ) if (
-            user_id == ADMIN_ID
-            and message.chat.type == "private"
-            and business_id is None
-        ) else None
+        profile = _auth_profile(user_id, message.chat.type, business_id)
+        scope = fc.scope_for(profile, user_id)
+        cache_kind = "document" if settings.get("as_document") == "on" else "media"
+        token = await _create_callback_token(target, scope, user_id, chat_id)
+
+        cached = await _load_cache(target, scope, cache_kind)
+        if cached:
+            cached_items = fc.media_entries(cached)
+            cached_keyboard = _facebook_keyboard(
+                target, lang, settings, token,
+                has_video=cached.get("has_video", any(
+                    item["kind"] == "video" for item in cached_items
+                )),
+                single=len(cached_items) == 1,
+            )
+            try:
+                sent_cached = await _send_cached(
+                    message, cached, cached_keyboard, settings, bot_url,
+                )
+                if sent_cached:
+                    logging.info("Facebook scoped cache hit: kind=%s scope=%s",
+                                 cache_kind, "public" if scope == "public" else "private")
+                    lease.mark_success()
+                    try:
+                        await maybe_delete_user_message(
+                            message, settings.get("delete_message"),
+                        )
+                    except Exception:
+                        pass
+                    return
+            except TelegramBadRequest:
+                logging.warning("Facebook cached Telegram file ID was rejected")
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         work_dir = tempfile.mkdtemp(prefix="facebook-", dir=OUTPUT_DIR)
@@ -360,12 +385,17 @@ async def process_facebook_link(message: types.Message) -> None:
         caption = bm.captions(
             settings.get("captions", "on"), result.description, bot_url,
         )
-        keyboard = _facebook_keyboard(target, lang)
+        has_video = any(item.type == "video" for item in result.media_list)
+        keyboard = _facebook_keyboard(
+            target, lang, settings, token,
+            has_video=has_video, single=len(result.media_list) == 1,
+        )
+        sent_media = None
         if len(result.media_list) == 1:
             item = result.media_list[0]
             file = FSInputFile(item.url, filename=os.path.basename(item.url))
             if settings.get("as_document") == "on":
-                await message.reply_document(
+                sent_media = await message.reply_document(
                     document=file, caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     disable_content_type_detection=True,
@@ -373,7 +403,7 @@ async def process_facebook_link(message: types.Message) -> None:
                 )
             elif item.type == "video":
                 preview_path = item.thumb if item.thumb and os.path.isfile(item.thumb) else None
-                await message.reply_video(
+                sent_media = await message.reply_video(
                     video=file,
                     thumbnail=FSInputFile(preview_path, filename="thumbnail.jpg") if preview_path else None,
                     cover=FSInputFile(preview_path, filename="cover.jpg") if preview_path else None,
@@ -385,7 +415,7 @@ async def process_facebook_link(message: types.Message) -> None:
                     reply_markup=keyboard, allow_sending_without_reply=True,
                 )
             else:
-                await message.reply_photo(
+                sent_media = await message.reply_photo(
                     photo=file, caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard, allow_sending_without_reply=True,
@@ -407,13 +437,32 @@ async def process_facebook_link(message: types.Message) -> None:
                     album.append(InputMediaPhoto(
                         media=file, caption=item_caption, parse_mode=ParseMode.HTML,
                     ))
-            await message.reply_media_group(
+            sent_media = await message.reply_media_group(
                 media=album, allow_sending_without_reply=True,
             )
             # Albums cannot have inline keyboards; send the source link separately.
             await message.answer(
                 "🔗 Publicação original:", reply_markup=keyboard,
             )
+
+        # Cache only the proven scope: anonymous/public or authenticated/owner.
+        # Never promote Firefox-authenticated content into a public cache.
+        entries = _file_id_entries(sent_media)
+        if entries:
+            try:
+                cache_record = {
+                    "version": fc.CACHE_VERSION, "url": target,
+                    "scope": scope, "description": result.description or "",
+                    "has_video": has_video, "items": entries,
+                }
+                if fc.media_entries(cache_record):
+                    await db.add_file(
+                        fc.key_for(target, scope, cache_kind),
+                        fc.encode(cache_record),
+                        f"facebook_{cache_kind}",
+                    )
+            except Exception as exc:
+                logging.warning("Facebook cache write failed: %s", type(exc).__name__)
 
         lease.mark_success()
         try:
