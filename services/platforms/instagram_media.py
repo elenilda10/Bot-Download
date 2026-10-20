@@ -94,7 +94,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
             binary,
             "--no-part",
             "--no-mtime",
-            "--retries", "3",
+            "--retries", "1",
             "-d", target_dir,
             "-o", "directory=",
             "--filename", "{shortcode}_{num}.{extension}",
@@ -110,7 +110,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
 
         cmd.append(url)
 
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if proc.returncode != 0:
             logger.warning("gallery-dl output/warn: %s", proc.stderr)
 
@@ -210,7 +210,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             metadata_cmd,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=30,
         )
 
         data = None
@@ -256,80 +256,23 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             ]
 
             if thumbnails:
-                from PIL import ImageFile
-
-                candidates = []
-                headers = {
-                    "User-Agent": BROWSER_UA,
-                    "Referer": "https://www.instagram.com/",
-                }
-
-                with httpx.Client(
-                    timeout=8.0,
-                    follow_redirects=True,
-                    headers=headers,
-                ) as probe_client:
-                    for thumb_index, thumb in enumerate(thumbnails):
-                        width_candidate = thumb.get("width") or 0
-                        height_candidate = thumb.get("height") or 0
-
-                        if not width_candidate or not height_candidate:
-                            try:
-                                parser = ImageFile.Parser()
-                                total = 0
-
-                                with probe_client.stream(
-                                    "GET", thumb["url"]
-                                ) as response:
-                                    response.raise_for_status()
-
-                                    for chunk in response.iter_bytes(16384):
-                                        parser.feed(chunk)
-                                        total += len(chunk)
-
-                                        if parser.image:
-                                            (
-                                                width_candidate,
-                                                height_candidate,
-                                            ) = parser.image.size
-                                            break
-
-                                        if total >= 262144:
-                                            break
-
-                            except Exception as exc:
-                                logger.debug(
-                                    "Falha ao verificar resolução: %s",
-                                    exc,
-                                )
-
-                        candidates.append((
-                            width_candidate * height_candidate,
-                            width_candidate,
-                            thumb_index,
-                            thumb,
-                            width_candidate,
-                            height_candidate,
-                        ))
-
-                selected = max(
-                    candidates,
-                    key=lambda item: (
-                        item[0],
-                        item[1],
-                        item[2],
+                # Do not HEAD/stream every thumbnail just to guess its size:
+                # a carousel may list many URLs, each costing up to 8 seconds.
+                # Prefer known dimensions, otherwise the last CDN candidate.
+                best = max(
+                    enumerate(thumbnails),
+                    key=lambda pair: (
+                        int(pair[1].get("width") or 0)
+                        * int(pair[1].get("height") or 0),
+                        pair[0],
                     ),
-                )
-
-                best = selected[3]
+                )[1]
                 image_url = best.get("url")
-                width = selected[4] or None
-                height = selected[5] or None
-
-                logger.info(
-                    "Instagram imagem selecionada: %sx%s",
-                    width,
-                    height,
+                width = best.get("width") or None
+                height = best.get("height") or None
+                logger.debug(
+                    "Instagram image chosen from %s CDN candidates",
+                    len(thumbnails),
                 )
             else:
                 image_url = entry.get("thumbnail")
@@ -647,6 +590,8 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
             COBALT_API_KEY,
             payload,
             source="instagram",
+            attempts=1,
+            timeout=10,
         )
         if (
             data

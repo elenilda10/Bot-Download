@@ -10,6 +10,20 @@ import aiohttp
 
 from services.logger import logger as logging
 from services.platforms.kwai_media import extract_kwai_video_page, is_kwai_url
+from services.platforms.facebook_media import (
+    _facebook_failure_reason,
+    _facebook_gallery_first_conflicts_with_post,
+    _facebook_group_post_id,
+    _facebook_profile_post_id,
+    _is_facebook_url,
+    _verified_facebook_group_photos,
+    _verified_facebook_profile_photos,
+    download_facebook_media,
+    facebook_caption,
+    facebook_gallery_arguments,
+    facebook_ytdlp_arguments,
+    facebook_video_caption,
+)
 
 logging = logging.bind(service="universal_extractor")
 
@@ -45,6 +59,10 @@ def _clean_url(url: str) -> str:
 
 
 def _resolve_cookie(url: str) -> Optional[str]:
+    if _is_facebook_url(url):
+        # Anonymous-only. An authenticated session must never be silently
+        # shared with all users of the Universal handler.
+        return None
     if "reddit.com" in url or "redd.it" in url:
         if os.path.exists(REDDIT_COOKIES) and os.path.getsize(REDDIT_COOKIES) > 0:
             return REDDIT_COOKIES
@@ -58,11 +76,22 @@ async def _resolve_redirects(url: str) -> str:
     try:
         headers = {"User-Agent": _DEFAULT_UA}
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                return str(resp.url)
-    except Exception as exc:
-        logging.warning("Error resolving redirect for url=%s: %s", url, exc)
-        return url
+            # Facebook's share URLs may redirect on GET but not on HEAD.
+            methods = ("GET", "HEAD") if _is_facebook_url(url) else ("HEAD",)
+            for method in methods:
+                try:
+                    async with session.request(
+                        method, url, allow_redirects=True,
+                        timeout=aiohttp.ClientTimeout(total=8),
+                    ) as resp:
+                        resolved = str(resp.url)
+                        if resp.status < 400 and resolved != url:
+                            return resolved
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    continue
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        pass
+    return url
 
 
 async def _download_direct_image(url: str, output_dir: str, post_id: str) -> Optional[UniversalMediaResult]:
@@ -108,64 +137,95 @@ async def _download_direct_image(url: str, output_dir: str, post_id: str) -> Opt
 
 
 async def _get_video_metadata(file_path: str) -> dict:
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        return {"width": 1280, "height": 720, "duration": 0}
+    """Use the actual video dimensions instead of arbitrary 1280x720 defaults."""
+    unknown = {"width": None, "height": None, "duration": None}
+    if not os.path.isfile(file_path) or os.path.getsize(file_path) == 0:
+        return unknown
 
-    cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration:format=duration",
-        "-of", "json",
-        file_path,
-    ]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,duration:format=duration",
+            "-of", "json", file_path,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        stdout, _ = await proc.communicate()
-        if proc.returncode == 0 and stdout:
-            data = json.loads(stdout.decode("utf-8", errors="ignore"))
-            streams = data.get("streams", [])
-            v_stream = streams[0] if streams else {}
-            width = int(v_stream.get("width") or 0)
-            height = int(v_stream.get("height") or 0)
-            dur_val = v_stream.get("duration") or data.get("format", {}).get("duration")
-            duration = int(float(dur_val)) if dur_val else 0
-            return {"width": width or 1280, "height": height or 720, "duration": duration}
-    except Exception as exc:
-        logging.warning("ffprobe error: %s", exc)
-    return {"width": 1280, "height": 720, "duration": 0}
+        data_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=25)
+        if proc.returncode != 0:
+            return unknown
+        data = json.loads(data_bytes)
+        stream = next(iter(data.get("streams") or []), {})
+        data_format = data.get("format") or {}
+
+        def positive_int(value):
+            try:
+                parsed = float(value)
+                if not 0 < parsed < 2_147_483_647:
+                    return None
+                return int(round(parsed))
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        return {
+            "width": positive_int(stream.get("width")),
+            "height": positive_int(stream.get("height")),
+            "duration": positive_int(data_format.get("duration"))
+            or positive_int(stream.get("duration")),
+        }
+    except (OSError, ValueError, TypeError, asyncio.TimeoutError):
+        logging.warning("Universal ffprobe unavailable; letting Telegram infer size")
+        return unknown
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
 
 
 async def _generate_thumbnail(video_path: str, output_thumb_path: str) -> Optional[str]:
-    if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+    """Generate a JPEG that meets Telegram's thumbnail limits (320px, 200KB)."""
+    if not os.path.isfile(video_path) or os.path.getsize(video_path) == 0:
         return None
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", "00:00:01",
-        "-i", video_path,
-        "-vframes", "1",
-        "-vf", "scale=640:-1",
-        "-q:v", "3",
-        output_thumb_path,
-    ]
+    # Avoid accidentally reusing the invalid wide previews made by older code.
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-        if os.path.exists(output_thumb_path) and os.path.getsize(output_thumb_path) > 0:
-            return output_thumb_path
-    except Exception as exc:
-        logging.warning("Thumb error: %s", exc)
-    return None
+        os.remove(output_thumb_path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return None
 
+    for seek in ("1", "0"):
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-nostdin", "-y", "-ss", seek, "-i", video_path,
+                "-frames:v", "1",
+                "-vf", "scale=320:320:force_original_aspect_ratio=decrease",
+                "-q:v", "5", output_thumb_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
+            if (proc.returncode == 0
+                    and os.path.isfile(output_thumb_path)
+                    and 0 < os.path.getsize(output_thumb_path) < 200_000):
+                return output_thumb_path
+        except (OSError, asyncio.TimeoutError):
+            logging.warning("Universal thumbnail generation failed")
+        finally:
+            if proc is not None and proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
+        # An ultra-short video may not contain a frame at 1s.
+        try:
+            os.remove(output_thumb_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+    return None
 
 
 async def _download_kwai(
@@ -293,7 +353,27 @@ async def _download_kwai(
     )
 
 
-async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> Optional[UniversalMediaResult]:
+async def _download_with_gallery_dl(
+    url: str, output_dir: str, post_id: str,
+    *, facebook_browser_profile: Optional[str] = None,
+    facebook_expected_photo_ids: tuple[str, ...] | None = None,
+    facebook_gallery_test_skip_post_check: bool = False,
+    facebook_gallery_public_unverified: bool = False,
+) -> Optional[UniversalMediaResult]:
+    # Testing bypass is private/admin-only and must be explicitly enabled by
+    # the caller. Never disable production identity checks for public users.
+    if facebook_gallery_test_skip_post_check and (
+        not _is_facebook_url(url) or not facebook_browser_profile
+    ):
+        logging.warning("Facebook unverified gallery test requires admin Firefox profile")
+        return None
+    if facebook_gallery_public_unverified and (
+        not _is_facebook_url(url) or facebook_browser_profile
+    ):
+        # Public extraction never borrows a private session. Authenticated
+        # bypass is only reachable through the private-admin test gate above.
+        logging.warning("Facebook public gallery-first cannot use Firefox cookies")
+        return None
     target_dir = os.path.join(output_dir, f"gdl_{post_id}")
     os.makedirs(target_dir, exist_ok=True)
 
@@ -302,29 +382,42 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
     cmd = [
         binary,
         "-d", target_dir,
-        "-o", "directory=",
-        "--filename", "{post_id}_{num}.{extension}",
         "--write-metadata",
         "--no-mtime",
         "--user-agent", _DEFAULT_UA,
     ]
 
+    if not _is_facebook_url(url):
+        # Preserve Facebook's gallery set directory for identity checks.
+        cmd.extend(["-o", "directory=", "--filename", "{post_id}_{num}.{extension}"])
+
+    if _is_facebook_url(url):
+        cmd.extend(facebook_gallery_arguments(facebook_browser_profile))
     cookie_file = _resolve_cookie(url)
     if cookie_file:
         cmd.extend(["--cookies", cookie_file])
-
     cmd.append(url)
 
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=75 if _is_facebook_url(url) else None,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logging.warning("gallery-dl timed out: facebook=%s", _is_facebook_url(url))
+            return None
 
         downloaded = []
         caption = ""
+        facebook_post_caption = ""
         author = "Reddit" if ("reddit" in url or "redd.it" in url) else "Universal"
 
         for root, _, files in os.walk(target_dir):
@@ -334,16 +427,41 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
                     try:
                         with open(fpath, "r", encoding="utf-8") as jf:
                             m_data = json.load(jf)
+                            # Facebook's gallery-dl emits both an album
+                            # title (e.g. "Photos from ... post") and the
+                            # author's actual text under "caption". Prefer
+                            # that text even if another photo's JSON is read
+                            # first. Keep other platforms' caption behavior.
+                            if _is_facebook_url(url):
+                                facebook_post_caption = (
+                                    facebook_post_caption or facebook_caption(m_data)
+                                )
                             caption = caption or m_data.get("title") or m_data.get("description") or m_data.get("content") or ""
                             author = m_data.get("author") or m_data.get("uploader") or m_data.get("username") or author
                     except Exception:
                         pass
                 elif not file.endswith((".part", ".ytdl", ".txt")) and os.path.getsize(fpath) > 0:
+                    # Only actual media: sidecars and audio-only tracks must
+                    # never be sent to the Telegram video endpoint.
+                    if _is_facebook_url(url):
+                        ext = os.path.splitext(fpath)[1].lower()
+                        if ext not in {*_IMAGE_EXTS, ".mp4", ".mov", ".webm", ".mkv"}:
+                            continue
                     downloaded.append(fpath)
 
         if not downloaded:
             if proc.returncode != 0 and stderr:
-                logging.warning("gallery-dl failure stderr: %s", stderr.decode("utf-8", errors="ignore")[:300])
+                if _is_facebook_url(url):
+                    logging.warning(
+                        "Facebook gallery-dl failed: code=%s reason=%s",
+                        proc.returncode,
+                        _facebook_failure_reason(stderr.decode("utf-8", errors="ignore")),
+                    )
+                else:
+                    logging.warning(
+                        "gallery-dl failure stderr: %s",
+                        stderr.decode("utf-8", errors="ignore")[:300],
+                    )
             return None
 
         def _sort_key(filepath: str):
@@ -351,21 +469,57 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
             return int(match.group(1)) if match else 0
 
         downloaded.sort(key=_sort_key)
+        if _is_facebook_url(url):
+            # Only a single Facebook post/gallery, never an entire profile.
+            downloaded = downloaded[:10]
+            if facebook_gallery_test_skip_post_check or facebook_gallery_public_unverified:
+                # Do not let an explicitly conflicting album/photo/login page
+                # reach Telegram. This is NOT full post-identity verification.
+                if _facebook_gallery_first_conflicts_with_post(url, downloaded):
+                    logging.warning("Facebook gallery-first: mismatched media metadata")
+                    return None
+                logging.warning("Facebook gallery-first: post identity NOT verified")
+            elif _facebook_group_post_id(url):
+                if not _verified_facebook_group_photos(url, downloaded):
+                    logging.warning("Facebook group post photo identity not verified")
+                    return None
+            elif _facebook_profile_post_id(url):
+                if not _verified_facebook_profile_photos(
+                    url, downloaded, facebook_expected_photo_ids,
+                ):
+                    logging.warning("Facebook profile post photo identity not verified")
+                    return None
         media_list = []
         for idx, path in enumerate(downloaded):
             ext = os.path.splitext(path)[1].lower()
             m_type = "photo" if ext in _IMAGE_EXTS else "video"
-            thumb = path if m_type == "photo" else None
+            if m_type == "video":
+                # gallery-dl (including Reddit) doesn't supply Telegram
+                # preview/ffprobe metadata. Derive both from the local file.
+                meta = await _get_video_metadata(path)
+                thumb = await _generate_thumbnail(
+                    path, os.path.join(output_dir, f"{post_id}_{idx}_thumb.jpg")
+                )
+            else:
+                meta = {"width": None, "height": None, "duration": None}
+                thumb = path
             media_list.append(
                 UniversalMediaItem(
                     url=path,
                     type=m_type,
                     thumb=thumb,
+                    width=meta["width"],
+                    height=meta["height"],
+                    duration=meta["duration"],
                     index=idx,
                 )
             )
 
-        final_description = caption.strip() if caption.strip() else f"Post ({len(media_list)} items)"
+        chosen_caption = facebook_post_caption or caption
+        final_description = (
+            chosen_caption.strip() if isinstance(chosen_caption, str) and chosen_caption.strip()
+            else f"Post ({len(media_list)} items)"
+        )
 
         return UniversalMediaResult(
             id=post_id,
@@ -373,8 +527,11 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
             author=author,
             media_list=media_list,
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        logging.warning("gallery-dl failed for %s: %s", url, exc)
+        logging.warning("gallery-dl extraction failed: facebook=%s error=%s",
+                        _is_facebook_url(url), type(exc).__name__)
         return None
 
 
@@ -383,146 +540,218 @@ async def _download_with_ytdlp(
     output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
+    facebook_browser_profile: Optional[str] = None,
     **kwargs: Any,
 ) -> Optional[UniversalMediaResult]:
-    clean_url = _clean_url(url)
+    # A number of generic extractors need ?id=, signed URLs or other query
+    # parameters. _clean_url() drops them, so preserve the query for yt-dlp.
+    target_url = url.split("#", 1)[0].strip()
     if not post_id:
-        post_id = hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
-
+        post_id = hashlib.blake2s(target_url.encode("utf-8"), digest_size=8).hexdigest()
     os.makedirs(output_dir, exist_ok=True)
 
     binary = YTDLP_BIN if os.path.exists(YTDLP_BIN) else "yt-dlp"
-    final_output_template = os.path.join(output_dir, f"{post_id}.%(ext)s")
+    output_template = os.path.join(output_dir, f"{post_id}.%(ext)s")
     thumb_path = os.path.join(output_dir, f"{post_id}_thumb.jpg")
+    cookie_file = _resolve_cookie(target_url)
 
-    cookie_file = _resolve_cookie(clean_url)
-
+    # Normal yt-dlp requests remain the default. When a site rejects them,
+    # retry once with curl_cffi-powered Chrome impersonation if available.
+    # No new router, proxy or VPN is enabled for the Universal handler.
     title = ""
     uploader = "Universal"
-    cmd_info = [
-        binary,
-        "--dump-single-json",
-        "--no-warnings",
+    info_args = [
+        binary, "--dump-single-json", "--no-warnings",
         "--no-check-certificates",
-        "--user-agent", _DEFAULT_UA,
+        "--no-playlist", "--socket-timeout", "30", "--retries", "2",
     ]
     if cookie_file:
-        cmd_info.extend(["--cookies", cookie_file])
-    cmd_info.append(clean_url)
+        info_args.extend(["--cookies", cookie_file])
 
-    try:
-        proc_info = await asyncio.create_subprocess_exec(
-            *cmd_info,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout_info, _ = await proc_info.communicate()
-        if proc_info.returncode == 0 and stdout_info:
-            info_data = json.loads(stdout_info.decode("utf-8", errors="ignore"))
-            title = info_data.get("title") or info_data.get("description") or ""
-            uploader = info_data.get("uploader") or info_data.get("channel") or "Universal"
-    except Exception as exc:
-        logging.warning("JSON info error: %s", exc)
+    # Facebook's media pages often fail on metadata extraction while
+    # still exposing downloadable formats. Do not preflight it twice.
+    for impersonate in (() if _is_facebook_url(target_url) else (False, True)):
+        cmd = [
+            *info_args,
+            *(["--impersonate", "chrome"] if impersonate
+              else ["--user-agent", _DEFAULT_UA]),
+            target_url,
+        ]
+        proc_info = None
+        try:
+            proc_info = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc_info.communicate(), timeout=90)
+            if proc_info.returncode == 0 and stdout:
+                data = json.loads(stdout.decode("utf-8", errors="replace"))
+                title = (
+                    facebook_video_caption(data) if _is_facebook_url(target_url)
+                    else data.get("title") or data.get("description") or ""
+                )
+                uploader = data.get("uploader") or data.get("channel") or "Universal"
+                break
+        except (asyncio.TimeoutError, OSError, ValueError) as exc:
+            logging.warning("Universal yt-dlp info attempt failed (%s): %s",
+                            "chrome" if impersonate else "normal", type(exc).__name__)
+        finally:
+            if proc_info is not None and proc_info.returncode is None:
+                proc_info.kill()
+                await proc_info.communicate()
 
-    cmd_dl = [
-        binary,
-        "--newline",
-        "--no-warnings",
-        "--no-check-certificates",
+    base_download_args = [
+        binary, "--newline", "--no-warnings", "--no-check-certificates",
+        "--no-playlist", "--socket-timeout", "30", "--retries", "2",
+        "--fragment-retries", "2",
         "-f", "bestvideo*+bestaudio/best",
         "--merge-output-format", "mp4",
-        "--user-agent", _DEFAULT_UA,
         "--print", "after_move:filepath",
-        "--progress-template", "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
-        "-o", final_output_template,
+        "--progress-template",
+        "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
+        "-o", output_template,
     ]
+    is_facebook = _is_facebook_url(target_url)
     if cookie_file:
-        cmd_dl.extend(["--cookies", cookie_file])
-    cmd_dl.append(clean_url)
+        base_download_args.extend(["--cookies", cookie_file])
+    if is_facebook:
+        base_download_args.extend(facebook_ytdlp_arguments(facebook_browser_profile))
+
+    async def _one_download(impersonate: bool | str) -> str | None:
+        browser_args = (
+            ["--impersonate", "chrome-99:windows-10"]
+            if impersonate == "chrome99" else
+            ["--impersonate", "chrome"] if impersonate else
+            ["--user-agent", _DEFAULT_UA]
+        )
+        cmd = [*base_download_args, *browser_args, target_url]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        output_path = None
+        # Drain stdout throughout the download so progress and subprocess pipes
+        # cannot block. Keep only a bounded error tail, not source URLs.
+        recent: list[str] = []
+
+        async def _consume() -> None:
+            nonlocal output_path
+            while True:
+                data = await proc.stdout.readline()
+                if not data:
+                    return
+                line = data.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                if line.startswith("PROG:") and on_progress:
+                    parts = line.split(":")
+                    if len(parts) >= 4:
+                        try:
+                            downloaded = int(parts[1]) if parts[1] not in {"", "NA"} else 0
+                            total = int(parts[2]) if parts[2] not in {"", "NA"} else None
+                            speed = float(parts[3]) if parts[3] not in {"", "NA"} else None
+                            on_progress(downloaded, total, speed)
+                        except (TypeError, ValueError, OverflowError):
+                            pass
+                elif os.path.isfile(line):
+                    output_path = line
+                else:
+                    recent.append(line)
+                    if len(recent) > 8:
+                        recent.pop(0)
+
+        try:
+            await asyncio.wait_for(_consume(), timeout=180 if is_facebook else 900)
+            await asyncio.wait_for(proc.wait(), timeout=15)
+        except asyncio.TimeoutError:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            logging.warning(
+                "Universal yt-dlp timed out: mode=%s",
+                "chrome99" if impersonate == "chrome99" else
+                "chrome" if impersonate else "normal",
+            )
+            return None
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            raise
+
+        if proc.returncode != 0:
+            logging.warning(
+                "Universal yt-dlp download failed: mode=%s code=%s reason=%s",
+                "chrome99" if impersonate == "chrome99" else
+                "chrome" if impersonate else "normal", proc.returncode,
+                _facebook_failure_reason(recent) if is_facebook else "failed",
+            )
+            return None
+        if output_path and os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
+            return output_path
+        for path in sorted(glob.glob(os.path.join(output_dir, f"{post_id}.*"))):
+            if (os.path.isfile(path)
+                    and not path.endswith((".part", ".ytdl", ".jpg", ".json", ".temp"))
+                    and os.path.getsize(path) > 0):
+                return path
+        return None
 
     try:
-        proc_dl = await asyncio.create_subprocess_exec(
-            *cmd_dl,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        final_path_from_stdout = None
-        while True:
-            line_bytes = await proc_dl.stdout.readline()
-            if not line_bytes:
+        target_video = None
+        for impersonate in (
+            (False, True, "chrome99") if is_facebook else (False, True)
+        ):
+            target_video = await _one_download(impersonate)
+            if target_video:
                 break
-            line = line_bytes.decode("utf-8", errors="ignore").strip()
-            if not line:
-                continue
-            if line.startswith("PROG:") and on_progress:
-                parts = line.split(":")
-                if len(parts) >= 4:
-                    try:
-                        dl = int(parts[1]) if parts[1] and parts[1] != "NA" else 0
-                        tot = int(parts[2]) if parts[2] and parts[2] != "NA" else None
-                        spd = float(parts[3]) if parts[3] and parts[3] != "NA" else None
-                        on_progress(dl, tot, spd)
-                    except Exception:
-                        pass
-            elif not line.startswith("[") and os.path.exists(line):
-                final_path_from_stdout = line
-
-        _, stderr_dl = await proc_dl.communicate()
-
-        target_video = final_path_from_stdout
-        if not target_video or not os.path.exists(target_video):
-            candidates = glob.glob(os.path.join(output_dir, f"{post_id}*"))
-            valid = [
-                c for c in candidates
-                if not c.endswith((".part", ".ytdl", ".jpg", ".json", ".temp")) and os.path.getsize(c) > 0
-            ]
-            target_video = valid[0] if valid else None
 
         if not target_video:
-            err_msg = stderr_dl.decode("utf-8", errors="ignore") if stderr_dl else "Sem stderr"
-            logging.error("Nenhum arquivo final encontrado para post_id=%s. Erro yt-dlp: %s", post_id, err_msg[:300])
+            logging.warning("Universal yt-dlp produced no file: post_id=%s", post_id)
             return None
+
+        if is_facebook:
+            info_path = os.path.join(output_dir, f"{post_id}.info.json")
+            try:
+                with open(info_path, "r", encoding="utf-8") as fp:
+                    info = json.load(fp)
+                # Prefer Facebook's post caption/description over yt-dlp's
+                # often generic title ("Video"). Leave empty when Facebook
+                # provides no genuine caption instead of inventing one.
+                title = facebook_video_caption(info) or title
+                uploader = info.get("uploader") or info.get("channel") or uploader
+            except (OSError, ValueError, AttributeError):
+                pass
+            finally:
+                try:
+                    os.remove(info_path)
+                except OSError:
+                    pass
 
         ext = os.path.splitext(target_video)[1].lower()
         if ext in _IMAGE_EXTS:
             return UniversalMediaResult(
-                id=post_id,
-                description=title,
-                author=uploader,
-                media_list=[
-                    UniversalMediaItem(
-                        url=target_video,
-                        type="photo",
-                        thumb=target_video,
-                        index=0,
-                    )
-                ],
+                id=post_id, description=title, author=uploader,
+                media_list=[UniversalMediaItem(
+                    url=target_video, type="photo", thumb=target_video, index=0,
+                )],
             )
 
         meta = await _get_video_metadata(target_video)
         thumb = await _generate_thumbnail(target_video, thumb_path)
-
         return UniversalMediaResult(
-            id=post_id,
-            description=title,
-            author=uploader,
-            media_list=[
-                UniversalMediaItem(
-                    url=target_video,
-                    type="video",
-                    thumb=thumb,
-                    width=meta["width"],
-                    height=meta["height"],
-                    duration=meta["duration"],
-                    index=0,
-                )
-            ],
+            id=post_id, description=title, author=uploader,
+            media_list=[UniversalMediaItem(
+                url=target_video,
+                type="video", thumb=thumb,
+                width=meta["width"], height=meta["height"],
+                duration=meta["duration"], index=0,
+            )],
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        logging.error("Universal download failed: %s", exc)
-
-    return None
+        logging.warning("Universal yt-dlp processing failed: %s", type(exc).__name__)
+        return None
 
 
 async def download_universal_media(
@@ -530,13 +759,24 @@ async def download_universal_media(
     output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
+    facebook_browser_profile: Optional[str] = None,
     **kwargs: Any,
 ) -> Optional[UniversalMediaResult]:
     os.makedirs(output_dir, exist_ok=True)
 
     if not post_id:
-        clean = _clean_url(url)
+        # Keep meaningful query parameters in the media identity.
+        clean = url.split("#", 1)[0].strip()
         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
+
+    if _is_facebook_url(url):
+        return await download_facebook_media(
+            url,
+            output_dir=output_dir,
+            on_progress=on_progress,
+            post_id=post_id,
+            facebook_browser_profile=facebook_browser_profile,
+        )
 
     if is_kwai_url(url):
         res_kwai = await _download_kwai(
