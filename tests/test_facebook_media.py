@@ -183,3 +183,48 @@ async def test_direct_photo_rejects_different_downloaded_photo_id(
         url, output_dir=str(tmp_path),
         facebook_browser_profile="/home/firefoxbot/private-profile",
     ) is None
+
+
+
+PROFILE_SHARED = "https://www.facebook.com/share/1MbW3uewmv/"
+PROFILE_TRACKED = (
+    "https://www.facebook.com/100077921513450/posts/1162826406324732/"
+    "?rdid=E7vxBgF4j1LjIlBs&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1MbW3uewmv%2F"
+)
+PROFILE_CLEAN = "https://www.facebook.com/100077921513450/posts/1162826406324732/"
+
+
+def test_canonical_profile_post_drops_rdid_share_url_only():
+    assert facebook_media._canonical_fb_media_url(PROFILE_TRACKED) == PROFILE_CLEAN
+    direct = "https://www.facebook.com/photo/?fbid=1528748809298491&set="
+    assert facebook_media._canonical_fb_media_url(direct) == direct
+
+
+@pytest.mark.asyncio
+async def test_share_redirect_resolves_to_clean_profile_post(monkeypatch):
+    headers = (
+        "HTTP/2 302 Found\r\n"
+        f"Location: {PROFILE_TRACKED}\r\n"
+        "\r\n"
+    ).encode()
+    fake = SimpleNamespace(
+        returncode=0, communicate=AsyncMock(return_value=(headers, b"")),
+    )
+    spawn = AsyncMock(return_value=fake)
+    monkeypatch.setattr(facebook_media.asyncio, "create_subprocess_exec", spawn)
+    resolved = await facebook_media._resolve_facebook_short_link(PROFILE_SHARED)
+    assert resolved == PROFILE_CLEAN
+    spawn.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_share_redirect_rejects_external_host(monkeypatch):
+    headers = b"HTTP/2 302 Found\r\nLocation: https://evil.example/posts/42/\r\n\r\n"
+    fake = SimpleNamespace(
+        returncode=0, communicate=AsyncMock(return_value=(headers, b"")),
+    )
+    monkeypatch.setattr(
+        facebook_media.asyncio, "create_subprocess_exec",
+        AsyncMock(return_value=fake),
+    )
+    assert await facebook_media._resolve_facebook_short_link(PROFILE_SHARED) is None
