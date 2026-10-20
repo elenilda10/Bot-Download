@@ -8,7 +8,6 @@ import asyncio
 import logging
 import re
 import tempfile
-from contextlib import suppress
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
