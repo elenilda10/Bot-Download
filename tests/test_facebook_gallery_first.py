@@ -1,6 +1,6 @@
 """Experimental admin-only Facebook gallery-first flow regressions."""
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -190,7 +190,7 @@ async def test_normal_handler_gallery_first_album_has_no_progress_or_extra_url(m
         "https://www.facebook.com/share/1MGrq5g49B/")
     monkeypatch.setattr(facebook.cmd_mod, "is_banned", AsyncMock(return_value=False))
     monkeypatch.setattr(facebook, "should_skip_duplicate_business_message", AsyncMock(return_value=False))
-    lease = SimpleNamespace(mark_success=AsyncMock(), finish=AsyncMock())
+    lease = SimpleNamespace(mark_success=Mock(), finish=Mock())
     monkeypatch.setattr(facebook, "claim_message_request", AsyncMock(return_value=lease))
     monkeypatch.setattr(facebook, "load_user_settings", AsyncMock(
         return_value={"language": "pt", "captions": "on"}
