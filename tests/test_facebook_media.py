@@ -122,3 +122,64 @@ def test_video_caption_uses_author_description_before_generic_title():
     assert facebook_media.facebook_video_caption({
         "title": "Título real",
     }) == "Título real"
+
+
+
+@pytest.mark.asyncio
+async def test_direct_facebook_photo_slash_url_works_with_admin_profile(
+    monkeypatch, tmp_path,
+):
+    photo_path = tmp_path / "1528748809298491.jpg"
+    photo_path.write_bytes(b"fake-photo")
+    result = SimpleNamespace(media_list=[SimpleNamespace(
+        type="photo", url=str(photo_path),
+    )])
+    gallery = AsyncMock(return_value=result)
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    url = "https://www.facebook.com/photo/?fbid=1528748809298491&set="
+    assert await facebook_media.download_facebook_media(
+        url, output_dir=str(tmp_path),
+        facebook_browser_profile="/home/firefoxbot/private-profile",
+    ) is result
+    gallery.assert_awaited_once()
+    assert gallery.await_args.args[0] == url
+    assert gallery.await_args.kwargs["facebook_browser_profile"] == (
+        "/home/firefoxbot/private-profile"
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_facebook_photo_slash_url_works_without_admin_cookies(
+    monkeypatch, tmp_path,
+):
+    photo_path = tmp_path / "1528748809298491.jpg"
+    photo_path.write_bytes(b"fake-photo")
+    result = SimpleNamespace(media_list=[SimpleNamespace(
+        type="photo", url=str(photo_path),
+    )])
+    gallery = AsyncMock(return_value=result)
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    url = "https://www.facebook.com/photo/?fbid=1528748809298491&set="
+    assert await facebook_media.download_facebook_media(
+        url, output_dir=str(tmp_path), facebook_browser_profile=None,
+    ) is result
+    gallery.assert_awaited_once()
+    assert "facebook_browser_profile" not in gallery.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_direct_photo_rejects_different_downloaded_photo_id(
+    monkeypatch, tmp_path,
+):
+    wrong_path = tmp_path / "1162826316324741.jpg"
+    wrong_path.write_bytes(b"fake-photo")
+    result = SimpleNamespace(media_list=[SimpleNamespace(
+        type="photo", url=str(wrong_path),
+    )])
+    gallery = AsyncMock(return_value=result)
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    url = "https://www.facebook.com/photo/?fbid=1528748809298491&set="
+    assert await facebook_media.download_facebook_media(
+        url, output_dir=str(tmp_path),
+        facebook_browser_profile="/home/firefoxbot/private-profile",
+    ) is None
