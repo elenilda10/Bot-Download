@@ -418,6 +418,9 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
     ]
 
     if _is_facebook_url(url):
+        # Cap the download BEFORE transferring large Facebook albums.
+        # The bot sends at most 10 items in a Telegram media group.
+        cmd.extend(["--range", "1-10"])
         # Facebook can yield separate audio and video tracks; let yt-dlp
         # merge them rather than treating an .m4a as an extra Telegram video.
         cmd.extend(["-o", "extractor.facebook.videos=ytdl"])
