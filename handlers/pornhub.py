@@ -13,11 +13,25 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from aiogram import F, Router, types
+from aiogram.enums import ChatAction, ParseMode
 from aiogram.types import FSInputFile
 
+import messages as bm
+from app_context import bot, db
 from config import ADMIN_ID, MAX_FILE_SIZE
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
+from handlers.utils import (
+    get_bot_url,
+    handle_download_error,
+    handle_video_too_large,
+    load_user_settings,
+    maybe_delete_user_message,
+    react_to_message,
+    safe_delete_message,
+    safe_edit_text,
+    send_chat_action_if_needed,
+)
 
 router = Router(name="pornhub_test")
 logger = logging.getLogger(__name__)
@@ -28,6 +42,10 @@ _VPN_INTERFACE = "protonbot"
 _VPN_NAMESPACE = "ph-proton"
 _MAX_DOWNLOAD_BYTES = min(MAX_FILE_SIZE, 450 * 1024 * 1024)
 _YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
+
+
+class VideoTooLargeError(Exception):
+    """The downloaded video exceeds the current bot's media size limit."""
 
 
 def _extract_video_url(text: str) -> str | None:
@@ -124,7 +142,7 @@ async def _download_video(url: str, directory: Path) -> Path:
         raise RuntimeError("yt-dlp não produziu arquivo de vídeo")
     video = max(files, key=lambda f: f.stat().st_size)
     if video.stat().st_size > _MAX_DOWNLOAD_BYTES:
-        raise RuntimeError("Arquivo acima do limite de teste")
+        raise VideoTooLargeError("Arquivo acima do limite de teste")
     return video
 
 
@@ -148,41 +166,66 @@ async def download_pornhub_test(message: types.Message):
         return
 
     status = None
+    user_lang = "pt"
+    user_settings = {}
     try:
-        mode = "VPN"
-        status = await message.reply(f"⏳ Baixando vídeo de teste via {mode}…")
+        # Reuse the same language, captions and status messages as the other handlers.
+        user_settings = await load_user_settings(db, message)
+        user_lang = user_settings.get("language") or await db.get_language(
+            message.from_user.id
+        ) or "pt"
+        await react_to_message(message, "👾")
+        status = await message.answer(
+            bm.downloading_video_status(lang=user_lang),
+            parse_mode=ParseMode.HTML,
+        )
+
         async with _DOWNLOAD_LIMIT:
             with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
                 file = await _download_video(url, Path(tmp))
-                with suppress(Exception):
-                    await status.edit_text("🚀 Enviando vídeo ao Telegram…")
+                await safe_edit_text(
+                    status, bm.uploading_status(lang=user_lang), parse_mode=ParseMode.HTML
+                )
+                await send_chat_action_if_needed(
+                    bot, message.chat.id, ChatAction.UPLOAD_VIDEO, None
+                )
+                bot_url = await get_bot_url(bot)
+                caption = bm.captions(
+                    user_settings.get("captions", "on"), None, bot_url
+                )
 
                 if file.suffix.lower() == ".mp4":
                     sent = await message.reply_video(
                         FSInputFile(file),
                         supports_streaming=True,
-                        caption=f"✅ Vídeo enviado · conexão: {mode}",
+                        caption=caption or None,
+                        parse_mode=ParseMode.HTML,
                         allow_sending_without_reply=True,
                     )
                 else:
                     sent = await message.reply_document(
                         FSInputFile(file),
-                        caption=f"✅ Vídeo enviado · conexão: {mode}",
+                        caption=caption or None,
+                        parse_mode=ParseMode.HTML,
                         allow_sending_without_reply=True,
                     )
+
                 if sent:
                     lease.mark_success()
-                if status is not None:
-                    with suppress(Exception):
-                        await status.delete()
+                await safe_delete_message(status)
+                status = None
+                if sent:
+                    await maybe_delete_user_message(
+                        message, user_settings.get("delete_message")
+                    )
+    except VideoTooLargeError:
+        logger.warning("Pornhub test failed: VideoTooLargeError")
+        await safe_delete_message(status)
+        await handle_video_too_large(message, lang=user_lang)
     except Exception as exc:
-        # Avoid logging credentials, URLs, or possibly sensitive page titles.
+        # Avoid logging credentials, URLs or possibly sensitive page titles.
         logger.warning("Pornhub test failed: %s", type(exc).__name__)
-        if status is not None:
-            with suppress(Exception):
-                await status.edit_text(
-                    "❌ Não foi possível baixar/enviar esse vídeo. "
-                    "Verifique o serviço ph-proton-netns e os logs da VPS."
-                )
+        await safe_delete_message(status)
+        await handle_download_error(message, lang=user_lang)
     finally:
         lease.finish()
