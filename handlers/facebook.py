@@ -30,7 +30,7 @@ from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
-    get_bot_url, get_message_text, get_bot_avatar_thumbnail, handle_download_error,
+    get_bot_url, get_message_text, handle_download_error,
     load_user_settings, maybe_delete_user_message, react_to_message,
     safe_delete_message, safe_edit_text, should_skip_duplicate_business_message,
 )
@@ -67,7 +67,7 @@ def _facebook_keyboard(
     portuguese = not lang or lang.lower().startswith("pt")
     settings = settings or {}
     buttons = []
-    if token and has_video and settings.get("audio_button") == "on":
+    if token and single and has_video and settings.get("audio_button") == "on":
         buttons.append([InlineKeyboardButton(
             text="🎧 Baixar MP3" if portuguese else "🎧 Download MP3",
             callback_data=f"fba:{token}",
@@ -372,9 +372,17 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                 proc.kill()
                 await proc.communicate()
                 logging.warning("Facebook MP3 conversion timed out")
+                await call.message.reply(
+                    "A conversão do áudio excedeu o tempo limite.",
+                    allow_sending_without_reply=True,
+                )
                 return
             if proc.returncode != 0:
                 logging.warning("Facebook MP3 conversion failed: %s", proc.returncode)
+                await call.message.reply(
+                    "Não consegui extrair áudio deste vídeo.",
+                    allow_sending_without_reply=True,
+                )
                 return
         if (
             not os.path.isfile(output_path)
