@@ -108,64 +108,95 @@ async def _download_direct_image(url: str, output_dir: str, post_id: str) -> Opt
 
 
 async def _get_video_metadata(file_path: str) -> dict:
-    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
-        return {"width": 1280, "height": 720, "duration": 0}
+    """Use the actual video dimensions instead of arbitrary 1280x720 defaults."""
+    unknown = {"width": None, "height": None, "duration": None}
+    if not os.path.isfile(file_path) or os.path.getsize(file_path) == 0:
+        return unknown
 
-    cmd = [
-        "ffprobe",
-        "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration:format=duration",
-        "-of", "json",
-        file_path,
-    ]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,duration:format=duration",
+            "-of", "json", file_path,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
-        stdout, _ = await proc.communicate()
-        if proc.returncode == 0 and stdout:
-            data = json.loads(stdout.decode("utf-8", errors="ignore"))
-            streams = data.get("streams", [])
-            v_stream = streams[0] if streams else {}
-            width = int(v_stream.get("width") or 0)
-            height = int(v_stream.get("height") or 0)
-            dur_val = v_stream.get("duration") or data.get("format", {}).get("duration")
-            duration = int(float(dur_val)) if dur_val else 0
-            return {"width": width or 1280, "height": height or 720, "duration": duration}
-    except Exception as exc:
-        logging.warning("ffprobe error: %s", exc)
-    return {"width": 1280, "height": 720, "duration": 0}
+        data_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=25)
+        if proc.returncode != 0:
+            return unknown
+        data = json.loads(data_bytes)
+        stream = next(iter(data.get("streams") or []), {})
+        data_format = data.get("format") or {}
+
+        def positive_int(value):
+            try:
+                parsed = float(value)
+                if not 0 < parsed < 2_147_483_647:
+                    return None
+                return int(round(parsed))
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+        return {
+            "width": positive_int(stream.get("width")),
+            "height": positive_int(stream.get("height")),
+            "duration": positive_int(data_format.get("duration"))
+            or positive_int(stream.get("duration")),
+        }
+    except (OSError, ValueError, TypeError, asyncio.TimeoutError):
+        logging.warning("Universal ffprobe unavailable; letting Telegram infer size")
+        return unknown
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
 
 
 async def _generate_thumbnail(video_path: str, output_thumb_path: str) -> Optional[str]:
-    if not os.path.exists(video_path) or os.path.getsize(video_path) == 0:
+    """Generate a JPEG that meets Telegram's thumbnail limits (320px, 200KB)."""
+    if not os.path.isfile(video_path) or os.path.getsize(video_path) == 0:
         return None
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", "00:00:01",
-        "-i", video_path,
-        "-vframes", "1",
-        "-vf", "scale=640:-1",
-        "-q:v", "3",
-        output_thumb_path,
-    ]
+    # Avoid accidentally reusing the invalid wide previews made by older code.
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-        if os.path.exists(output_thumb_path) and os.path.getsize(output_thumb_path) > 0:
-            return output_thumb_path
-    except Exception as exc:
-        logging.warning("Thumb error: %s", exc)
-    return None
+        os.remove(output_thumb_path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return None
 
+    for seek in ("1", "0"):
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-nostdin", "-y", "-ss", seek, "-i", video_path,
+                "-frames:v", "1",
+                "-vf", "scale=320:320:force_original_aspect_ratio=decrease",
+                "-q:v", "5", output_thumb_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
+            if (proc.returncode == 0
+                    and os.path.isfile(output_thumb_path)
+                    and 0 < os.path.getsize(output_thumb_path) < 200_000):
+                return output_thumb_path
+        except (OSError, asyncio.TimeoutError):
+            logging.warning("Universal thumbnail generation failed")
+        finally:
+            if proc is not None and proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
+        # An ultra-short video may not contain a frame at 1s.
+        try:
+            os.remove(output_thumb_path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+    return None
 
 
 async def _download_kwai(
@@ -355,12 +386,24 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
         for idx, path in enumerate(downloaded):
             ext = os.path.splitext(path)[1].lower()
             m_type = "photo" if ext in _IMAGE_EXTS else "video"
-            thumb = path if m_type == "photo" else None
+            if m_type == "video":
+                # gallery-dl (including Reddit) doesn't supply Telegram
+                # preview/ffprobe metadata. Derive both from the local file.
+                meta = await _get_video_metadata(path)
+                thumb = await _generate_thumbnail(
+                    path, os.path.join(output_dir, f"{post_id}_{idx}_thumb.jpg")
+                )
+            else:
+                meta = {"width": None, "height": None, "duration": None}
+                thumb = path
             media_list.append(
                 UniversalMediaItem(
                     url=path,
                     type=m_type,
                     thumb=thumb,
+                    width=meta["width"],
+                    height=meta["height"],
+                    duration=meta["duration"],
                     index=idx,
                 )
             )
