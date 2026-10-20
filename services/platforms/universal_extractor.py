@@ -36,6 +36,23 @@ def _is_facebook_url(url: str) -> bool:
     )
 
 
+def _facebook_failure_reason(lines: list[str] | str) -> str:
+    """Categorize errors without logging URLs, cookie values or private data."""
+    tail = "\n".join(lines) if isinstance(lines, list) else lines
+    tail = tail.lower()
+    if "cannot parse data" in tail or "unable to extract" in tail:
+        return "extractor_changed"
+    if "login" in tail or "cookies" in tail or "sign in" in tail:
+        return "login_or_cookies_required"
+    if "403" in tail or "forbidden" in tail:
+        return "http_403"
+    if "not available" in tail or "removed" in tail or "private" in tail:
+        return "unavailable_or_private"
+    if "geo" in tail or "region" in tail or "country" in tail:
+        return "regional_restriction"
+    return "unknown"
+
+
 def _is_facebook_video_url(url: str) -> bool:
     if not _is_facebook_url(url):
         return False
@@ -453,7 +470,17 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
 
         if not downloaded:
             if proc.returncode != 0 and stderr:
-                logging.warning("gallery-dl failure stderr: %s", stderr.decode("utf-8", errors="ignore")[:300])
+                if _is_facebook_url(url):
+                    logging.warning(
+                        "Facebook gallery-dl failed: code=%s reason=%s",
+                        proc.returncode,
+                        _facebook_failure_reason(stderr.decode("utf-8", errors="ignore")),
+                    )
+                else:
+                    logging.warning(
+                        "gallery-dl failure stderr: %s",
+                        stderr.decode("utf-8", errors="ignore")[:300],
+                    )
             return None
 
         def _sort_key(filepath: str):
@@ -648,9 +675,10 @@ async def _download_with_ytdlp(
 
         if proc.returncode != 0:
             logging.warning(
-                "Universal yt-dlp download failed: mode=%s code=%s",
+                "Universal yt-dlp download failed: mode=%s code=%s reason=%s",
                 "chrome99" if impersonate == "chrome99" else
                 "chrome" if impersonate else "normal", proc.returncode,
+                _facebook_failure_reason(recent) if is_facebook else "failed",
             )
             return None
         if output_path and os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
