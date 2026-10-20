@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from aiogram import F, Router, types
 from aiogram.enums import ChatAction, ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile
 
 import messages as bm
@@ -34,6 +35,7 @@ from handlers.utils import (
     safe_edit_text,
     send_chat_action_if_needed,
 )
+from utils.media_cache import build_media_cache_key
 
 router = Router(name="pornhub_test")
 logger = logging.getLogger(__name__)
@@ -44,6 +46,8 @@ _VPN_INTERFACE = "protonbot"
 _VPN_NAMESPACE = "ph-proton"
 _MAX_DOWNLOAD_BYTES = min(MAX_FILE_SIZE, 450 * 1024 * 1024)
 _YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
+# Change the version if download format/quality rules change.
+_CACHE_VARIANT = "auto480-fallback720-v1"
 
 
 class VideoTooLargeError(Exception):
@@ -257,6 +261,44 @@ async def _download_video(url: str, directory: Path) -> DownloadedVideo:
     return result
 
 
+def _cache_keys(url: str) -> tuple[str, str]:
+    """Use the viewkey rather than the URL host (pt, www, m) as cache identity."""
+    viewkey = parse_qs(urlsplit(url).query)["viewkey"][0]
+    base = f"pornhub:{viewkey}"
+    return (
+        build_media_cache_key(base, variant=f"video:{_CACHE_VARIANT}"),
+        build_media_cache_key(base, variant=f"document:{_CACHE_VARIANT}"),
+    )
+
+
+async def _reply_with_cached_file(
+    message: types.Message,
+    *,
+    file_id: str,
+    as_document: bool,
+    caption: str,
+) -> types.Message | None:
+    """Reuse Telegram's file_id; invalid IDs fall back to the VPN download."""
+    try:
+        if as_document:
+            return await message.reply_document(
+                document=file_id,
+                caption=caption or None,
+                parse_mode=ParseMode.HTML,
+                allow_sending_without_reply=True,
+            )
+        return await message.reply_video(
+            video=file_id,
+            caption=caption or None,
+            parse_mode=ParseMode.HTML,
+            supports_streaming=True,
+            allow_sending_without_reply=True,
+        )
+    except TelegramBadRequest:
+        logger.warning("Pornhub cached Telegram file_id rejected; fetching via VPN")
+        return None
+
+
 @router.message(
     F.text.regexp(_LINK_PATTERN, mode="search")
     | F.caption.regexp(_LINK_PATTERN, mode="search")
@@ -291,52 +333,98 @@ async def download_pornhub_test(message: types.Message):
             parse_mode=ParseMode.HTML,
         )
 
+        video_cache_key, doc_cache_key = _cache_keys(url)
+        bot_url = await get_bot_url(bot)
+        # The shared cache stores file IDs, not source-page metadata. Cached
+        # sends keep the SaveVid footer and user's current caption settings.
+        cached_caption = bm.captions(
+            user_settings.get("captions", "on"), None, bot_url
+        )
+
+        # Check inside the semaphore: two requests for the same video will not
+        # download it twice, even when they arrive from different chats.
         async with _DOWNLOAD_LIMIT:
-            with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
-                media = await _download_video(url, Path(tmp))
-                file = media.path
+            sent = None
+            for key, is_document in (
+                (video_cache_key, False),
+                (doc_cache_key, True),
+            ):
+                cached_id = await db.get_file_id(key)
+                if not cached_id:
+                    continue
                 await safe_edit_text(
-                    status, bm.uploading_status(lang=user_lang), parse_mode=ParseMode.HTML
+                    status, bm.uploading_status(lang=user_lang),
+                    parse_mode=ParseMode.HTML,
                 )
                 await send_chat_action_if_needed(
                     bot, message.chat.id, ChatAction.UPLOAD_VIDEO, None
                 )
-                bot_url = await get_bot_url(bot)
-                caption = bm.captions(
-                    user_settings.get("captions", "on"), media.description, bot_url
+                sent = await _reply_with_cached_file(
+                    message, file_id=cached_id, as_document=is_document,
+                    caption=cached_caption,
                 )
-
-                if file.suffix.lower() == ".mp4":
-                    sent = await message.reply_video(
-                        FSInputFile(file),
-                        supports_streaming=True,
-                        duration=media.duration,
-                        width=media.width,
-                        height=media.height,
-                        thumbnail=(FSInputFile(media.thumbnail, filename="thumb.jpg")
-                                   if media.thumbnail else None),
-                        cover=(FSInputFile(media.thumbnail, filename="cover.jpg")
-                               if media.thumbnail else None),
-                        caption=caption or None,
-                        parse_mode=ParseMode.HTML,
-                        allow_sending_without_reply=True,
-                    )
-                else:
-                    sent = await message.reply_document(
-                        FSInputFile(file),
-                        caption=caption or None,
-                        parse_mode=ParseMode.HTML,
-                        allow_sending_without_reply=True,
-                    )
-
                 if sent:
-                    lease.mark_success()
+                    break
+
+            if sent is None:
+                with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
+                    media = await _download_video(url, Path(tmp))
+                    file = media.path
+                    await safe_edit_text(
+                        status, bm.uploading_status(lang=user_lang),
+                        parse_mode=ParseMode.HTML,
+                    )
+                    await send_chat_action_if_needed(
+                        bot, message.chat.id, ChatAction.UPLOAD_VIDEO, None
+                    )
+                    caption = bm.captions(
+                        user_settings.get("captions", "on"),
+                        media.description, bot_url,
+                    )
+
+                    if file.suffix.lower() == ".mp4":
+                        sent = await message.reply_video(
+                            FSInputFile(file),
+                            supports_streaming=True,
+                            duration=media.duration,
+                            width=media.width,
+                            height=media.height,
+                            thumbnail=(
+                                FSInputFile(media.thumbnail, filename="thumb.jpg")
+                                if media.thumbnail else None
+                            ),
+                            cover=(
+                                FSInputFile(media.thumbnail, filename="cover.jpg")
+                                if media.thumbnail else None
+                            ),
+                            caption=caption or None,
+                            parse_mode=ParseMode.HTML,
+                            allow_sending_without_reply=True,
+                        )
+                    else:
+                        sent = await message.reply_document(
+                            FSInputFile(file),
+                            caption=caption or None,
+                            parse_mode=ParseMode.HTML,
+                            allow_sending_without_reply=True,
+                        )
+
+                    if sent and sent.video:
+                        await db.add_file(
+                            video_cache_key, sent.video.file_id, "video"
+                        )
+                    elif sent and sent.document:
+                        await db.add_file(
+                            doc_cache_key, sent.document.file_id, "document"
+                        )
+
+            if sent:
+                lease.mark_success()
                 await safe_delete_message(status)
                 status = None
-                if sent:
-                    await maybe_delete_user_message(
-                        message, user_settings.get("delete_message")
-                    )
+                await maybe_delete_user_message(
+                    message, user_settings.get("delete_message")
+                )
     except VideoTooLargeError:
         logger.warning("Pornhub test failed: VideoTooLargeError")
         await safe_delete_message(status)
