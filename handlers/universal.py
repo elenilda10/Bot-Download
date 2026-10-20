@@ -97,7 +97,7 @@ def _cache_key(url_hash: str, media_kind: str) -> str:
 
 
 def _file_button_caption(lang: str | None) -> str:
-    return "📄 Arquivo original" if _is_pt(lang) else "📄 Original file"
+    return "📄 Arquivo como documento" if _is_pt(lang) else "📄 File as document"
 
 
 def _universal_keyboard(
@@ -186,7 +186,7 @@ async def _try_cached_universal(
             kind, file_id = entry.get("kind"), entry.get("file_id")
             if not isinstance(file_id, str) or not file_id:
                 return False
-            item_caption = caption or None if index == 0 else None
+            item_caption = (caption or None) if index == 0 else None
             if kind == "video":
                 album.append(InputMediaVideo(
                     media=file_id, caption=item_caption, parse_mode=ParseMode.HTML,
