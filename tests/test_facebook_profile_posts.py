@@ -43,7 +43,13 @@ def test_accept_only_specific_numeric_profile_publications():
 def test_shared_photo_owner_may_differ_from_post_owner(tmp_path):
     image = _photo(tmp_path)
     assert PHOTO_OWNER != POST_OWNER
-    assert fb._verified_facebook_profile_photos(PROFILE_POST, [str(image)])
+    assert fb._verified_facebook_profile_photos(PROFILE_POST, [str(image)], (PHOTO_ID,))
+    # A sidecar matching its own photo URL does not prove that this was
+    # the photo identified by the requested publication's preflight.
+    assert not fb._verified_facebook_profile_photos(
+        PROFILE_POST, [str(image)], ("1162826316324741",),
+    )
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(image)])
 
 
 @pytest.mark.parametrize("bad_url", [
@@ -55,23 +61,23 @@ def test_shared_photo_owner_may_differ_from_post_owner(tmp_path):
 ])
 def test_wrong_photo_link_rejected(tmp_path, bad_url):
     path = _photo(tmp_path, post_photo=bad_url)
-    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)])
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)], (PHOTO_ID,))
 
 
 def test_mismatched_file_and_sidecar_ids_rejected(tmp_path):
     path = _photo(tmp_path, meta_id="999999")
-    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)])
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)], (PHOTO_ID,))
 
 
 def test_missing_photo_metadata_rejected(tmp_path):
     path = _photo(tmp_path)
     (path.parent / (path.name + ".json")).unlink()
-    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)])
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)], (PHOTO_ID,))
 
 
 def test_wrong_album_post_id_rejected(tmp_path):
     path = _photo(tmp_path, set_id="pcb.999999", dirname="Photos (pcb.999999)")
-    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)])
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)], (PHOTO_ID,))
 
 
 def test_shared_post_text_before_original_photo_caption():
@@ -93,6 +99,7 @@ async def test_gallery_rejects_unverified_profile_photo_before_delivery(monkeypa
     )
     result = await universal._download_with_gallery_dl(
         PROFILE_POST, str(tmp_path), "profiletest", facebook_browser_profile="demo",
+        facebook_expected_photo_ids=(PHOTO_ID,),
     )
     assert result is None
 
@@ -108,6 +115,7 @@ async def test_gallery_accepts_exact_link_and_prefers_shared_caption(monkeypatch
     )
     result = await universal._download_with_gallery_dl(
         PROFILE_POST, str(tmp_path), "profileok", facebook_browser_profile="demo",
+        facebook_expected_photo_ids=(PHOTO_ID,),
     )
     assert result is not None
     assert len(result.media_list) == 1
@@ -120,9 +128,68 @@ async def test_facebook_service_routes_only_specific_profile_post_to_gallery(mon
     expected = SimpleNamespace(media_list=[SimpleNamespace(type="photo")])
     gallery = AsyncMock(return_value=expected)
     monkeypatch.setattr(universal, "_download_with_gallery_dl", gallery)
+    monkeypatch.setattr(
+        fb, "_facebook_profile_post_expected_photo_ids",
+        AsyncMock(return_value=(PHOTO_ID,)),
+    )
     result = await fb.download_facebook_media(
         PROFILE_POST, output_dir=str(tmp_path),
         facebook_browser_profile="/private/firefox",
     )
     assert result is expected
     assert gallery.await_args.kwargs["facebook_browser_profile"] == "/private/firefox"
+    assert gallery.await_args.kwargs["facebook_expected_photo_ids"] == (PHOTO_ID,)
+
+
+
+def test_login_screen_caption_rejected_even_if_photo_id_matches(tmp_path):
+    path = _photo(tmp_path, post_text="Remember password")
+    assert not fb._verified_facebook_profile_photos(PROFILE_POST, [str(path)], (PHOTO_ID,))
+
+
+def test_facebook_profile_photo_link_id_accepts_exact_link_only():
+    assert fb._facebook_profile_photo_link_id(
+        "https://www.facebook.com/photo/?fbid=1528748809298491&set="
+    ) == PHOTO_ID
+    assert fb._facebook_profile_photo_link_id(
+        "https://www.facebook.com/photo/?fbid=15287488092984911"
+    ) != PHOTO_ID
+
+
+@pytest.mark.asyncio
+async def test_profile_preflight_fails_closed_on_login_prompt(monkeypatch):
+    fake_dump = [[], {"id": PHOTO_ID, "post_photo":
+                      "https://www.facebook.com/photo/?fbid=" + PHOTO_ID,
+                      "post_text": "Remember password"}]
+    proc = SimpleNamespace(
+        returncode=0,
+        communicate=AsyncMock(return_value=(json.dumps(fake_dump).encode(), b"")),
+    )
+    monkeypatch.setattr(fb.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
+    assert await fb._facebook_profile_post_expected_photo_ids(PROFILE_POST) is None
+
+
+@pytest.mark.asyncio
+async def test_profile_preflight_requires_fbid_matching_media_id(monkeypatch):
+    fake_dump = [[], {"id": PHOTO_ID, "post_photo":
+                      "https://www.facebook.com/photo/?fbid=1162826316324741",
+                      "post_text": "legitimate user text"}]
+    proc = SimpleNamespace(
+        returncode=0,
+        communicate=AsyncMock(return_value=(json.dumps(fake_dump).encode(), b"")),
+    )
+    monkeypatch.setattr(fb.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
+    assert await fb._facebook_profile_post_expected_photo_ids(PROFILE_POST) is None
+
+
+@pytest.mark.asyncio
+async def test_profile_preflight_returns_exact_confirmed_ids(monkeypatch):
+    fake_dump = [[], {"id": PHOTO_ID, "post_photo":
+                      "https://www.facebook.com/photo/?fbid=" + PHOTO_ID,
+                      "post_text": "legitimate user text"}]
+    proc = SimpleNamespace(
+        returncode=0,
+        communicate=AsyncMock(return_value=(json.dumps(fake_dump).encode(), b"")),
+    )
+    monkeypatch.setattr(fb.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc))
+    assert await fb._facebook_profile_post_expected_photo_ids(PROFILE_POST) == (PHOTO_ID,)
