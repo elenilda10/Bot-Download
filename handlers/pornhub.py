@@ -261,9 +261,14 @@ async def _download_video(url: str, directory: Path) -> DownloadedVideo:
     return result
 
 
+def _video_identity(url: str) -> str:
+    """The source viewkey is unique; generic request dedupe drops URL queries."""
+    return parse_qs(urlsplit(url).query)["viewkey"][0]
+
+
 def _cache_keys(url: str) -> tuple[str, str]:
     """Use the viewkey rather than the URL host (pt, www, m) as cache identity."""
-    viewkey = parse_qs(urlsplit(url).query)["viewkey"][0]
+    viewkey = _video_identity(url)
     base = f"pornhub:{viewkey}"
     return (
         build_media_cache_key(base, variant=f"video:{_CACHE_VARIANT}"),
@@ -314,7 +319,12 @@ async def download_pornhub_test(message: types.Message):
     if not url:
         return
 
-    lease = await claim_message_request(message, service="pornhub_test", url=url)
+    # Encode the viewkey into the path: generic dedupe otherwise drops the
+    # query string and treats different Pornhub videos as the same request.
+    dedupe_url = f"https://pornhub.com/video/{_video_identity(url)}"
+    lease = await claim_message_request(
+        message, service="pornhub_test", url=dedupe_url
+    )
     if lease is None:
         return
 
