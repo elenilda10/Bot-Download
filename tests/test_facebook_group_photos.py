@@ -1,5 +1,10 @@
 """Facebook group photo verification: refuse unrelated posts and filenames."""
 import json
+from unittest.mock import AsyncMock
+
+import pytest
+
+from services.platforms import universal_extractor
 
 from services.platforms.universal_extractor import (
     _facebook_group_post_id,
@@ -72,3 +77,39 @@ def test_rejects_non_photo(tmp_path):
     path = _create_photo(tmp_path).with_suffix(".mp4")
     path.write_bytes(b"test-video")
     assert not _verified_facebook_group_photos(GROUP_URL, [str(path)])
+
+
+
+@pytest.mark.asyncio
+async def test_download_prefers_original_facebook_caption_over_album_title(tmp_path, monkeypatch):
+    album = tmp_path / "gdl_captiontest" / "facebook" / "William gomes" / (
+        "Photos from William gomes's post (pcb.2061916421192547)"
+    )
+    album.mkdir(parents=True)
+    image = album / "1629584308563349.jpg"
+    image.write_bytes(b"image")
+    image.with_name(image.name + ".json").write_text(
+        json.dumps({
+            "id": "1629584308563349",
+            "set_id": "pcb.2061916421192547",
+            "caption": "Sim ou não???",
+            "title": "Photos from William gomes's post",
+        }),
+        encoding="utf-8",
+    )
+    process = type("Process", (), {
+        "returncode": 0,
+        "communicate": AsyncMock(return_value=(b"", b"")),
+    })()
+    monkeypatch.setattr(
+        universal_extractor.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=process),
+    )
+    media = await universal_extractor._download_with_gallery_dl(
+        GROUP_URL, str(tmp_path), "captiontest",
+        facebook_browser_profile="test-profile",
+    )
+    assert media is not None
+    assert len(media.media_list) == 1
+    assert media.description == "Sim ou não???"
