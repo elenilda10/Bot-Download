@@ -14,7 +14,7 @@ from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo, URLInpu
 import keyboards as kb
 import messages as bm
 from app_context import bot, db, send_analytics
-from config import OUTPUT_DIR, MAX_FILE_SIZE
+from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
@@ -34,7 +34,7 @@ from handlers.utils import (
 )
 from services.logger import logger as logging, summarize_text_for_log
 from services.media.delivery import build_audio_cache_key, send_audio_with_thumbnail
-from services.platforms.universal_extractor import download_universal_media
+from services.platforms.universal_extractor import download_universal_media, _is_facebook_url
 from utils.media_cache import build_media_cache_key
 
 logging = logging.bind(service="universal")
@@ -107,6 +107,15 @@ def _universal_keyboard(
     url: str, url_hash: str, user_settings: dict,
     *, lang: str | None, is_video: bool,
 ):
+    if _is_facebook_url(url):
+        # Facebook auth must not be reachable through forwarded callbacks.
+        # Only the public source URL is shown; MP3/file callbacks stay off.
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🔗 Abrir no Facebook" if _is_pt(lang) else "🔗 Open Facebook",
+                url=url,
+            ),
+        ]])
     return kb.return_video_info_keyboard(
         views=None, likes=None, comments=None, shares=None,
         music_play_url=None, video_url=url,
@@ -395,7 +404,16 @@ async def process_universal_link(
         bot_url = await get_bot_url(bot)
 
         url_hash = _store_url_hash(url)
-        if await _try_cached_universal(
+        is_facebook = _is_facebook_url(url)
+        # Never serve/cache content downloaded with an authenticated
+        # Facebook session to other users via Telegram's reusable file_id.
+        facebook_browser_profile = (
+            os.environ.get("FACEBOOK_FIREFOX_PROFILE", "").strip() or None
+        ) if (
+            is_facebook and user_id == ADMIN_ID
+            and message.chat.type == "private"
+        ) else None
+        if not is_facebook and await _try_cached_universal(
             message, url, url_hash, user_settings,
             lang=user_lang, bot_url=bot_url,
         ):
@@ -408,7 +426,10 @@ async def process_universal_link(
             )
             return
 
-        res = await download_universal_media(url, on_progress=on_progress)
+        res = await download_universal_media(
+            url, on_progress=on_progress,
+            facebook_browser_profile=facebook_browser_profile,
+        )
         if not res or not res.media_list:
             if status_message:
                 await safe_delete_message(status_message)
@@ -469,7 +490,7 @@ async def process_universal_link(
                     reply_markup=keyboard,
                     allow_sending_without_reply=True,
                 )
-                if sent_message and sent_message.document:
+                if sent_message and sent_message.document and not is_facebook:
                     await db.add_file(
                         _cache_key(url_hash, "document"),
                         sent_message.document.file_id, "document",
@@ -501,7 +522,7 @@ async def process_universal_link(
                     supports_streaming=True,
                     reply_markup=keyboard,
                 )
-                if sent_message and sent_message.video:
+                if sent_message and sent_message.video and not is_facebook:
                     await db.add_file(
                         _cache_key(url_hash, "video"),
                         sent_message.video.file_id, "video",
@@ -515,7 +536,7 @@ async def process_universal_link(
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard,
                 )
-                if sent_message and sent_message.photo:
+                if sent_message and sent_message.photo and not is_facebook:
                     await db.add_file(
                         _cache_key(url_hash, "photo"),
                         sent_message.photo[-1].file_id, "photo",
@@ -583,7 +604,7 @@ async def process_universal_link(
                             })
                         else:
                             break
-                    if len(album_entries) == len(sent_album):
+                    if len(album_entries) == len(sent_album) and not is_facebook:
                         await db.add_file(
                             _cache_key(url_hash, "album"),
                             json.dumps(
@@ -629,6 +650,16 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     user_lang = await db.get_language(call.from_user.id)
     url_hash = call.data.removeprefix("doc:univ:")
     if not re.fullmatch(r"[a-f0-9]{12}", url_hash):
+        return
+
+    # Legacy buttons must never use authenticated Facebook posts or a
+    # previously cached file_id. Facebook MP3 and file buttons are disabled.
+    callback_url = _recover_callback_url(call.message, url_hash)
+    if callback_url and _is_facebook_url(callback_url):
+        await call.message.reply(
+            "Este botão ainda não está disponível para o Facebook.",
+            allow_sending_without_reply=True,
+        )
         return
 
     # Old doc:{hash} entries actually hold video/photo file_ids. Never reuse
@@ -713,6 +744,16 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     url_hash = call.data.removeprefix("audio:univ:")
     if not re.fullmatch(r"[a-f0-9]{12}", url_hash):
         return
+    # Legacy buttons must never use authenticated Facebook posts or a
+    # previously cached file_id. Facebook MP3 and file buttons are disabled.
+    callback_url = _recover_callback_url(call.message, url_hash)
+    if callback_url and _is_facebook_url(callback_url):
+        await call.message.reply(
+            "Este botão ainda não está disponível para o Facebook.",
+            allow_sending_without_reply=True,
+        )
+        return
+
     user_lang = await db.get_language(call.from_user.id)
     original_url = _recover_callback_url(call.message, url_hash)
     stable_audio_key = _cache_key(url_hash, "audio")
