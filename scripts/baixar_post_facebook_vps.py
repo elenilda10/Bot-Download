@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Teste manual de links Facebook na VPS. Não envia nada ao Telegram."""
+import argparse
 import asyncio
 import json
 import os
@@ -176,6 +177,35 @@ def baixar(link, pasta, *, autenticado=False):
 
 async def main():
     os.umask(0o077)  # Impede leitura acidental de downloads autenticados por outros usuários.
+    parser = argparse.ArgumentParser(
+        description="Baixar post do Facebook ou inspecionar um download salvo."
+    )
+    parser.add_argument(
+        "--inspecionar", metavar="PASTA",
+        help="Examina mídias já baixadas, sem acessar o Facebook."
+    )
+    parser.add_argument("--url", help="URL final do post para modo --inspecionar.")
+    args = parser.parse_args()
+    if args.inspecionar:
+        if not args.url or not _is_facebook_url(args.url) or not _is_facebook_media_link(args.url):
+            parser.error("--inspecionar exige --url com uma publicação do Facebook.")
+        folder = Path(args.inspecionar).expanduser().resolve()
+        if not folder.is_dir():
+            parser.error("Pasta não encontrada.")
+        fotos = midias(folder)
+        print("📁 Pasta:", folder)
+        print("📷 Arquivos encontrados:", len(fotos))
+        for foto in fotos:
+            print(f"  • {foto.name} ({foto.stat().st_size:,} bytes)")
+        aprovado, motivo = validar_midias(args.url, fotos)
+        if _facebook_profile_post_id(args.url):
+            diagnosticar_post_perfil(args.url, fotos)
+        print(
+            ("✅ IDENTIDADE VERIFICADA: " if aprovado else
+             "⚠️  NÃO VERIFICADO: ") + motivo
+        )
+        return
+
     original = input("Cole o link do post do Facebook: ").strip()
     if not original:
         print("❌ Nenhum link informado.")
