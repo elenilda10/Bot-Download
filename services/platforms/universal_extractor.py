@@ -20,7 +20,6 @@ _DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 REDDIT_COOKIES = "/root/Bot-Download/cookies/reddit_cookies.txt"
-FACEBOOK_COOKIES = "/root/Bot-Download/cookies/facebook_cookies.txt"
 
 
 def _is_facebook_url(url: str) -> bool:
@@ -113,11 +112,8 @@ def _clean_url(url: str) -> str:
 
 def _resolve_cookie(url: str) -> Optional[str]:
     if _is_facebook_url(url):
-        # Facebook session cookies must be opted into explicitly.
-        # Never reuse the general cookies.txt containing credentials for
-        # unrelated services on a public-facing fallback route.
-        if os.path.isfile(FACEBOOK_COOKIES) and os.path.getsize(FACEBOOK_COOKIES) > 0:
-            return FACEBOOK_COOKIES
+        # Anonymous-only. An authenticated session must never be silently
+        # shared with all users of the Universal handler.
         return None
     if "reddit.com" in url or "redd.it" in url:
         if os.path.exists(REDDIT_COOKIES) and os.path.getsize(REDDIT_COOKIES) > 0:
@@ -132,11 +128,22 @@ async def _resolve_redirects(url: str) -> str:
     try:
         headers = {"User-Agent": _DEFAULT_UA}
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=8)) as resp:
-                return str(resp.url)
-    except Exception as exc:
-        logging.warning("Error resolving redirect for url=%s: %s", url, exc)
-        return url
+            # Facebook's share URLs may redirect on GET but not on HEAD.
+            methods = ("GET", "HEAD") if _is_facebook_url(url) else ("HEAD",)
+            for method in methods:
+                try:
+                    async with session.request(
+                        method, url, allow_redirects=True,
+                        timeout=aiohttp.ClientTimeout(total=8),
+                    ) as resp:
+                        resolved = str(resp.url)
+                        if resp.status < 400 and resolved != url:
+                            return resolved
+                except (aiohttp.ClientError, asyncio.TimeoutError):
+                    continue
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        pass
+    return url
 
 
 async def _download_direct_image(url: str, output_dir: str, post_id: str) -> Optional[UniversalMediaResult]:
@@ -398,7 +405,10 @@ async def _download_kwai(
     )
 
 
-async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> Optional[UniversalMediaResult]:
+async def _download_with_gallery_dl(
+    url: str, output_dir: str, post_id: str,
+    *, facebook_browser_profile: Optional[str] = None,
+) -> Optional[UniversalMediaResult]:
     target_dir = os.path.join(output_dir, f"gdl_{post_id}")
     os.makedirs(target_dir, exist_ok=True)
 
@@ -424,6 +434,8 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
     cookie_file = _resolve_cookie(url)
     if cookie_file:
         cmd.extend(["--cookies", cookie_file])
+    if _is_facebook_url(url) and facebook_browser_profile:
+        cmd.extend(["--cookies-from-browser", f"firefox:{facebook_browser_profile}"])
 
     cmd.append(url)
 
@@ -538,6 +550,7 @@ async def _download_with_ytdlp(
     output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
+    facebook_browser_profile: Optional[str] = None,
     **kwargs: Any,
 ) -> Optional[UniversalMediaResult]:
     # A number of generic extractors need ?id=, signed URLs or other query
@@ -610,6 +623,13 @@ async def _download_with_ytdlp(
         base_download_args.extend(["--cookies", cookie_file])
     if is_facebook:
         base_download_args.append("--write-info-json")
+        if facebook_browser_profile:
+            base_download_args.extend([
+                "--cookies-from-browser", f"firefox:{facebook_browser_profile}",
+            ])
+        # H.264/AAC is better supported by Telegram players than VP9.
+        # This is a preference: fall back if Facebook offers only VP9.
+        base_download_args.extend(["-S", "vcodec:h264,acodec:aac"])
 
     async def _one_download(impersonate: bool | str) -> str | None:
         browser_args = (
@@ -764,60 +784,75 @@ async def download_universal_media(
             logging.warning("Facebook URL is not a single media link")
             return None
 
-        if _is_facebook_video_url(url):
-            # Video-first avoids gallery-dl splitting audio and video tracks.
-            # Some Facebook Reels fail even with Chrome impersonation, so
-            # try gallery-dl as an independent fallback.
-            video = await _download_with_ytdlp(
-                url, output_dir=output_dir, on_progress=on_progress, post_id=post_id,
-            )
-            if video and video.media_list:
-                logging.info("Facebook media extracted using yt-dlp")
-                return video
-
-            photo_or_video = await _download_with_gallery_dl(
-                url, output_dir, post_id
-            )
-            if photo_or_video and photo_or_video.media_list:
-                logging.info("Facebook media extracted using gallery-dl")
-                return photo_or_video
+        # gallery-dl does not accept /share/r/ links. Resolve them BEFORE
+        # extraction. A canonical Reel URL worked with Firefox auth on VPS.
+        resolved = await _resolve_redirects(url) if "/share/" in urlsplit(url).path else url
+        if _is_facebook_media_link(resolved):
+            target = resolved
         else:
-            # Post/photo links may contain multiple images or mixed media.
-            photo_or_video = await _download_with_gallery_dl(
-                url, output_dir, post_id
-            )
-            if photo_or_video and photo_or_video.media_list:
-                logging.info("Facebook post extracted using gallery-dl")
-                return photo_or_video
+            target = url
+        target_path = urlsplit(target).path.lower()
+        if re.fullmatch(r"/reel/\d+/?", target_path):
+            target = f"https://www.facebook.com{target_path.rstrip('/')}/"
 
+        # Authenticated downloads are restricted to the admin's PRIVATE chat
+        # at the handler layer. Only direct image IDs or canonical video IDs
+        # are eligible; gallery-dl may return the wrong photo from a post.
+        if facebook_browser_profile:
+            is_direct_photo = (
+                target_path == "/photo.php"
+                and bool(re.search(r"(?:^|&)fbid=\d+(?:&|$)", urlsplit(target).query))
+            )
+            has_canonical_video_id = bool(
+                re.fullmatch(r"/(?:reel|reels|videos)/\d+/?", target_path)
+                or (target_path == "/watch/" and re.search(
+                    r"(?:^|&)v=\d+(?:&|$)", urlsplit(target).query
+                ))
+            )
+            if not (is_direct_photo or has_canonical_video_id):
+                logging.warning("Facebook authenticated fallback requires direct media ID")
+                return None
+            if is_direct_photo:
+                photo = await _download_with_gallery_dl(
+                    target, output_dir, post_id,
+                    facebook_browser_profile=facebook_browser_profile,
+                )
+                # Verify that the downloaded photo has the exact requested ID.
+                expected = re.search(
+                    r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
+                ).group(1)
+                if photo and photo.media_list and all(
+                    os.path.splitext(os.path.basename(item.url))[0] == expected
+                    for item in photo.media_list
+                ):
+                    logging.info("Facebook authenticated direct photo verified")
+                    return photo
+                logging.warning("Facebook photo ID mismatch, refusing delivery")
+                return None
             video = await _download_with_ytdlp(
-                url, output_dir=output_dir, on_progress=on_progress, post_id=post_id,
+                target, output_dir=output_dir, on_progress=on_progress,
+                post_id=post_id, facebook_browser_profile=facebook_browser_profile,
             )
             if video and video.media_list:
-                logging.info("Facebook post extracted using yt-dlp")
-                return video
+                logging.info("Facebook authenticated video extracted")
+            return video
 
-        # fb.watch and /share/... links can resolve to a canonical media URL.
-        resolved = await _resolve_redirects(url)
-        if resolved != url and _is_facebook_media_link(resolved):
-            if _is_facebook_video_url(resolved):
-                return (
-                    await _download_with_ytdlp(
-                        resolved, output_dir=output_dir,
-                        on_progress=on_progress, post_id=post_id,
-                    )
-                    or await _download_with_gallery_dl(
-                        resolved, output_dir, post_id
-                    )
-                )
-            return (
-                await _download_with_gallery_dl(resolved, output_dir, post_id)
-                or await _download_with_ytdlp(
-                    resolved, output_dir=output_dir,
-                    on_progress=on_progress, post_id=post_id,
-                )
+        # Ordinary users: public/anonymous extraction only, never use the
+        # Firefox account or other stored Facebook credentials.
+        if _is_facebook_video_url(target):
+            video = await _download_with_ytdlp(
+                target, output_dir=output_dir, on_progress=on_progress,
+                post_id=post_id,
             )
-        return None
+            if video and video.media_list:
+                return video
+            return await _download_with_gallery_dl(target, output_dir, post_id)
+        gallery = await _download_with_gallery_dl(target, output_dir, post_id)
+        if gallery and gallery.media_list:
+            return gallery
+        return await _download_with_ytdlp(
+            target, output_dir=output_dir, on_progress=on_progress, post_id=post_id,
+        )
 
     if is_kwai_url(url):
         res_kwai = await _download_kwai(
