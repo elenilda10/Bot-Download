@@ -381,6 +381,7 @@ async def process_universal_link(
             "last_bytes": downloaded_bytes,
         })
 
+    local_files_to_clean: list[str] = []
     try:
         if message.from_user:
             await send_analytics(
@@ -435,7 +436,11 @@ async def process_universal_link(
             is_video=not is_first_image,
         )
 
-        local_files_to_clean = []
+        for media_item in res.media_list:
+            if os.path.isfile(media_item.url):
+                local_files_to_clean.append(media_item.url)
+            if media_item.thumb and os.path.isfile(media_item.thumb):
+                local_files_to_clean.append(media_item.thumb)
         sent_message: Optional[types.Message] = None
 
         if media_count == 1:
@@ -581,14 +586,6 @@ async def process_universal_link(
             request_lease.mark_success()
         await maybe_delete_user_message(message, user_settings.get("delete_message"))
 
-        await asyncio.sleep(2)
-        for fpath in local_files_to_clean:
-            try:
-                if os.path.exists(fpath):
-                    os.remove(fpath)
-            except Exception:
-                pass
-
     except Exception as exc:
         logging.exception("Error processing universal download: %s", exc)
         if status_message:
@@ -600,6 +597,12 @@ async def process_universal_link(
             UNIVERSAL_PROGRESS.pop(post_id, None)
         if request_lease is not None:
             request_lease.finish()
+        for fpath in set(local_files_to_clean):
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+            except OSError:
+                pass
 
 
 @router.callback_query(F.data.startswith("doc:univ:"))
