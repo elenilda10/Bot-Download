@@ -512,6 +512,54 @@ def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
 
 
 
+def _facebook_gallery_first_conflicts_with_post(url: str, paths: list[str]) -> bool:
+    """Reject clear contradictions while allowing unverified post downloads.
+
+    Gallery-first does NOT prove a photo belongs to a Facebook post. It only
+    rejects mismatched album tokens, sidecar photo IDs and login screens.
+    Missing post identity is still possible; never describe it as verified.
+    """
+    if not _is_facebook_url(url):
+        return True
+    group_id = _facebook_group_post_id(url)
+    profile_id = _facebook_profile_post_id(url)
+    expected_set = f"pcb.{group_id or profile_id}" if (group_id or profile_id) else None
+    parsed = urlsplit(url)
+    direct_id = None
+    if parsed.path.lower().rstrip("/") in {"/photo", "/photo.php"}:
+        ids = parse_qs(parsed.query).get("fbid", [])
+        direct_id = ids[0] if len(ids) == 1 and ids[0].isdigit() else None
+
+    for path in paths:
+        name, ext = os.path.splitext(os.path.basename(path))
+        if ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue
+        if direct_id and name != direct_id:
+            return True
+        try:
+            with open(path + ".json", "r", encoding="utf-8") as stream:
+                meta = json.load(stream)
+        except (OSError, ValueError):
+            # Absence of metadata is not positive verification.
+            continue
+        if not isinstance(meta, dict):
+            return True
+        if _facebook_login_prompt(meta):
+            return True
+        if "id" in meta and str(meta["id"]) != name:
+            return True
+        set_id = str(meta.get("set_id") or "")
+        if expected_set and set_id.startswith("pcb.") and set_id != expected_set:
+            return True
+        if direct_id and str(meta.get("id") or direct_id) != direct_id:
+            return True
+        if meta.get("post_photo"):
+            referenced = _facebook_profile_photo_link_id(meta["post_photo"])
+            if referenced is not None and referenced != name:
+                return True
+    return False
+
+
 def facebook_gallery_arguments(
     browser_profile: Optional[str] = None,
 ) -> list[str]:
