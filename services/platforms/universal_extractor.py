@@ -538,7 +538,9 @@ async def _download_with_ytdlp(
     if cookie_file:
         info_args.extend(["--cookies", cookie_file])
 
-    for impersonate in (False, True):
+    # Facebook's media pages often fail on metadata extraction while
+    # still exposing downloadable formats. Do not preflight it twice.
+    for impersonate in (() if _is_facebook_url(target_url) else (False, True)):
         cmd = [
             *info_args,
             *(["--impersonate", "chrome"] if impersonate
@@ -576,16 +578,20 @@ async def _download_with_ytdlp(
         "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
         "-o", output_template,
     ]
+    is_facebook = _is_facebook_url(target_url)
     if cookie_file:
         base_download_args.extend(["--cookies", cookie_file])
+    if is_facebook:
+        base_download_args.append("--write-info-json")
 
-    async def _one_download(impersonate: bool) -> str | None:
-        cmd = [
-            *base_download_args,
-            *(["--impersonate", "chrome"] if impersonate
-              else ["--user-agent", _DEFAULT_UA]),
-            target_url,
-        ]
+    async def _one_download(impersonate: bool | str) -> str | None:
+        browser_args = (
+            ["--impersonate", "chrome-99:windows-10"]
+            if impersonate == "chrome99" else
+            ["--impersonate", "chrome"] if impersonate else
+            ["--user-agent", _DEFAULT_UA]
+        )
+        cmd = [*base_download_args, *browser_args, target_url]
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -622,7 +628,7 @@ async def _download_with_ytdlp(
                         recent.pop(0)
 
         try:
-            await asyncio.wait_for(_consume(), timeout=900)
+            await asyncio.wait_for(_consume(), timeout=180 if is_facebook else 900)
             await asyncio.wait_for(proc.wait(), timeout=15)
         except asyncio.TimeoutError:
             if proc.returncode is None:
@@ -630,6 +636,7 @@ async def _download_with_ytdlp(
             await proc.communicate()
             logging.warning(
                 "Universal yt-dlp timed out: mode=%s",
+                "chrome99" if impersonate == "chrome99" else
                 "chrome" if impersonate else "normal",
             )
             return None
@@ -642,6 +649,7 @@ async def _download_with_ytdlp(
         if proc.returncode != 0:
             logging.warning(
                 "Universal yt-dlp download failed: mode=%s code=%s",
+                "chrome99" if impersonate == "chrome99" else
                 "chrome" if impersonate else "normal", proc.returncode,
             )
             return None
@@ -656,7 +664,9 @@ async def _download_with_ytdlp(
 
     try:
         target_video = None
-        for impersonate in (False, True):
+        for impersonate in (
+            (False, True, "chrome99") if is_facebook else (False, True)
+        ):
             target_video = await _one_download(impersonate)
             if target_video:
                 break
@@ -664,6 +674,21 @@ async def _download_with_ytdlp(
         if not target_video:
             logging.warning("Universal yt-dlp produced no file: post_id=%s", post_id)
             return None
+
+        if is_facebook:
+            info_path = os.path.join(output_dir, f"{post_id}.info.json")
+            try:
+                with open(info_path, "r", encoding="utf-8") as fp:
+                    info = json.load(fp)
+                title = info.get("title") or info.get("description") or title
+                uploader = info.get("uploader") or info.get("channel") or uploader
+            except (OSError, ValueError, AttributeError):
+                pass
+            finally:
+                try:
+                    os.remove(info_path)
+                except OSError:
+                    pass
 
         ext = os.path.splitext(target_video)[1].lower()
         if ext in _IMAGE_EXTS:
@@ -705,6 +730,66 @@ async def download_universal_media(
         # Keep meaningful query parameters in the media identity.
         clean = url.split("#", 1)[0].strip()
         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
+
+    if _is_facebook_url(url):
+        if not _is_facebook_media_link(url):
+            logging.warning("Facebook URL is not a single media link")
+            return None
+
+        if _is_facebook_video_url(url):
+            # Video-first avoids gallery-dl splitting audio and video tracks.
+            # Some Facebook Reels fail even with Chrome impersonation, so
+            # try gallery-dl as an independent fallback.
+            video = await _download_with_ytdlp(
+                url, output_dir=output_dir, on_progress=on_progress, post_id=post_id,
+            )
+            if video and video.media_list:
+                logging.info("Facebook media extracted using yt-dlp")
+                return video
+
+            photo_or_video = await _download_with_gallery_dl(
+                url, output_dir, post_id
+            )
+            if photo_or_video and photo_or_video.media_list:
+                logging.info("Facebook media extracted using gallery-dl")
+                return photo_or_video
+        else:
+            # Post/photo links may contain multiple images or mixed media.
+            photo_or_video = await _download_with_gallery_dl(
+                url, output_dir, post_id
+            )
+            if photo_or_video and photo_or_video.media_list:
+                logging.info("Facebook post extracted using gallery-dl")
+                return photo_or_video
+
+            video = await _download_with_ytdlp(
+                url, output_dir=output_dir, on_progress=on_progress, post_id=post_id,
+            )
+            if video and video.media_list:
+                logging.info("Facebook post extracted using yt-dlp")
+                return video
+
+        # fb.watch and /share/... links can resolve to a canonical media URL.
+        resolved = await _resolve_redirects(url)
+        if resolved != url and _is_facebook_media_link(resolved):
+            if _is_facebook_video_url(resolved):
+                return (
+                    await _download_with_ytdlp(
+                        resolved, output_dir=output_dir,
+                        on_progress=on_progress, post_id=post_id,
+                    )
+                    or await _download_with_gallery_dl(
+                        resolved, output_dir, post_id
+                    )
+                )
+            return (
+                await _download_with_gallery_dl(resolved, output_dir, post_id)
+                or await _download_with_ytdlp(
+                    resolved, output_dir=output_dir,
+                    on_progress=on_progress, post_id=post_id,
+                )
+            )
+        return None
 
     if is_kwai_url(url):
         res_kwai = await _download_kwai(
