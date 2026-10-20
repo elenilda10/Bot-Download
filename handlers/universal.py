@@ -90,9 +90,12 @@ def _recover_callback_url(message: types.Message, url_hash: str) -> str | None:
 
 
 def _cache_key(url_hash: str, media_kind: str) -> str:
-    """Namespace V2: never treat a cached video/photo file_id as a document."""
+    """Keep audio/document caches; refresh old previewless videos and albums."""
+    # Telegram file_ids from older uploads preserve their original thumbnails.
+    # A new namespace makes the first post-fix request rebuild the preview.
+    version = "v3" if media_kind in {"video", "album"} else "v2"
     return build_media_cache_key(
-        "universal", variant=f"v2:{media_kind}:{url_hash}"
+        "universal", variant=f"{version}:{media_kind}:{url_hash}"
     )
 
 
