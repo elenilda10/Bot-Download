@@ -15,7 +15,6 @@ from handlers.utils import get_message_text
 from services.logger import logger as logging
 from services.platforms.facebook_media import (
     FACEBOOK_LINK_REGEX,
-    _canonical_fb_media_url,
     _is_facebook_url,
     _resolve_facebook_short_link,
 )
