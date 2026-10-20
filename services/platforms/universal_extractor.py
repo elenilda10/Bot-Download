@@ -6,7 +6,6 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional, Any, Callable
-from urllib.parse import urlsplit
 import aiohttp
 
 from services.logger import logger as logging
