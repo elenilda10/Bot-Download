@@ -205,7 +205,9 @@ async def _ensure_vpn_route() -> None:
         raise RuntimeError("VPN indisponível: rota isolada não encontrada")
 
 
-async def _download_video(url: str, directory: Path) -> DownloadedVideo:
+async def _download_video(
+    url: str, directory: Path, *, prepare_preview: bool = True
+) -> DownloadedVideo:
     await _ensure_vpn_route()
     cmd = [
         "ip", "netns", "exec", _VPN_NAMESPACE, _YTDLP_BIN,
@@ -274,8 +276,36 @@ async def _download_video(url: str, directory: Path) -> DownloadedVideo:
         comments=_nonnegative_int(info.get("comment_count")),
         shares=_nonnegative_int(info.get("repost_count")),
     )
-    await _probe_and_make_thumbnail(result)
+    if prepare_preview:
+        await _probe_and_make_thumbnail(result)
     return result
+
+
+async def _convert_video_to_mp3(source: Path, directory: Path) -> Path:
+    """Offline ffmpeg conversion inside VPN-only namespace; never use host network."""
+    target = directory / "audio.mp3"
+    proc = await asyncio.create_subprocess_exec(
+        "ip", "netns", "exec", _VPN_NAMESPACE,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-y", "-i", str(source), "-map", "0:a:0", "-vn",
+        "-c:a", "libmp3lame", "-q:a", "4",
+        str(target),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, errors = await asyncio.wait_for(proc.communicate(), timeout=300)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        if proc.returncode is None:
+            proc.kill()
+        await proc.communicate()
+        raise
+    if proc.returncode != 0 or not target.is_file():
+        # Log only the process status, not potentially sensitive media details.
+        raise RuntimeError(f"MP3 conversion failed ({proc.returncode})")
+    if target.stat().st_size > _MAX_DOWNLOAD_BYTES:
+        raise VideoTooLargeError("MP3 acima do limite de teste")
+    return target
 
 
 def _video_identity(url: str) -> str:
@@ -284,12 +314,19 @@ def _video_identity(url: str) -> str:
 
 
 def _cache_keys(url: str) -> tuple[str, str]:
-    """Use the viewkey rather than the URL host (pt, www, m) as cache identity."""
+    """Use viewkey rather than www/pt/m hostname as cache identity."""
     viewkey = _video_identity(url)
     base = f"pornhub:{viewkey}"
     return (
         build_media_cache_key(base, variant=f"video:{_CACHE_VARIANT}"),
         build_media_cache_key(base, variant=f"document:{_CACHE_VARIANT}"),
+    )
+
+
+def _audio_cache_key(url: str) -> str:
+    return build_media_cache_key(
+        f"pornhub:{_video_identity(url)}",
+        variant=f"audio:mp3:{_CACHE_VARIANT}",
     )
 
 
@@ -348,6 +385,144 @@ async def _reply_with_cached_file(
     except TelegramBadRequest:
         logger.warning("Pornhub cached Telegram file_id rejected; fetching via VPN")
         return None
+
+
+
+@router.callback_query(
+    F.data.startswith("ph:doc:") | F.data.startswith("ph:mp3:")
+)
+async def handle_pornhub_media_button(call: types.CallbackQuery):
+    """Respect per-chat switches; all source downloads stay in ph-proton."""
+    if not call.from_user or call.from_user.id != ADMIN_ID:
+        await call.answer("Indisponível.", show_alert=True)
+        return
+    if not isinstance(call.message, types.Message) or not call.data:
+        await call.answer()
+        return
+
+    parts = call.data.split(":", 2)
+    if len(parts) != 3 or parts[1] not in {"doc", "mp3"}:
+        await call.answer()
+        return
+    kind, viewkey = parts[1], parts[2]
+    if not re.fullmatch(r"[A-Za-z0-9]{6,40}", viewkey):
+        await call.answer()
+        return
+
+    message = call.message
+    user_settings = await load_user_settings(db, message)
+    lang = user_settings.get("language") or await db.get_language(
+        call.from_user.id
+    ) or "pt"
+    if kind == "doc":
+        permitted = (
+            user_settings.get("file_button") == "on"
+            and user_settings.get("as_document") != "on"
+        )
+    else:
+        permitted = user_settings.get("audio_button") == "on"
+    if not permitted:
+        await call.answer(
+            "Ative o botão nas configurações do bot."
+            if str(lang).lower().startswith("pt") else
+            "Enable this button in bot settings.",
+            show_alert=True,
+        )
+        return
+    await call.answer()
+    url = f"https://www.pornhub.com/view_video.php?viewkey={viewkey}"
+    _, doc_key = _cache_keys(url)
+    cache_key = doc_key if kind == "doc" else _audio_cache_key(url)
+    status = None
+    try:
+        status = await message.answer(
+            bm.downloading_video_status(lang=lang),
+            parse_mode=ParseMode.HTML,
+        )
+        bot_url = await get_bot_url(bot)
+        footer = bm.captions(
+            user_settings.get("captions", "on"), None, bot_url
+        )
+        async with _DOWNLOAD_LIMIT:
+            cached_id = await db.get_file_id(cache_key)
+            sent = None
+            if cached_id:
+                await safe_edit_text(
+                    status, bm.uploading_status(lang=lang),
+                    parse_mode=ParseMode.HTML,
+                )
+                try:
+                    if kind == "doc":
+                        sent = await message.reply_document(
+                            document=cached_id, caption=footer,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=_build_video_buttons(
+                                url, user_settings, lang=lang, as_document=True
+                            ),
+                            allow_sending_without_reply=True,
+                        )
+                    else:
+                        sent = await message.reply_audio(
+                            audio=cached_id, caption=footer,
+                            parse_mode=ParseMode.HTML,
+                            allow_sending_without_reply=True,
+                        )
+                    logger.info("Pornhub button media reused from shared cache: %s", kind)
+                except TelegramBadRequest:
+                    logger.warning("Pornhub button cached file_id rejected")
+
+            if sent is None:
+                with tempfile.TemporaryDirectory(prefix="pornhub-button-") as tmp:
+                    directory = Path(tmp)
+                    media = await _download_video(
+                        url, directory, prepare_preview=False
+                    )
+                    await safe_edit_text(
+                        status, bm.uploading_status(lang=lang),
+                        parse_mode=ParseMode.HTML,
+                    )
+                    caption = bm.captions(
+                        user_settings.get("captions", "on"),
+                        media.description, bot_url,
+                    )
+                    if kind == "doc":
+                        sent = await message.reply_document(
+                            FSInputFile(media.path),
+                            caption=caption,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=_build_video_buttons(
+                                url, user_settings, lang=lang,
+                                metadata=media, as_document=True,
+                            ),
+                            allow_sending_without_reply=True,
+                        )
+                        if sent and sent.document:
+                            await db.add_file(
+                                cache_key, sent.document.file_id, "document"
+                            )
+                    else:
+                        mp3 = await _convert_video_to_mp3(media.path, directory)
+                        title = (media.description or "Audio").splitlines()[0][:100]
+                        sent = await message.reply_audio(
+                            audio=FSInputFile(mp3, filename=f"{viewkey}.mp3"),
+                            title=title,
+                            caption=caption,
+                            parse_mode=ParseMode.HTML,
+                            allow_sending_without_reply=True,
+                        )
+                        if sent and sent.audio:
+                            await db.add_file(
+                                cache_key, sent.audio.file_id, "audio"
+                            )
+                    if sent:
+                        logger.info("Pornhub button media cached in database: %s", kind)
+    except VideoTooLargeError:
+        await handle_video_too_large(message, lang=lang)
+    except Exception as exc:
+        logger.warning("Pornhub button failed: %s", type(exc).__name__)
+        await handle_download_error(message, lang=lang)
+    finally:
+        await safe_delete_message(status)
 
 
 @router.message(
