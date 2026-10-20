@@ -128,6 +128,15 @@ def _canonical_fb_media_url(url: str) -> str | None:
             f"https://www.facebook.com/groups/{match.group(1)}/"
             f"{match.group(2).lower()}/{match.group(3)}/"
         )
+    # Facebook /share/<token> resolves to /<numeric-profile>/posts/<post-id>/
+    # with rdid/share_url tracking. Keep only the post's verified numeric
+    # identity: the tracked URL can show a different page to gallery-dl.
+    profile_post = re.fullmatch(r"/(\d+)/posts/(\d+)/?", path)
+    if profile_post:
+        return (
+            f"https://www.facebook.com/{profile_post.group(1)}/"
+            f"posts/{profile_post.group(2)}/"
+        )
     # Do not drop 'fbid' on photo.php or 'v' on watch pages.
     return url.split("#", 1)[0]
 
