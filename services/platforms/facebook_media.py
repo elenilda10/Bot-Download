@@ -553,7 +553,9 @@ def _facebook_gallery_first_conflicts_with_post(url: str, paths: list[str]) -> b
             return True
         if direct_id and str(meta.get("id") or direct_id) != direct_id:
             return True
-        if meta.get("post_photo"):
+        # Album metadata may repeat the first photo's post_photo on every
+        # item. Only compare this field for a standalone, non-album photo.
+        if meta.get("post_photo") and not set_id and len(paths) == 1:
             referenced = _facebook_profile_photo_link_id(meta["post_photo"])
             if referenced is not None and referenced != name:
                 return True
