@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from handlers import facebook
+from services.platforms import facebook_media
 
 
 def test_extract_facebook_link_does_not_capture_unrelated_urls():
@@ -41,7 +42,7 @@ async def test_resolve_reel_share_with_curl(monkeypatch):
         )),
     })()
     fake = AsyncMock(return_value=proc)
-    monkeypatch.setattr(facebook.asyncio, "create_subprocess_exec", fake)
+    monkeypatch.setattr(facebook_media.asyncio, "create_subprocess_exec", fake)
     result = await facebook._resolve_facebook_short_link(
         "https://www.facebook.com/share/r/19gWxMNRKj/"
     )
@@ -63,7 +64,7 @@ async def test_resolve_rejects_external_redirect(monkeypatch):
         )),
     })()
     monkeypatch.setattr(
-        facebook.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
+        facebook_media.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
     )
     assert await facebook._resolve_facebook_short_link(
         "https://www.facebook.com/share/r/19gWxMNRKj/"
@@ -73,7 +74,7 @@ async def test_resolve_rejects_external_redirect(monkeypatch):
 @pytest.mark.asyncio
 async def test_direct_reel_skips_curl(monkeypatch):
     resolver = AsyncMock()
-    monkeypatch.setattr(facebook.asyncio, "create_subprocess_exec", resolver)
+    monkeypatch.setattr(facebook_media.asyncio, "create_subprocess_exec", resolver)
     assert await facebook._resolve_facebook_short_link(
         "https://www.facebook.com/reel/2480096172822069/"
     ) == "https://www.facebook.com/reel/2480096172822069/"
@@ -107,7 +108,7 @@ async def test_resolve_group_share_link(monkeypatch):
         )),
     })()
     monkeypatch.setattr(
-        facebook.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
+        facebook_media.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
     )
     result = await facebook._resolve_facebook_short_link(
         "https://www.facebook.com/share/p/1E77eC6n4S/"
