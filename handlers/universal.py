@@ -473,22 +473,27 @@ async def process_universal_link(
                     )
                     logging.info("Universal cache stored: document")
             elif not is_image and item.type == "video":
-                thumb_file = (
-                    FSInputFile(item.thumb)
-                    if (item.thumb and os.path.exists(item.thumb))
+                preview_path = (
+                    item.thumb if item.thumb and os.path.isfile(item.thumb)
                     else None
                 )
-                if item.thumb and os.path.exists(item.thumb):
-                    local_files_to_clean.append(item.thumb)
-
+                # Both Telegram fields matter: thumbnail for the file preview
+                # and cover for its in-chat presentation.
                 sent_message = await message.reply_video(
                     video=source_file,
                     allow_sending_without_reply=True,
-                    thumbnail=thumb_file,
+                    thumbnail=(
+                        FSInputFile(preview_path, filename="thumbnail.jpg")
+                        if preview_path else None
+                    ),
+                    cover=(
+                        FSInputFile(preview_path, filename="cover.jpg")
+                        if preview_path else None
+                    ),
                     caption=caption or None,
                     parse_mode=ParseMode.HTML,
-                    width=item.width or 1280,
-                    height=item.height or 720,
+                    width=item.width or None,
+                    height=item.height or None,
                     duration=item.duration or None,
                     supports_streaming=True,
                     reply_markup=keyboard,
@@ -520,6 +525,8 @@ async def process_universal_link(
                 is_local = os.path.exists(item.url)
                 if is_local:
                     local_files_to_clean.append(item.url)
+                if item.thumb and os.path.isfile(item.thumb):
+                    local_files_to_clean.append(item.thumb)
 
                 item_caption = caption if idx == 0 else None
                 is_image = _is_image_item(item)
@@ -532,8 +539,13 @@ async def process_universal_link(
                             media=file_input,
                             caption=item_caption,
                             parse_mode=ParseMode.HTML,
-                            width=item.width or 1280,
-                            height=item.height or 720,
+                            thumbnail=(
+                                FSInputFile(item.thumb, filename="thumbnail.jpg")
+                                if item.thumb and os.path.isfile(item.thumb)
+                                else None
+                            ),
+                            width=item.width or None,
+                            height=item.height or None,
                             duration=item.duration or None,
                             supports_streaming=True,
                         )
