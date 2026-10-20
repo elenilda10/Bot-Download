@@ -6,6 +6,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Optional, Any, Callable
+from urllib.parse import urlsplit
 import aiohttp
 
 from services.logger import logger as logging
@@ -19,6 +20,55 @@ _DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 REDDIT_COOKIES = "/root/Bot-Download/cookies/reddit_cookies.txt"
+FACEBOOK_COOKIES = "/root/Bot-Download/cookies/facebook_cookies.txt"
+
+
+def _is_facebook_url(url: str) -> bool:
+    """Match actual Facebook domains, not domains containing facebook.com."""
+    try:
+        hostname = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return (
+        hostname == "facebook.com"
+        or hostname.endswith(".facebook.com")
+        or hostname in {"fb.watch", "fb.com", "www.fb.com", "fbs.watch"}
+    )
+
+
+def _is_facebook_video_url(url: str) -> bool:
+    if not _is_facebook_url(url):
+        return False
+    parsed = urlsplit(url)
+    if parsed.hostname in {"fb.watch", "fbs.watch"}:
+        return True
+    path = parsed.path.lower()
+    return (
+        bool(re.search(r"/(?:reel|reels|videos|watch|video\.php)(?:/|$)", path))
+        or path.startswith(("/share/v/", "/share/r/", "/share/video/"))
+    )
+
+
+def _is_facebook_media_link(url: str) -> bool:
+    """Avoid accidentally downloading a whole Facebook account or feed."""
+    if not _is_facebook_url(url):
+        return False
+    parsed = urlsplit(url)
+    if parsed.hostname in {"fb.watch", "fbs.watch"}:
+        return True
+    path = parsed.path.lower()
+    if _is_facebook_video_url(url):
+        return True
+    return bool(
+        re.search(
+            r"/(?:photo(?:s|\.php)?|posts|permalink\.php|story\.php|media/set|"
+            r"share/(?:p|photo|post)|groups/[^/]+/(?:posts|permalink)|"
+            r"[^/]+/posts)(?:/|$)",
+            path,
+        )
+        or (path.startswith("/share/") and len(path.strip("/").split("/")) >= 3)
+    )
+
 
 
 @dataclass
@@ -45,6 +95,16 @@ def _clean_url(url: str) -> str:
 
 
 def _resolve_cookie(url: str) -> Optional[str]:
+    if _is_facebook_url(url):
+        # Only provide credentials already configured by the VPS owner;
+        # public Facebook links work without a cookie file when supported.
+        for path in (
+            FACEBOOK_COOKIES,
+            "/root/Bot-Download/cookies.txt",
+        ):
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                return path
+        return None
     if "reddit.com" in url or "redd.it" in url:
         if os.path.exists(REDDIT_COOKIES) and os.path.getsize(REDDIT_COOKIES) > 0:
             return REDDIT_COOKIES
@@ -340,6 +400,10 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
         "--user-agent", _DEFAULT_UA,
     ]
 
+    if _is_facebook_url(url):
+        # Facebook can yield separate audio and video tracks; let yt-dlp
+        # merge them rather than treating an .m4a as an extra Telegram video.
+        cmd.extend(["-o", "extractor.facebook.videos=ytdl"])
     cookie_file = _resolve_cookie(url)
     if cookie_file:
         cmd.extend(["--cookies", cookie_file])
@@ -349,10 +413,19 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+        try:
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=75 if _is_facebook_url(url) else 180,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logging.warning("gallery-dl timed out: facebook=%s", _is_facebook_url(url))
+            return None
 
         downloaded = []
         caption = ""
@@ -370,6 +443,12 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
                     except Exception:
                         pass
                 elif not file.endswith((".part", ".ytdl", ".txt")) and os.path.getsize(fpath) > 0:
+                    # Only actual media: sidecars and audio-only tracks must
+                    # never be sent to the Telegram video endpoint.
+                    if _is_facebook_url(url):
+                        ext = os.path.splitext(fpath)[1].lower()
+                        if ext not in {*_IMAGE_EXTS, ".mp4", ".mov", ".webm", ".mkv"}:
+                            continue
                     downloaded.append(fpath)
 
         if not downloaded:
@@ -382,6 +461,9 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
             return int(match.group(1)) if match else 0
 
         downloaded.sort(key=_sort_key)
+        if _is_facebook_url(url):
+            # Only a single Facebook post/gallery, never an entire profile.
+            downloaded = downloaded[:10]
         media_list = []
         for idx, path in enumerate(downloaded):
             ext = os.path.splitext(path)[1].lower()
@@ -416,8 +498,11 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
             author=author,
             media_list=media_list,
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        logging.warning("gallery-dl failed for %s: %s", url, exc)
+        logging.warning("gallery-dl extraction failed: facebook=%s error=%s",
+                        _is_facebook_url(url), type(exc).__name__)
         return None
 
 
