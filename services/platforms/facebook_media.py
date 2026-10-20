@@ -242,9 +242,9 @@ def _facebook_login_prompt(metadata: dict) -> bool:
     )
 
 
-async def _facebook_profile_post_expected_photo_ids(
+async def _facebook_profile_post_metadata(
     url: str, browser_profile: Optional[str] = None,
-) -> tuple[str, ...] | None:
+) -> dict | None:
     """Get post-bound media IDs independently before the actual download.
 
     A downloaded gallery sidecar can consistently reference its own photo
@@ -310,7 +310,18 @@ async def _facebook_profile_post_expected_photo_ids(
         expected.append(media_id)
     if len(set(expected)) != len(expected):
         return None
-    return tuple(expected)
+    # The author's shared-post text must come from the publication's own
+    # preflight, never from a separately downloaded photo page.
+    description = facebook_caption(records[0])
+    return {"ids": tuple(expected), "description": description}
+
+
+async def _facebook_profile_post_expected_photo_ids(
+    url: str, browser_profile: Optional[str] = None,
+) -> tuple[str, ...] | None:
+    """Compatibility helper for ID-only diagnostics."""
+    record = await _facebook_profile_post_metadata(url, browser_profile)
+    return record["ids"] if record else None
 
 
 def _verified_facebook_profile_photos(
@@ -361,6 +372,77 @@ def _verified_facebook_profile_photos(
             if f"({expected_set})" not in os.path.basename(os.path.dirname(path)):
                 return False
     return True
+
+
+async def _download_facebook_profile_post_photos(
+    url: str, output_dir: str, post_id: str,
+    *, browser_profile: Optional[str], gallery_downloader,
+):
+    """Download a validated post's photo by *exact* Facebook photo ID.
+
+    gallery-dl may select a different photo when given a profile post URL.
+    For one photo, first resolve its numeric fbid from the post page, then
+    fetch the photo URL directly and require the local file and JSON sidecar
+    to have that exact id. Multi-photo posts use the stricter post album path
+    until each individual item can be tied to the album.
+    """
+    record = await _facebook_profile_post_metadata(url, browser_profile)
+    if not record:
+        logging.warning("Facebook profile post lacked valid preflight metadata")
+        return None
+
+    ids = record["ids"]
+    if len(ids) == 1:
+        photo_id = ids[0]
+        # Photo ID comes exclusively from the validated post metadata, not
+        # from a user-controlled URL, and is strictly numerical.
+        direct_url = f"https://www.facebook.com/photo/?fbid={photo_id}&set="
+        result = await gallery_downloader(
+            direct_url, output_dir, post_id,
+            facebook_browser_profile=browser_profile,
+        )
+        if not result or len(result.media_list) != 1:
+            logging.warning("Facebook profile post direct photo extraction failed")
+            return None
+        item = result.media_list[0]
+        photo_path = item.url
+        if (
+            item.type != "photo"
+            or os.path.splitext(os.path.basename(photo_path))[0] != photo_id
+            or not os.path.isfile(photo_path)
+        ):
+            logging.warning("Facebook direct photo ID mismatch")
+            return None
+        try:
+            with open(photo_path + ".json", "r", encoding="utf-8") as stream:
+                metadata = json.load(stream)
+        except (OSError, ValueError):
+            logging.warning("Facebook direct photo metadata missing")
+            return None
+        if (
+            not isinstance(metadata, dict)
+            or str(metadata.get("id")) != photo_id
+            or _facebook_login_prompt(metadata)
+        ):
+            logging.warning("Facebook direct photo metadata ID mismatch")
+            return None
+    else:
+        # For albums, never accept a self-consistent but unrelated gallery;
+        # check the complete ID set against the independently parsed post.
+        result = await gallery_downloader(
+            url, output_dir, post_id,
+            facebook_browser_profile=browser_profile,
+            facebook_expected_photo_ids=ids,
+        )
+        if not result or len(result.media_list) != len(ids):
+            return None
+
+    # The photo's own caption may be different from what the sharing account
+    # wrote. Prefer the verified source post text when available.
+    if record["description"]:
+        result.description = record["description"]
+    logging.info("Facebook profile post photos verified by preflight IDs")
+    return result
 
 
 def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
@@ -531,20 +613,11 @@ async def download_facebook_media(
                 logging.warning("Facebook authenticated fallback requires direct media ID")
                 return None
             if is_verified_profile_post:
-                expected_ids = await _facebook_profile_post_expected_photo_ids(
-                    target, facebook_browser_profile,
-                )
-                if not expected_ids:
-                    logging.warning("Facebook profile post lacked verified preflight IDs")
-                    return None
-                profile_photos = await _download_with_gallery_dl(
+                return await _download_facebook_profile_post_photos(
                     target, output_dir, post_id,
-                    facebook_browser_profile=facebook_browser_profile,
-                    facebook_expected_photo_ids=expected_ids,
+                    browser_profile=facebook_browser_profile,
+                    gallery_downloader=_download_with_gallery_dl,
                 )
-                if profile_photos and profile_photos.media_list:
-                    logging.info("Facebook profile post photos verified")
-                return profile_photos
             if is_verified_group_post:
                 # This publication might be members-only: admin private chat
                 # only, and Telegram file_id cache disabled for all Facebook.
@@ -586,12 +659,10 @@ async def download_facebook_media(
         # different posts. Without a direct photo ID we cannot verify them.
         if not _is_facebook_video_url(target):
             if _facebook_profile_post_id(target):
-                expected_ids = await _facebook_profile_post_expected_photo_ids(target)
-                if not expected_ids:
-                    return None
-                return await _download_with_gallery_dl(
+                return await _download_facebook_profile_post_photos(
                     target, output_dir, post_id,
-                    facebook_expected_photo_ids=expected_ids,
+                    browser_profile=None,
+                    gallery_downloader=_download_with_gallery_dl,
                 )
             match = re.search(
                 r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
