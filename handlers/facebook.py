@@ -34,6 +34,7 @@ FACEBOOK_LINK_REGEX = (
 _LINK_PATTERN = re.compile(FACEBOOK_LINK_REGEX, re.IGNORECASE)
 _REEL_PATH = re.compile(r"/(?:reel|reels)/(\d+)/?", re.IGNORECASE)
 _VIDEO_PATH = re.compile(r"/videos/(\d+)/?", re.IGNORECASE)
+_GROUP_POST_PATH = re.compile(r"/groups/(\d+)/(permalink|posts)/(\d+)/?", re.IGNORECASE)
 _SHORT_FB_HOSTS = {"fb.watch", "www.fb.watch", "fbs.watch", "www.fbs.watch"}
 
 
@@ -67,6 +68,14 @@ def _canonical_fb_media_url(url: str) -> str | None:
     match = _VIDEO_PATH.fullmatch(path)
     if match:
         return f"https://www.facebook.com/videos/{match.group(1)}/"
+    match = _GROUP_POST_PATH.fullmatch(path)
+    if match:
+        # Gallery extraction must use the post URL itself, not a URL with
+        # share_url/rdid tracking parameters.
+        return (
+            f"https://www.facebook.com/groups/{match.group(1)}/"
+            f"{match.group(2).lower()}/{match.group(3)}/"
+        )
     # Do not drop 'fbid' on photo.php or 'v' on watch pages.
     return url.split("#", 1)[0]
 
