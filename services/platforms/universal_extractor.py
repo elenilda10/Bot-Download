@@ -404,7 +404,7 @@ async def _download_with_ytdlp(
     uploader = "Universal"
     info_args = [
         binary, "--dump-single-json", "--no-warnings",
-        "--no-check-certificates", "--user-agent", _DEFAULT_UA,
+        "--no-check-certificates",
         "--no-playlist", "--socket-timeout", "30", "--retries", "2",
     ]
     if cookie_file:
@@ -413,7 +413,8 @@ async def _download_with_ytdlp(
     for impersonate in (False, True):
         cmd = [
             *info_args,
-            *(["--impersonate", "chrome"] if impersonate else []),
+            *(["--impersonate", "chrome"] if impersonate
+              else ["--user-agent", _DEFAULT_UA]),
             target_url,
         ]
         proc_info = None
@@ -442,7 +443,6 @@ async def _download_with_ytdlp(
         "--fragment-retries", "2",
         "-f", "bestvideo*+bestaudio/best",
         "--merge-output-format", "mp4",
-        "--user-agent", _DEFAULT_UA,
         "--print", "after_move:filepath",
         "--progress-template",
         "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
@@ -454,7 +454,8 @@ async def _download_with_ytdlp(
     async def _one_download(impersonate: bool) -> str | None:
         cmd = [
             *base_download_args,
-            *(["--impersonate", "chrome"] if impersonate else []),
+            *(["--impersonate", "chrome"] if impersonate
+              else ["--user-agent", _DEFAULT_UA]),
             target_url,
         ]
         proc = await asyncio.create_subprocess_exec(
