@@ -418,11 +418,13 @@ async def _download_with_gallery_dl(
         binary,
         "-d", target_dir,
         "-o", "directory=",
-        "--filename", "{post_id}_{num}.{extension}",
         "--write-metadata",
         "--no-mtime",
         "--user-agent", _DEFAULT_UA,
     ]
+
+    if not _is_facebook_url(url):
+        cmd.extend(["--filename", "{post_id}_{num}.{extension}"])
 
     if _is_facebook_url(url):
         # Cap the download BEFORE transferring large Facebook albums.
