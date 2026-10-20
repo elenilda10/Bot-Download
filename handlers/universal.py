@@ -72,6 +72,23 @@ def _get_url_from_hash(short_hash: str) -> Optional[str]:
     return _URL_CACHE.get(short_hash)
 
 
+def _recover_callback_url(message: types.Message, url_hash: str) -> str | None:
+    """Resolve callback URLs even if the in-memory map was reset by restart."""
+    original = _get_url_from_hash(url_hash)
+    if original:
+        return original
+    replied = message.reply_to_message
+    if replied:
+        text = get_message_text(replied)
+        match = re.search(_UNIVERSAL_LINK_REGEX, text or "")
+        if match:
+            candidate = match.group(0).strip()
+            if hashlib.md5(candidate.encode()).hexdigest()[:12] == url_hash:
+                _URL_CACHE[url_hash] = candidate
+                return candidate
+    return None
+
+
 def _cache_key(url_hash: str, media_kind: str) -> str:
     """Namespace V2: never treat a cached video/photo file_id as a document."""
     return build_media_cache_key(
@@ -616,19 +633,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
         except TelegramBadRequest:
             logging.warning("Universal file button cached document rejected")
 
-    original_url = _get_url_from_hash(url_hash)
-    if not original_url:
-        # After restart, the callback URL map may be empty. Extract it from
-        # the original message if still available, with hash verification.
-        replied = call.message.reply_to_message
-        if replied:
-            raw = get_message_text(replied)
-            match = re.search(_UNIVERSAL_LINK_REGEX, raw or "")
-            if match:
-                candidate = match.group(0).strip()
-                if hashlib.md5(candidate.encode()).hexdigest()[:12] == url_hash:
-                    original_url = candidate
-                    _URL_CACHE[url_hash] = candidate
+    original_url = _recover_callback_url(call.message, url_hash)
 
     if not original_url:
         await call.message.reply(
@@ -688,32 +693,64 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     await call.answer()
 
     url_hash = call.data.removeprefix("audio:univ:")
-    original_url = _get_url_from_hash(url_hash)
+    if not re.fullmatch(r"[a-f0-9]{12}", url_hash):
+        return
     user_lang = await db.get_language(call.from_user.id)
-    if not original_url:
-        await call.message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
+    original_url = _recover_callback_url(call.message, url_hash)
+    stable_audio_key = _cache_key(url_hash, "audio")
+    # The new stable key survives restarts even if the URL map is gone.
+    cached_audio_id = await db.get_file_id(stable_audio_key)
+    audio_cache_key = build_audio_cache_key(original_url) if original_url else None
+    if not cached_audio_id and audio_cache_key:
+        cached_audio_id = await db.get_file_id(audio_cache_key)
+
+    if not cached_audio_id and not original_url:
+        await call.message.reply(
+            "Envie o link novamente para baixar o MP3."
+            if _is_pt(user_lang) else
+            "Please send the link again to download MP3.",
+            allow_sending_without_reply=True,
+        )
         return
 
-    status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang))
-    audio_cache_key = build_audio_cache_key(original_url)
-    cached_audio_id = await db.get_file_id(audio_cache_key)
-
+    status_message = await call.message.answer(
+        bm.downloading_audio_status(lang=user_lang)
+    )
     bot_url = await get_bot_url(bot)
     bot_avatar = await get_bot_avatar_thumbnail(bot)
 
     if cached_audio_id:
-        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
-        await send_chat_action_if_needed(bot, call.message.chat.id, "upload_audio", call.message.business_connection_id)
-        await send_audio_with_thumbnail(
-            call.message.reply_audio,
-            audio=cached_audio_id,
-            caption=bm.captions(None, None, bot_url),
-            bot_avatar=bot_avatar,
-            bot_url=bot_url,
-            parse_mode="HTML",
-        )
-        await safe_delete_message(status_message)
-        return
+        try:
+            await safe_edit_text(
+                status_message, bm.uploading_status(lang=user_lang)
+            )
+            await send_chat_action_if_needed(
+                bot, call.message.chat.id, "upload_audio",
+                call.message.business_connection_id,
+            )
+            sent_cached_audio = await send_audio_with_thumbnail(
+                call.message.reply_audio,
+                audio=cached_audio_id,
+                caption=bm.captions(None, None, bot_url),
+                bot_avatar=bot_avatar,
+                bot_url=bot_url,
+                parse_mode="HTML",
+            )
+            if sent_cached_audio and sent_cached_audio.audio:
+                logging.info("Universal audio cache hit")
+                await safe_delete_message(status_message)
+                return
+        except TelegramBadRequest:
+            logging.warning("Universal cached audio ID rejected")
+        if not original_url:
+            await safe_delete_message(status_message)
+            await call.message.reply(
+                "Envie o link novamente para baixar o MP3."
+                if _is_pt(user_lang) else
+                "Please send the link again to download MP3.",
+                allow_sending_without_reply=True,
+            )
+            return
 
     try:
         res = await download_universal_media(original_url)
@@ -768,7 +805,14 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         )
 
         if sent_audio and sent_audio.audio:
-            await db.add_file(audio_cache_key, sent_audio.audio.file_id, "audio")
+            await db.add_file(
+                stable_audio_key, sent_audio.audio.file_id, "audio"
+            )
+            if audio_cache_key:
+                await db.add_file(
+                    audio_cache_key, sent_audio.audio.file_id, "audio"
+                )
+            logging.info("Universal audio cached in database")
 
         await remove_file(output_mp3_path)
         if os.path.exists(input_file_path):
