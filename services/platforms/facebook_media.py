@@ -595,7 +595,7 @@ async def download_facebook_media(
         # are eligible; gallery-dl may return the wrong photo from a post.
         if facebook_browser_profile:
             is_direct_photo = (
-                target_path == "/photo.php"
+                target_path.rstrip("/") in {"/photo", "/photo.php"}
                 and bool(re.search(r"(?:^|&)fbid=\d+(?:&|$)", urlsplit(target).query))
             )
             is_verified_group_post = _facebook_group_post_id(target) is not None
@@ -666,7 +666,7 @@ async def download_facebook_media(
                 )
             match = re.search(
                 r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
-            ) if urlsplit(target).path.lower() == "/photo.php" else None
+            ) if target_path.rstrip("/") in {"/photo", "/photo.php"} else None
             if match is None:
                 logging.warning("Facebook post image ID cannot be verified; refusing delivery")
                 return None
