@@ -133,3 +133,58 @@ def test_url_button_can_be_hidden_using_settings():
         URL, "pt", {"url_button": "off"},
     )
     assert no_buttons is None
+
+
+
+@pytest.mark.asyncio
+async def test_private_cached_mp3_callback_reuses_file_without_download(monkeypatch):
+    token = "a" * 24
+    actor = int(facebook.ADMIN_ID)
+    url = URL
+    record = fc.callback_record(url, f"owner:{actor}", actor, actor)
+    cached = {
+        "version": fc.CACHE_VERSION,
+        "url": url, "scope": f"owner:{actor}",
+        "description": "Legenda preservada",
+        "items": [{"kind": "audio", "file_id": "telegram-audio-id"}],
+    }
+    fake_db = SimpleNamespace(
+        get_file_id=AsyncMock(side_effect=lambda key: (
+            fc.encode(record) if key == fc.callback_key(token)
+            else fc.encode(cached) if key == fc.key_for(url, f"owner:{actor}", "audio")
+            else None
+        )),
+        user_settings=AsyncMock(return_value={
+            "audio_button": "on", "captions": "on",
+        }),
+    )
+    monkeypatch.setattr(facebook, "db", fake_db)
+    monkeypatch.setattr(
+        facebook.cmd_mod, "is_banned", AsyncMock(return_value=False),
+    )
+    monkeypatch.setenv("FACEBOOK_FIREFOX_PROFILE", "/home/firefoxbot/profile")
+    monkeypatch.setattr(
+        facebook, "get_bot_url", AsyncMock(return_value="https://t.me/test"),
+    )
+    send = AsyncMock(return_value=SimpleNamespace(
+        audio=SimpleNamespace(file_id="telegram-audio-id"),
+    ))
+    monkeypatch.setattr(facebook, "send_audio_with_thumbnail", send)
+    download = AsyncMock()
+    monkeypatch.setattr(facebook, "download_facebook_media", download)
+
+    message = SimpleNamespace(
+        chat=SimpleNamespace(id=actor, type="private"),
+        business_connection_id=None,
+        reply_audio=AsyncMock(),
+    )
+    call = SimpleNamespace(
+        data=f"fba:{token}",
+        from_user=SimpleNamespace(id=actor),
+        message=message, answer=AsyncMock(),
+    )
+    await facebook.facebook_format_callback(call)
+    send.assert_awaited_once()
+    assert send.await_args.kwargs["audio"] == "telegram-audio-id"
+    assert "Legenda preservada" in send.await_args.kwargs["caption"]
+    download.assert_not_awaited()
