@@ -7,6 +7,7 @@ No Facebook content is stored in the shared Telegram file_id cache.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import re
@@ -17,6 +18,7 @@ from typing import Optional
 
 from aiogram import F, Router, types
 from aiogram.enums import ChatAction, ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup,
     InputMediaPhoto, InputMediaVideo,
@@ -28,11 +30,13 @@ from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
-    get_bot_url, get_message_text, handle_download_error,
+    get_bot_url, get_message_text, get_bot_avatar_thumbnail, handle_download_error,
     load_user_settings, maybe_delete_user_message, react_to_message,
     safe_delete_message, safe_edit_text, should_skip_duplicate_business_message,
 )
 from services.logger import logger as logging
+from services.media.delivery import send_audio_with_thumbnail
+from services.platforms import facebook_cache as fc
 from services.platforms.facebook_media import (
     FACEBOOK_LINK_REGEX, _is_facebook_url,
     _resolve_facebook_short_link, download_facebook_media,
@@ -54,14 +58,148 @@ def _extract_facebook_link(message_text: str) -> str | None:
     return None
 
 
-def _facebook_keyboard(url: str, lang: str | None) -> InlineKeyboardMarkup:
+def _facebook_keyboard(
+    url: str, lang: str | None,
+    settings: dict | None = None,
+    token: str | None = None,
+    *, has_video: bool = False, single: bool = True,
+) -> InlineKeyboardMarkup:
     portuguese = not lang or lang.lower().startswith("pt")
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="🔗 Abrir no Facebook" if portuguese else "🔗 Open Facebook",
-            url=url,
+    settings = settings or {}
+    buttons = []
+    if token and has_video and settings.get("audio_button") == "on":
+        buttons.append([InlineKeyboardButton(
+            text="🎧 Baixar MP3" if portuguese else "🎧 Download MP3",
+            callback_data=f"fba:{token}",
+        )])
+    if (
+        token and single
+        and settings.get("file_button") == "on"
+        and settings.get("as_document") != "on"
+    ):
+        buttons.append([InlineKeyboardButton(
+            text="📄 Baixar Arquivo" if portuguese else "📄 Download File",
+            callback_data=f"fbd:{token}",
+        )])
+    # Existing source button remains available. Never add direct authenticated
+    # media URLs or reusable file IDs to a callback payload.
+    buttons.append([InlineKeyboardButton(
+        text="🔗 Abrir no Facebook" if portuguese else "🔗 Open Facebook",
+        url=url,
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def _load_cache(url: str, scope: str, kind: str) -> dict | None:
+    raw = await db.get_file_id(fc.key_for(url, scope, kind))
+    payload = fc.decode(raw)
+    if payload and payload.get("url") == url and payload.get("scope") == scope:
+        if fc.media_entries(payload):
+            return payload
+    return None
+
+
+async def _save_cache(url: str, scope: str, kind: str, description: str,
+                      items: list[dict]) -> None:
+    record = {
+        "version": fc.CACHE_VERSION,
+        "url": url, "scope": scope,
+        "description": description or "",
+        "items": items,
+    }
+    if fc.media_entries(record):
+        await db.add_file(
+            fc.key_for(url, scope, kind), fc.encode(record),
+            f"facebook_{kind}",
         )
-    ]])
+
+
+def _file_id_entries(sent) -> list[dict]:
+    if not sent:
+        return []
+    messages = sent if isinstance(sent, list) else [sent]
+    found = []
+    for message in messages:
+        video = getattr(message, "video", None)
+        photo = getattr(message, "photo", None)
+        document = getattr(message, "document", None)
+        audio = getattr(message, "audio", None)
+        if video:
+            found.append({"kind": "video", "file_id": video.file_id})
+        elif photo:
+            found.append({"kind": "photo", "file_id": photo[-1].file_id})
+        elif document:
+            found.append({"kind": "document", "file_id": document.file_id})
+        elif audio:
+            found.append({"kind": "audio", "file_id": audio.file_id})
+        else:
+            return []
+    return found
+
+
+async def _send_cached(message: types.Message, cache: dict,
+                       keyboard: InlineKeyboardMarkup, settings: dict,
+                       bot_url: str):
+    entries = fc.media_entries(cache)
+    if not entries:
+        return None
+    caption = bm.captions(
+        settings.get("captions", "on"), cache.get("description", ""), bot_url,
+    )
+    if len(entries) == 1:
+        item = entries[0]
+        if item["kind"] == "video":
+            return await message.reply_video(
+                video=item["file_id"], caption=caption or None,
+                parse_mode=ParseMode.HTML, supports_streaming=True,
+                reply_markup=keyboard, allow_sending_without_reply=True,
+            )
+        if item["kind"] == "photo":
+            return await message.reply_photo(
+                photo=item["file_id"], caption=caption or None,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard, allow_sending_without_reply=True,
+            )
+        if item["kind"] == "document":
+            return await message.reply_document(
+                document=item["file_id"], caption=caption or None,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard, allow_sending_without_reply=True,
+            )
+        return None
+    album = []
+    for index, entry in enumerate(entries):
+        if entry["kind"] not in {"video", "photo"}:
+            return None
+        item_caption = caption if index == 0 else None
+        cls = InputMediaVideo if entry["kind"] == "video" else InputMediaPhoto
+        album.append(cls(
+            media=entry["file_id"], caption=item_caption,
+            parse_mode=ParseMode.HTML,
+        ))
+    sent = await message.reply_media_group(
+        media=album, allow_sending_without_reply=True,
+    )
+    await message.answer("🔗 Publicação original:", reply_markup=keyboard)
+    return sent
+
+
+async def _create_callback_token(
+    url: str, scope: str, owner_id: int | None, chat_id: int,
+) -> str:
+    token = fc.new_token()
+    await db.add_file(
+        fc.callback_key(token),
+        fc.encode(fc.callback_record(url, scope, owner_id, chat_id)),
+        "facebook_callback",
+    )
+    return token
+
+
+def _auth_profile(user_id: int | None, chat_type: str, business_id=None) -> str | None:
+    if user_id == ADMIN_ID and chat_type == "private" and business_id is None:
+        return os.environ.get("FACEBOOK_FIREFOX_PROFILE", "").strip() or None
+    return None
 
 
 def _progress_update(key: str, downloaded: int, total: int | None, speed: float | None):
