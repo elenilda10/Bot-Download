@@ -770,6 +770,7 @@ async def download_universal_media(
     output_dir: str = "downloads",
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
+    facebook_browser_profile: Optional[str] = None,
     **kwargs: Any,
 ) -> Optional[UniversalMediaResult]:
     os.makedirs(output_dir, exist_ok=True)
