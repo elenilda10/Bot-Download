@@ -38,7 +38,7 @@ from services.logger import logger as logging
 from services.media.delivery import send_audio_with_thumbnail
 from services.platforms import facebook_cache as fc
 from services.platforms.facebook_media import (
-    FACEBOOK_LINK_REGEX, _is_facebook_url,
+    FACEBOOK_LINK_REGEX, _is_facebook_url, _is_facebook_media_link,
     _resolve_facebook_short_link, download_facebook_media,
 )
 
@@ -237,6 +237,198 @@ async def facebook_progress_callback(call: types.CallbackQuery) -> None:
         f"▸ Velocidade: {state['speed']}"
     )
     await call.answer(message, show_alert=True)
+
+
+@router.callback_query(
+    F.data.startswith("fba:") | F.data.startswith("fbd:")
+)
+async def facebook_format_callback(call: types.CallbackQuery) -> None:
+    """Send Facebook MP3 or source document, enforcing persisted privacy scope.
+
+    Callback tokens are random and records expire after seven days. An owner
+    record also requires the same Telegram account AND private chat, and is
+    never redeemed using an anonymous cache or by a forwarded recipient.
+    """
+    data = call.data or ""
+    kind = "audio" if data.startswith("fba:") else "document"
+    token = data[4:]
+    try:
+        key = fc.callback_key(token)
+    except ValueError:
+        await call.answer("Botão inválido.", show_alert=True)
+        return
+
+    actor = call.from_user.id if call.from_user else None
+    chat = call.message.chat if call.message else None
+    if actor is None or chat is None or await cmd_mod.is_banned(actor, chat.id):
+        await call.answer("Acesso indisponível.", show_alert=True)
+        return
+
+    record = fc.decode(await db.get_file_id(key))
+    if not fc.callback_allowed(record, actor, chat.id, chat.type):
+        await call.answer(
+            "Este botão expirou ou pertence a outra conversa. Envie o link novamente.",
+            show_alert=True,
+        )
+        return
+    url = record.get("url")
+    if not isinstance(url, str) or not _is_facebook_media_link(url):
+        await call.answer("Link inválido.", show_alert=True)
+        return
+
+    user_settings = await db.user_settings(actor)
+    option = "audio_button" if kind == "audio" else "file_button"
+    if user_settings.get(option) != "on":
+        await call.answer(
+            "Ative o botão nas configurações do bot para utilizá-lo.",
+            show_alert=True,
+        )
+        return
+    scope = record["scope"]
+    profile = (
+        _auth_profile(actor, chat.type, getattr(call.message, "business_connection_id", None))
+        if scope != "public" else None
+    )
+    if scope != "public" and not profile:
+        await call.answer("Sessão autenticada indisponível.", show_alert=True)
+        return
+
+    await call.answer()
+    status = None
+    work_dir = None
+    try:
+        bot_url = await get_bot_url(bot)
+        cached = await _load_cache(url, scope, kind)
+        if cached and len(cached["items"]) == 1:
+            entry = cached["items"][0]
+            if entry["kind"] == kind:
+                try:
+                    caption = bm.captions(
+                        user_settings.get("captions", "on"),
+                        cached.get("description", ""), bot_url,
+                    )
+                    if kind == "document":
+                        sent_cached = await call.message.reply_document(
+                            document=entry["file_id"], caption=caption,
+                            parse_mode=ParseMode.HTML, allow_sending_without_reply=True,
+                        )
+                    else:
+                        sent_cached = await send_audio_with_thumbnail(
+                            call.message.reply_audio,
+                            audio=entry["file_id"], caption=caption,
+                            bot_url=bot_url, parse_mode=ParseMode.HTML,
+                        )
+                    if sent_cached:
+                        return
+                except TelegramBadRequest:
+                    logging.warning("Facebook cached conversion file ID rejected")
+
+        status = await call.message.answer(
+            bm.downloading_audio_status(lang=await db.get_language(actor))
+            if kind == "audio"
+            else bm.downloading_video_status(lang=await db.get_language(actor))
+        )
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        work_dir = tempfile.mkdtemp(prefix="facebook-action-", dir=OUTPUT_DIR)
+        result = await download_facebook_media(
+            url, output_dir=work_dir, facebook_browser_profile=profile,
+        )
+        if not result or len(result.media_list) != 1:
+            await call.message.reply(
+                "Não consegui recuperar uma mídia única desta publicação.",
+                allow_sending_without_reply=True,
+            )
+            return
+        item = result.media_list[0]
+        if (
+            not os.path.isfile(item.url)
+            or os.path.getsize(item.url) <= 0
+            or os.path.getsize(item.url) >= MAX_FILE_SIZE
+        ):
+            await call.message.reply(
+                "Arquivo indisponível ou acima do limite.",
+                allow_sending_without_reply=True,
+            )
+            return
+        output_path = item.url
+        if kind == "audio":
+            if item.type != "video":
+                await call.message.reply(
+                    "Esta publicação não contém vídeo com áudio para converter.",
+                    allow_sending_without_reply=True,
+                )
+                return
+            output_path = os.path.join(work_dir, "facebook.mp3")
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                "-y", "-i", item.url, "-vn", "-codec:a", "libmp3lame",
+                "-q:a", "2", output_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=120)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                logging.warning("Facebook MP3 conversion timed out")
+                return
+            if proc.returncode != 0:
+                logging.warning("Facebook MP3 conversion failed: %s", proc.returncode)
+                return
+        if (
+            not os.path.isfile(output_path)
+            or os.path.getsize(output_path) <= 0
+            or os.path.getsize(output_path) >= MAX_FILE_SIZE
+        ):
+            await call.message.reply(
+                "Não foi possível gerar o arquivo dentro do limite.",
+                allow_sending_without_reply=True,
+            )
+            return
+
+        await safe_edit_text(
+            status, bm.uploading_status(lang=await db.get_language(actor)),
+        )
+        caption = bm.captions(
+            user_settings.get("captions", "on"),
+            result.description, bot_url,
+        )
+        await bot.send_chat_action(
+            chat_id=chat.id,
+            action=ChatAction.UPLOAD_AUDIO if kind == "audio" else ChatAction.UPLOAD_DOCUMENT,
+        )
+        if kind == "document":
+            sent = await call.message.reply_document(
+                document=FSInputFile(output_path, filename=os.path.basename(output_path)),
+                caption=caption, parse_mode=ParseMode.HTML,
+                disable_content_type_detection=True,
+                allow_sending_without_reply=True,
+            )
+        else:
+            sent = await send_audio_with_thumbnail(
+                call.message.reply_audio,
+                audio=FSInputFile(output_path, filename="facebook.mp3"),
+                title=(result.description or "Áudio do Facebook")[:128],
+                bot_url=bot_url, caption=caption,
+                parse_mode=ParseMode.HTML,
+            )
+        entries = _file_id_entries(sent)
+        if entries and len(entries) == 1 and entries[0]["kind"] == kind:
+            await _save_cache(url, scope, kind, result.description, entries)
+    except Exception as exc:
+        logging.exception(
+            "Facebook %s callback failed: %s", kind, type(exc).__name__,
+        )
+        await call.message.reply(
+            "Não consegui concluir o download. Tente novamente mais tarde.",
+            allow_sending_without_reply=True,
+        )
+    finally:
+        if status:
+            await safe_delete_message(status)
+        if work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
 
 
 @router.message(
