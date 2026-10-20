@@ -510,6 +510,7 @@ async def _download_with_gallery_dl(
 
         downloaded = []
         caption = ""
+        facebook_post_caption = ""
         author = "Reddit" if ("reddit" in url or "redd.it" in url) else "Universal"
 
         for root, _, files in os.walk(target_dir):
@@ -519,6 +520,17 @@ async def _download_with_gallery_dl(
                     try:
                         with open(fpath, "r", encoding="utf-8") as jf:
                             m_data = json.load(jf)
+                            # Facebook's gallery-dl emits both an album
+                            # title (e.g. "Photos from ... post") and the
+                            # author's actual text under "caption". Prefer
+                            # that text even if another photo's JSON is read
+                            # first. Keep other platforms' caption behavior.
+                            if _is_facebook_url(url):
+                                original = m_data.get("caption")
+                                if isinstance(original, str) and original.strip():
+                                    facebook_post_caption = (
+                                        facebook_post_caption or original.strip()
+                                    )
                             caption = caption or m_data.get("title") or m_data.get("description") or m_data.get("content") or ""
                             author = m_data.get("author") or m_data.get("uploader") or m_data.get("username") or author
                     except Exception:
@@ -585,7 +597,11 @@ async def _download_with_gallery_dl(
                 )
             )
 
-        final_description = caption.strip() if caption.strip() else f"Post ({len(media_list)} items)"
+        chosen_caption = facebook_post_caption or caption
+        final_description = (
+            chosen_caption.strip() if isinstance(chosen_caption, str) and chosen_caption.strip()
+            else f"Post ({len(media_list)} items)"
+        )
 
         return UniversalMediaResult(
             id=post_id,
