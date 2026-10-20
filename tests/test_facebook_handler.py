@@ -75,7 +75,7 @@ async def test_direct_reel_skips_curl(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handler_delegates_canonical_url(monkeypatch):
-    facebook.process_universal_link = AsyncMock()
+    monkeypatch.setattr(facebook, "process_universal_link", AsyncMock())
     monkeypatch.setattr(
         facebook, "_resolve_facebook_short_link",
         AsyncMock(return_value="https://www.facebook.com/reel/2480096172822069/"),
