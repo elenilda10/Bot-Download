@@ -374,6 +374,10 @@ async def download_pornhub_test(message: types.Message):
                     caption=cached_caption,
                 )
                 if sent:
+                    logger.info(
+                        "Pornhub Telegram media reused from shared cache: %s",
+                        "document" if is_document else "video",
+                    )
                     break
 
             if sent is None:
@@ -423,10 +427,12 @@ async def download_pornhub_test(message: types.Message):
                         await db.add_file(
                             video_cache_key, sent.video.file_id, "video"
                         )
+                        logger.info("Pornhub Telegram video cached in database")
                     elif sent and sent.document:
                         await db.add_file(
                             doc_cache_key, sent.document.file_id, "document"
                         )
+                        logger.info("Pornhub Telegram document cached in database")
 
             if sent:
                 lease.mark_success()
