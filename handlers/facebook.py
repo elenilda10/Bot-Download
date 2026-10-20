@@ -17,6 +17,7 @@ import time
 from typing import Optional
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.enums import ChatAction, ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
@@ -440,6 +441,31 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             shutil.rmtree(work_dir, ignore_errors=True)
 
 
+@router.message(Command("fbteste"))
+async def facebook_gallery_first_test_command(message: types.Message) -> None:
+    """Run a gallery-first extraction only in the admin's private chat.
+
+    This intentionally skips post/photo association for diagnostic delivery.
+    Public requests and the normal Facebook handler remain strict.
+    """
+    user_id = message.from_user.id if message.from_user else None
+    chat = message.chat
+    profile = _auth_profile(
+        user_id, chat.type if chat else "",
+        getattr(message, "business_connection_id", None),
+    )
+    if not profile:
+        await message.answer("Este teste está disponível apenas ao administrador no privado.")
+        return
+    if not _extract_facebook_link(get_message_text(message)):
+        await message.answer(
+            "Envie: /fbteste https://www.facebook.com/share/p/EXEMPLO/\n"
+            "O teste baixa o que o gallery-dl encontrar, sem comprovar a identidade da mídia."
+        )
+        return
+    await process_facebook_link(message, facebook_gallery_first_test=True)
+
+
 @router.message(
     (F.text.regexp(FACEBOOK_LINK_REGEX, mode="search")
      | F.caption.regexp(FACEBOOK_LINK_REGEX, mode="search"))
@@ -450,7 +476,9 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
      | F.caption.regexp(FACEBOOK_LINK_REGEX, mode="search"))
     & ~F.text.startswith("/")
 )
-async def process_facebook_link(message: types.Message) -> None:
+async def process_facebook_link(
+    message: types.Message, *, facebook_gallery_first_test: bool = False,
+) -> None:
     """Handle Facebook end-to-end without calling process_universal_link."""
     user_id = message.from_user.id if message.from_user else None
     chat_id = message.chat.id if message.chat else None
@@ -497,11 +525,20 @@ async def process_facebook_link(message: types.Message) -> None:
         )
 
         profile = _auth_profile(user_id, message.chat.type, business_id)
+        # Never use experimental gallery mode for anonymous or public chats.
+        if facebook_gallery_first_test and not profile:
+            await message.reply("Teste permitido apenas ao administrador no privado.")
+            return
         scope = fc.scope_for(profile, user_id)
         cache_kind = "document" if settings.get("as_document") == "on" else "media"
-        token = await _create_callback_token(target, scope, user_id, chat_id)
+        token = (
+            None if facebook_gallery_first_test else
+            await _create_callback_token(target, scope, user_id, chat_id)
+        )
 
-        cached = await _load_cache(target, scope, cache_kind)
+        # An experimental download must neither hit nor populate the normal
+        # Telegram file_id cache, even when the URL was requested before.
+        cached = None if facebook_gallery_first_test else await _load_cache(target, scope, cache_kind)
         if cached:
             cached_items = fc.media_entries(cached)
             cached_keyboard = _facebook_keyboard(
@@ -555,6 +592,7 @@ async def process_facebook_link(message: types.Message) -> None:
             target,
             output_dir=work_dir,
             facebook_browser_profile=profile,
+            facebook_gallery_first_test=facebook_gallery_first_test,
             on_progress=lambda downloaded, total=None, speed=None: _progress_update(
                 progress_key, downloaded, total, speed,
             ),
@@ -586,6 +624,10 @@ async def process_facebook_link(message: types.Message) -> None:
         caption = bm.captions(
             settings.get("captions", "on"), result.description, bot_url,
         )
+        if facebook_gallery_first_test:
+            # Keep this visible even if the user's normal caption preference is off.
+            aviso = "🧪 TESTE gallery-dl: mídia NÃO verificada com a publicação original."
+            caption = f"{aviso}\n\n{caption}" if caption else aviso
         has_video = any(item.type == "video" for item in result.media_list)
         keyboard = _facebook_keyboard(
             target, lang, settings, token,
@@ -648,7 +690,7 @@ async def process_facebook_link(message: types.Message) -> None:
 
         # Cache only the proven scope: anonymous/public or authenticated/owner.
         # Never promote Firefox-authenticated content into a public cache.
-        entries = _file_id_entries(sent_media)
+        entries = [] if facebook_gallery_first_test else _file_id_entries(sent_media)
         if entries:
             try:
                 cache_record = {
