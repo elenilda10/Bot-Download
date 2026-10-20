@@ -106,7 +106,7 @@ def media_entries(record: dict | None) -> list[dict] | None:
     for entry in items:
         if (
             not isinstance(entry, dict)
-            or entry.get("kind") not in {"video", "photo", "document"}
+            or entry.get("kind") not in {"video", "photo", "document", "audio"}
             or not isinstance(entry.get("file_id"), str)
             or not entry["file_id"]
         ):
