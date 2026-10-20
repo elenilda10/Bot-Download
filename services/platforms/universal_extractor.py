@@ -629,7 +629,7 @@ async def _download_with_ytdlp(
             ])
         # H.264/AAC is better supported by Telegram players than VP9.
         # This is a preference: fall back if Facebook offers only VP9.
-        base_download_args.extend(["-S", "vcodec:h264,acodec:aac"])
+        base_download_args.extend(["-S", "+codec:avc:m4a"])
 
     async def _one_download(impersonate: bool | str) -> str | None:
         browser_args = (
@@ -840,6 +840,26 @@ async def download_universal_media(
 
         # Ordinary users: public/anonymous extraction only, never use the
         # Firefox account or other stored Facebook credentials.
+        # Facebook post/album extractors have returned photos belonging to
+        # different posts. Without a direct photo ID we cannot verify them.
+        if not _is_facebook_video_url(target):
+            match = re.search(
+                r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
+            ) if urlsplit(target).path.lower() == "/photo.php" else None
+            if match is None:
+                logging.warning("Facebook post image ID cannot be verified; refusing delivery")
+                return None
+            expected_id = match.group(1)
+            photo = await _download_with_gallery_dl(target, output_dir, post_id)
+            if (photo and photo.media_list and all(
+                item.type == "photo"
+                and os.path.splitext(os.path.basename(item.url))[0] == expected_id
+                for item in photo.media_list
+            )):
+                return photo
+            logging.warning("Facebook anonymous photo ID mismatch")
+            return None
+
         if _is_facebook_video_url(target):
             video = await _download_with_ytdlp(
                 target, output_dir=output_dir, on_progress=on_progress,
