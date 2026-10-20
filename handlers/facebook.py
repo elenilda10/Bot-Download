@@ -134,7 +134,6 @@ async def process_facebook_link(message: types.Message) -> None:
     status = None
     progress_key = None
     work_dir = None
-    successful = False
     settings = {}
     try:
         target = await _resolve_facebook_short_link(source)
@@ -278,14 +277,21 @@ async def process_facebook_link(message: types.Message) -> None:
                 "🔗 Publicação original:", reply_markup=keyboard,
             )
 
-        if user_id is not None:
-            await send_analytics(
-                user_id=user_id, chat_type=message.chat.type,
-                action_name="universal",
-            )
-        successful = True
         lease.mark_success()
-        await maybe_delete_user_message(message, settings.get("delete_message"))
+        try:
+            if user_id is not None:
+                await send_analytics(
+                    user_id=user_id, chat_type=message.chat.type,
+                    action_name="universal",
+                )
+            await maybe_delete_user_message(
+                message, settings.get("delete_message"),
+            )
+        except Exception as exc:
+            # A successful media upload must not be reported as failed because
+            # an optional analytics/write/delete operation later raised.
+            logging.warning("Facebook post-delivery housekeeping failed: %s",
+                            type(exc).__name__)
     except Exception as exc:
         logging.exception("Facebook delivery failed: %s", type(exc).__name__)
         await handle_download_error(message, business_id=business_id)
