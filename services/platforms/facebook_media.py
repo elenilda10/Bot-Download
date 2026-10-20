@@ -562,6 +562,7 @@ async def download_facebook_media(
     on_progress: Optional[Callable[[int, Optional[int], Optional[float]], None]] = None,
     post_id: Optional[str] = None,
     facebook_browser_profile: Optional[str] = None,
+    facebook_gallery_first_test: bool = False,
 ):
     """Facebook-only media extraction, with conservative privacy boundaries.
 
@@ -598,6 +599,31 @@ async def download_facebook_media(
         target_path = urlsplit(target).path.lower()
         if re.fullmatch(r"/reel/\d+/?", target_path):
             target = f"https://www.facebook.com{target_path.rstrip('/')}/"
+
+        if facebook_gallery_first_test:
+            # Deliberately experimental: /fbteste in the administrator's own
+            # private chat. Resolve share first, then pass the exact post URL
+            # to gallery-dl, regardless of whether it holds images or videos.
+            # No preflight, no per-post hard-coded IDs, no Telegram file_id cache.
+            # Downloads here are NOT verified as belonging to the source post.
+            if not facebook_browser_profile:
+                logging.warning("Facebook gallery-first test requires private admin authentication")
+                return None
+            gallery = await _download_with_gallery_dl(
+                target, output_dir, post_id,
+                facebook_browser_profile=facebook_browser_profile,
+                facebook_gallery_test_skip_post_check=True,
+            )
+            if gallery and gallery.media_list:
+                logging.warning("Facebook gallery-first test delivered UNVERIFIED media")
+                return gallery
+            # gallery-dl may not support standalone Reels/videos on every
+            # Facebook page; use yt-dlp only when gallery-dl returned nothing.
+            logging.info("Facebook gallery-first test: trying yt-dlp fallback")
+            return await _download_with_ytdlp(
+                target, output_dir=output_dir, on_progress=on_progress,
+                post_id=post_id, facebook_browser_profile=facebook_browser_profile,
+            )
 
         # Authenticated downloads are restricted to the admin's PRIVATE chat
         # at the handler layer. Only direct image IDs or canonical video IDs
