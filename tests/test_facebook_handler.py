@@ -87,6 +87,15 @@ async def test_direct_reel_skips_curl(monkeypatch):
 async def test_handler_downloads_reel_directly_and_sends_original_caption(monkeypatch, tmp_path):
     monkeypatch.setattr(facebook, "OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(
+        facebook, "_create_callback_token",
+        AsyncMock(return_value="0" * 24),
+    )
+    monkeypatch.setattr(facebook, "_load_cache", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        facebook, "db",
+        SimpleNamespace(add_file=AsyncMock(), get_language=AsyncMock(return_value="pt")),
+    )
+    monkeypatch.setattr(
         facebook, "_resolve_facebook_short_link",
         AsyncMock(return_value="https://www.facebook.com/reel/2480096172822069/"),
     )
@@ -140,7 +149,10 @@ async def test_handler_downloads_reel_directly_and_sends_original_caption(monkey
         chat=SimpleNamespace(id=42, type="private"),
         message_id=12,
         answer=AsyncMock(return_value=SimpleNamespace()),
-        reply_video=AsyncMock(),
+        reply_video=AsyncMock(return_value=SimpleNamespace(
+            video=SimpleNamespace(file_id="video-test-123"),
+            photo=None, document=None, audio=None,
+        )),
     )
     await facebook.process_facebook_link(message)
     specialized.assert_awaited_once()
