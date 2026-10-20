@@ -89,6 +89,22 @@ async def test_command_only_invokes_experiment_in_admin_private_chat(monkeypatch
     assert message.answer.await_count == 1
 
 
+
+def test_story_php_with_consistent_ids_normalizes_to_profile_post():
+    assert facebook_media._canonical_fb_media_url(
+        "https://www.facebook.com/story.php?story_fbid=1138762232003523"
+        "&id=100076092710306&post_id=100076092710306_1138762232003523"
+        "&rdid=tracking"
+    ) == "https://www.facebook.com/100076092710306/posts/1138762232003523/"
+
+
+def test_story_php_with_conflicting_post_id_is_not_rewritten():
+    url = (
+        "https://www.facebook.com/story.php?story_fbid=1138762232003523"
+        "&id=100076092710306&post_id=100076092710306_999999999"
+    )
+    assert facebook_media._canonical_fb_media_url(url) == url
+
 @pytest.mark.asyncio
 async def test_universal_bypass_requires_both_fb_url_and_browser_profile(tmp_path):
     assert await universal_extractor._download_with_gallery_dl(
