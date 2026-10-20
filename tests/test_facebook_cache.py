@@ -108,3 +108,28 @@ async def test_callback_rejects_forwarded_authenticated_video_before_downloading
     call.answer.assert_awaited_once()
     assert call.answer.await_args.kwargs["show_alert"] is True
     downloader.assert_not_awaited()
+
+
+
+def test_albums_hide_unavailable_conversion_callbacks():
+    kb = facebook._facebook_keyboard(
+        URL, "pt",
+        {"audio_button": "on", "file_button": "on"},
+        "0" * 24, has_video=True, single=False,
+    )
+    callbacks = [b.callback_data for row in kb.inline_keyboard for b in row
+                 if b.callback_data]
+    assert callbacks == []
+
+
+def test_url_button_can_be_hidden_using_settings():
+    kb = facebook._facebook_keyboard(
+        URL, "pt",
+        {"url_button": "off", "audio_button": "on", "file_button": "on"},
+        "0" * 24, has_video=True,
+    )
+    assert all(b.url is None for row in kb.inline_keyboard for b in row)
+    no_buttons = facebook._facebook_keyboard(
+        URL, "pt", {"url_button": "off"},
+    )
+    assert no_buttons is None
