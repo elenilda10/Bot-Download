@@ -83,7 +83,7 @@ def _is_facebook_media_link(url: str) -> bool:
             r"[^/]+/posts)(?:/|$)",
             path,
         )
-        or (path.startswith("/share/") and len(path.strip("/").split("/")) >= 3)
+        or (path.startswith("/share/") and len(path.strip("/").split("/")) >= 2)
     )
 
 
@@ -436,7 +436,7 @@ async def _download_with_gallery_dl(url: str, output_dir: str, post_id: str) -> 
         try:
             _, stderr = await asyncio.wait_for(
                 proc.communicate(),
-                timeout=75 if _is_facebook_url(url) else 180,
+                timeout=75 if _is_facebook_url(url) else None,
             )
         except asyncio.TimeoutError:
             proc.kill()
