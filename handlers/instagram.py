@@ -85,6 +85,10 @@ async def _try_instagram_cache(
     bot_url: str, lang: str | None,
 ) -> bool:
     """Never mix video/photo/album file_id types."""
+    # Stories may be private or have limited visibility; do not reuse their
+    # Telegram file_id across users.
+    if _instagram_identity(url).startswith("story:"):
+        return False
     caption = bm.captions(settings.get("captions", "on"), None, bot_url)
     for kind in ("video", "photo"):
         cached_id = await db.get_file_id(_cache_key(url, kind))
@@ -270,7 +274,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                         duration=item.duration or None, supports_streaming=True,
                         reply_markup=keyboard, allow_sending_without_reply=True,
                     )
-                    if sent and sent.video:
+                    if sent and sent.video and not _instagram_identity(url).startswith("story:"):
                         await db.add_file(
                             _cache_key(url, "video"), sent.video.file_id, "video"
                         )
@@ -281,7 +285,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                         parse_mode=ParseMode.HTML, reply_markup=keyboard,
                         allow_sending_without_reply=True,
                     )
-                    if sent and sent.photo:
+                    if sent and sent.photo and not _instagram_identity(url).startswith("story:"):
                         await db.add_file(
                             _cache_key(url, "photo"), sent.photo[-1].file_id, "photo"
                         )
@@ -323,7 +327,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                             entries.append({
                                 "kind": "photo", "file_id": sent.photo[-1].file_id
                             })
-                    if len(entries) == len(sent_group):
+                    if len(entries) == len(sent_group) and not _instagram_identity(url).startswith("story:"):
                         await db.add_file(
                             _cache_key(url, "album"),
                             json.dumps(
