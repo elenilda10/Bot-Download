@@ -44,7 +44,7 @@ CONHECIDOS = [
 ]
 TIPOS = (
     "grupo_post", "perfil_pagina_post", "foto_direta", "album",
-    "reel", "video", "watch", "outro_post"
+    "reel", "video", "watch", "story_php", "outro_post"
 )
 IMAGENS = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEOS = {".mp4", ".mkv", ".webm", ".mov", ".m4v"}
@@ -74,7 +74,34 @@ def tipo_de(url):
         return "video"
     if caminho.rstrip("/") == "/watch":
         return "watch"
+    if caminho.rstrip("/") == "/story.php":
+        return "story_php"
     return "outro_post"
+
+
+def normalizar_story_php(url):
+    """Converte story.php para o mesmo post numérico, sem tracking.
+
+    Só altera se id/story_fbid/post_id forem compatíveis. Outros formatos
+    permanecem inalterados para não direcionar a extração a outra mídia.
+    """
+    partes = urlsplit(url)
+    if partes.path.lower().rstrip("/") != "/story.php":
+        return url, None
+    query = parse_qs(partes.query)
+    perfil = query.get("id", [])
+    post = query.get("story_fbid", [])
+    if len(perfil) != 1 or len(post) != 1:
+        return url, "story.php não fornece um par único id/story_fbid"
+    if not perfil[0].isdigit() or not post[0].isdigit():
+        return url, "story.php contém IDs não numéricos"
+    composto = query.get("post_id", [])
+    if composto and composto != [f"{perfil[0]}_{post[0]}"]:
+        return url, "story.php tem post_id divergente; sem conversão"
+    return (
+        f"https://www.facebook.com/{perfil[0]}/posts/{post[0]}/",
+        "story.php convertido para post numérico sem parâmetros de rastreamento",
+    )
 
 
 def id_foto_em_post_photo(valor):
@@ -203,14 +230,27 @@ def executar(comando, limite=100):
     except OSError:
         return 127, "Extrator não disponível"
     saida = (processo.stderr or "")[-3000:]
-    if "AuthRequired" in saida:
-        erro = "Facebook exige autenticação"
-    elif "HTTP Error 403" in saida or "403 Forbidden" in saida:
+    low = saida.lower()
+    if "authrequired" in low or "login required" in low or "log in to" in low:
+        erro = "Facebook exige login ou acesso ao conteúdo"
+    elif "unsupported url" in low or "no suitable extractor" in low:
+        erro = "URL não reconhecida pelo extrator"
+    elif "http error 403" in low or "403 forbidden" in low:
         erro = "Acesso negado (403)"
-    elif "HTTP Error 404" in saida:
+    elif "http error 404" in low or "404 not found" in low:
         erro = "Post indisponível (404)"
+    elif "private" in low or "not available" in low:
+        erro = "Post privado, removido ou não acessível"
+    elif "no video formats" in low or "no formats found" in low:
+        erro = "Nenhum formato de vídeo encontrado"
+    elif "no media" in low or "no images" in low:
+        erro = "Nenhuma imagem encontrada (pode ser texto puro)"
+    elif "captcha" in low or "checkpoint" in low:
+        erro = "Facebook exige verificação de segurança"
+    elif "maximum number of downloads reached" in low:
+        erro = "Extrator atingiu limite artificial de downloads"
     elif processo.returncode:
-        erro = "Extrator retornou erro (detalhes não divulgados no relatório)"
+        erro = "Falha não classificada; não compartilhar logs brutos com cookies"
     else:
         erro = ""
     return processo.returncode, erro
@@ -301,7 +341,7 @@ def rodada_video(url, pasta, autenticado):
             "midias": [], "pasta": str(pasta), "erro": "yt-dlp indisponível"
         }
     comando = [
-        str(YTDLP), "--no-playlist", "--max-downloads", "1",
+        str(YTDLP), "--no-playlist",
         "--restrict-filenames", "--write-info-json", "--no-write-thumbnail",
         "--no-progress", "-S", "+codec:avc:m4a",
         "-o", str(pasta / "%(id)s.%(ext)s"),
@@ -349,6 +389,8 @@ def relatorio_markdown(relatorio):
         ls.append(f"### Caso {caso['numero']}: {caso.get('rotulo','link')}")
         ls.append(f"- Original: {caso['original']}")
         ls.append(f"- Resolvido: {caso.get('resolvido') or 'não resolvido'}")
+        if caso.get("url_extracao"):
+            ls.append(f"- Extração: {caso['url_extracao']}")
         if "erro" in caso:
             ls.append(f"- Erro: {caso['erro']}")
         for r in caso.get("tentativas", []):
@@ -383,8 +425,17 @@ async def auditar(caso, numero, pasta, args):
         result["erro"] = "Redirecionamento não resolvido com segurança"
         return result
     tipo = tipo_de(resolvido)
+    extraido, aviso_story = normalizar_story_php(resolvido)
+    if aviso_story:
+        result["avisos"].append(aviso_story)
+    if extraido != resolvido:
+        result["url_extracao"] = extraido
+        tipo = tipo_de(extraido)
     result.update({"resolvido": resolvido, "tipo": tipo})
     print(f"\n[{numero}] {rotulo}: {tipo}\n↪️  {resolvido}", flush=True)
+    if extraido != resolvido:
+        print(f"    URL de extração: {extraido}", flush=True)
+    resolvido = extraido
     modos = [False] if args.somente_publico or not PROFILE else [False, True]
     for autenticado in modos:
         modo = "firefox" if autenticado else "publico"
@@ -429,6 +480,83 @@ async def auditar(caso, numero, pasta, args):
     return result
 
 
+def revisar_existente(pasta):
+    """Inspeciona vídeos da auditoria anterior sem Facebook/re-download.
+
+    A revisão preserva o relatório original e não aprova vídeos sem
+    correspondência id URL -> id do JSON. Não exibe textos do conteúdo.
+    """
+    caminho = pasta / "relatorio.json"
+    try:
+        dados = json.loads(caminho.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print("❌ Relatório JSON não encontrado ou inválido:", caminho)
+        return
+    print("🔎 Revisão local (sem downloads):", pasta)
+    total = 0
+    revisoes = []
+    for caso in dados.get("casos", []):
+        url = caso.get("url_extracao") or caso.get("resolvido", "")
+        for t in caso.get("tentativas", []):
+            if t.get("extrator") != "yt-dlp":
+                continue
+            total += 1
+            d = Path(t.get("pasta", ""))
+            if not d.is_dir() or not d.is_relative_to(pasta):
+                print("⚠️  Pasta de download inválida, revisão ignorada")
+                continue
+            arquivos = sorted(
+                f for f in d.iterdir() if f.is_file()
+                and f.suffix.lower() in VIDEOS and f.stat().st_size > 0
+            )
+            atual, motivo = analisar_video(url, arquivos)
+            esperado = extrair_id_video_direto(url)
+            metadados = []
+            for f in arquivos:
+                info_path = f.with_name(f.stem + ".info.json")
+                try:
+                    dados_video = json.loads(info_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    dados_video = {}
+                metadados.append({
+                    "arquivo": f.name,
+                    "id_video": f.stem,
+                    "id_info_json": str(dados_video.get("id") or ""),
+                    "info_json_existe": info_path.is_file(),
+                })
+            anterior = t.get("estado", "desconhecido")
+            codigo = t.get("codigo")
+            nota = ("A auditoria anterior usava --max-downloads 1, que pode "
+                    "causar saída não zero após baixar um vídeo."
+                    if codigo and arquivos else "")
+            print(
+                f"  Caso {caso.get('numero')} {t.get('modo')}: "
+                f"antes={anterior}, agora={atual}, código anterior={codigo}; {motivo}"
+            )
+            print("    Esperado:", esperado or "ID direto indisponível")
+            for meta in metadados:
+                print(
+                    f"    Arquivo={meta['arquivo']}, "
+                    f"ID JSON={meta['id_info_json'] or 'ausente'}"
+                )
+            if nota:
+                print("    ⚠️ ", nota)
+            revisoes.append({
+                "caso": caso.get("numero"), "modo": t.get("modo"),
+                "estado_anterior": anterior, "estado_id": atual,
+                "motivo": motivo, "codigo_anterior": codigo,
+                "id_esperado": esperado, "arquivos": metadados,
+                "observacao": nota,
+            })
+    destino = pasta / "REVISAO_OFFLINE.json"
+    destino.write_text(
+        json.dumps({"revisoes": revisoes}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"✅ Revisadas {total} tentativas de vídeo. Resultado: {destino}")
+    print("Falhas de extração sem arquivos exigem novo teste com diagnóstico aprimorado.")
+
+
 def obter_casos(args):
     casos = []
     if args.conhecidos:
@@ -466,6 +594,7 @@ def obter_casos(args):
 
 async def main():
     parser = argparse.ArgumentParser(description="Auditoria unificada do Facebook na VPS.")
+    parser.add_argument("--revisar", metavar="PASTA", help="Revê os downloads de uma auditoria anterior, sem baixar novamente")
     parser.add_argument("--conhecidos", action="store_true", help="Audita 3 links já fornecidos nesta investigação")
     parser.add_argument("--url", action="append", help="Adicionar um link de Facebook (pode repetir)")
     parser.add_argument("--arquivo", help="Arquivo com links, um por linha; opcional: URL | ids")
@@ -474,6 +603,9 @@ async def main():
     parser.add_argument("--sem-videos-em-posts", action="store_true", help="Não testar vídeo em posts genéricos")
     parser.add_argument("--max-midias", type=int, default=20, help="Máximo por download (1 a 30)")
     args = parser.parse_args()
+    if args.revisar:
+        revisar_existente(Path(args.revisar).expanduser().resolve())
+        return
     if not 1 <= args.max_midias <= 30:
         parser.error("--max-midias precisa estar entre 1 e 30")
     if not GALLERY.is_file():
