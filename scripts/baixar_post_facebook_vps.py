@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Teste manual de links Facebook na VPS. Não envia nada ao Telegram."""
 import asyncio
+import json
 import os
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 # Funciona tanto na raiz do projeto quanto dentro de scripts/.
 BASE = Path(__file__).resolve().parent
@@ -16,8 +17,10 @@ sys.path.insert(0, str(BASE))
 
 from dotenv import load_dotenv
 from services.platforms.facebook_media import (
+    _facebook_group_post_id,
     _is_facebook_media_link,
     _is_facebook_url,
+    _verified_facebook_group_photos,
     _resolve_facebook_short_link,
 )
 
@@ -34,8 +37,50 @@ def midias(pasta):
     )
 
 
+def validar_midias(link, arquivos):
+    """Aprova só fotos de grupo/post ou foto com ID direto comprovados.
+
+    Um arquivo existir, ou o gallery-dl sair com código 0, não prova que ele
+    pertence à publicação solicitada. Publicações de perfis, vídeos e outros
+    formatos permanecem como downloads NÃO VERIFICADOS neste script.
+    """
+    post_grupo = _facebook_group_post_id(link)
+    if post_grupo:
+        aprovou = _verified_facebook_group_photos(
+            link, [str(arquivo) for arquivo in arquivos]
+        )
+        motivo = (
+            f"álbum, arquivos e metadados coincidem com o post {post_grupo}"
+            if aprovou else "foto sem associação comprovada ao post do grupo"
+        )
+        return aprovou, motivo
+
+    partes = urlsplit(link)
+    if partes.path.lower().rstrip("/") in {"/photo", "/photo.php"}:
+        ids = parse_qs(partes.query).get("fbid", [])
+        if len(ids) != 1 or not ids[0].isdigit() or len(arquivos) != 1:
+            return False, "link de foto sem ID numérico único ou mídia múltipla"
+        foto = arquivos[0]
+        if foto.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            return False, "arquivo recebido não é uma imagem permitida"
+        if foto.stem != ids[0]:
+            return False, "ID no nome do arquivo diferente do ID solicitado"
+        try:
+            dados = json.loads(
+                foto.with_name(foto.name + ".json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return False, "metadados da foto ausentes ou inválidos"
+        if not isinstance(dados, dict) or str(dados.get("id")) != ids[0]:
+            return False, "ID do arquivo difere do ID dos metadados"
+        return True, f"foto direta com fbid {ids[0]} comprovado"
+
+    return False, "formato sem validador de identidade disponível neste script"
+
+
 def baixar(link, pasta, *, autenticado=False):
     pasta.mkdir(parents=True, exist_ok=True)
+    pasta.chmod(0o700)
     cmd = [
         str(GALLERY), "--range", "1-10", "--write-metadata", "--no-mtime",
         "-d", str(pasta),
@@ -66,10 +111,20 @@ def baixar(link, pasta, *, autenticado=False):
 
     for file in files:
         print(f"  • {file} ({file.stat().st_size:,} bytes)")
-    return bool(files) and result.returncode == 0
+    if not files or result.returncode != 0:
+        return False
+
+    aprovado, motivo = validar_midias(link, files)
+    if aprovado:
+        print("✅ IDENTIDADE VERIFICADA:", motivo)
+    else:
+        print("⚠️  DOWNLOAD NÃO VERIFICADO:", motivo)
+        print("⚠️  Arquivos preservados para inspeção, sem aprovação automática.")
+    return aprovado
 
 
 async def main():
+    os.umask(0o077)  # Impede leitura acidental de downloads autenticados por outros usuários.
     original = input("Cole o link do post do Facebook: ").strip()
     if not original:
         print("❌ Nenhum link informado.")
@@ -91,18 +146,18 @@ async def main():
     print("\n📁 Pasta de saída:", destino)
     print("\n1/2 Tentando download público...")
     if baixar(resolvido, destino / "publico"):
-        print("\n✅ Download público concluído.")
+        print("\n✅ Download público VERIFICADO.")
     elif PROFILE:
         print("\n2/2 Tentando com a sessão Firefox da VPS...")
         if baixar(resolvido, destino / "firefox", autenticado=True):
-            print("\n✅ Download autenticado concluído.")
+            print("\n✅ Download autenticado VERIFICADO.")
         else:
-            print("\n❌ Download não concluído nem com Firefox.")
+            print("\n⚠️  Nenhum download passou na validação de identidade.")
     else:
-        print("\n⚠️  Sem FACEBOOK_FIREFOX_PROFILE no .env para tentativa autenticada.")
+        print("\n⚠️  Nenhuma mídia aprovada. Sem Firefox configurado para outra tentativa.")
 
-    print("\n⚠️  A mídia ainda precisa ser conferida: o gallery-dl pode escolher outra foto da página.")
-    print("Os arquivos .json de metadados ficaram ao lado das mídias.")
+    print("\nOs arquivos e metadados .json ficaram na pasta acima.")
+    print("Somente mídias com identidade VERIFICADA devem ser consideradas aprovadas.")
 
 
 if __name__ == "__main__":
