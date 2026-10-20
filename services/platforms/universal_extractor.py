@@ -113,14 +113,11 @@ def _clean_url(url: str) -> str:
 
 def _resolve_cookie(url: str) -> Optional[str]:
     if _is_facebook_url(url):
-        # Only provide credentials already configured by the VPS owner;
-        # public Facebook links work without a cookie file when supported.
-        for path in (
-            FACEBOOK_COOKIES,
-            "/root/Bot-Download/cookies.txt",
-        ):
-            if os.path.isfile(path) and os.path.getsize(path) > 0:
-                return path
+        # Facebook session cookies must be opted into explicitly.
+        # Never reuse the general cookies.txt containing credentials for
+        # unrelated services on a public-facing fallback route.
+        if os.path.isfile(FACEBOOK_COOKIES) and os.path.getsize(FACEBOOK_COOKIES) > 0:
+            return FACEBOOK_COOKIES
         return None
     if "reddit.com" in url or "redd.it" in url:
         if os.path.exists(REDDIT_COOKIES) and os.path.getsize(REDDIT_COOKIES) > 0:
