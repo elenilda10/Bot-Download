@@ -33,7 +33,7 @@ async def test_resolve_reel_share_with_curl(monkeypatch):
     proc = type("Process", (), {
         "returncode": 0,
         "communicate": AsyncMock(return_value=(
-            b"https://www.facebook.com/reel/2480096172822069/?rdid=track",
+            b"HTTP/2 302\r\nlocation: https://www.facebook.com/reel/2480096172822069/?rdid=track\r\n\r\n",
             b"",
         )),
     })()
@@ -45,7 +45,8 @@ async def test_resolve_reel_share_with_curl(monkeypatch):
     assert result == "https://www.facebook.com/reel/2480096172822069/"
     command = fake.await_args.args
     assert "curl" in command
-    assert "--proto-redir" in command
+    assert "--dump-header" in command
+    assert "--location" not in command
     assert "--cookies-from-browser" not in command
 
 
@@ -53,7 +54,10 @@ async def test_resolve_reel_share_with_curl(monkeypatch):
 async def test_resolve_rejects_external_redirect(monkeypatch):
     proc = type("Process", (), {
         "returncode": 0,
-        "communicate": AsyncMock(return_value=(b"https://example.com/private", b"")),
+        "communicate": AsyncMock(return_value=(
+            b"HTTP/2 302\r\nlocation: https://example.com/private\r\n\r\n",
+            b"",
+        )),
     })()
     monkeypatch.setattr(
         facebook.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
