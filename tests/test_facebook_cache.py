@@ -138,6 +138,9 @@ def test_url_button_can_be_hidden_using_settings():
 
 @pytest.mark.asyncio
 async def test_private_cached_mp3_callback_reuses_file_without_download(monkeypatch):
+    # Legacy strict mode retains scoped file_id caching. Gallery-first skips
+    # both cache reads and writes until Facebook post identity is proven.
+    monkeypatch.setenv("FB_GALLERY_FIRST", "0")
     token = "a" * 24
     actor = int(facebook.ADMIN_ID)
     url = URL
