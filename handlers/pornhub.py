@@ -1,12 +1,11 @@
-"""Admin-only PornHub download trial pinned to an existing VPN route.
+"""Admin-only PornHub downloader in isolated Proton WireGuard network namespace.
 
-Only this router binds yt-dlp to the Proton WireGuard source address.
-The handler never toggles WireGuard or changes system-wide routes.
-If the VPN route is unavailable, the download fails without direct fallback.
+All yt-dlp and helper processes run within ph-proton, which has only a VPN
+interface, DNS 10.2.0.1 and no eth0 route. Tunnel failure never uses Contabo.
+The bot's other handlers continue to run in the original host namespace.
 """
 import asyncio
 import logging
-import os
 import re
 import tempfile
 from contextlib import suppress
@@ -26,7 +25,7 @@ _DOWNLOAD_LIMIT = asyncio.Semaphore(1)
 _URL_RE = re.compile(r"https?://[^\s<>]+", re.I)
 _LINK_PATTERN = r"(?i)https?://(?:(?:www|pt|m)\.)?pornhub\.com/view_video\.php\?viewkey="
 _VPN_INTERFACE = "protonbot"
-_VPN_ADDRESS = os.getenv("PORNHUB_TEST_VPN_SOURCE", "10.2.0.2")
+_VPN_NAMESPACE = "ph-proton"
 _MAX_DOWNLOAD_BYTES = min(MAX_FILE_SIZE, 450 * 1024 * 1024)
 _YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
@@ -56,16 +55,16 @@ async def show_pornhub_test_vpn(message: types.Message):
     if not message.from_user or message.from_user.id != ADMIN_ID:
         return
     await message.reply(
-        "🔒 Router Pornhub: VPN fixa via protonbot.\n"
-        "Este comando agora é somente informativo. "
+        "🔒 Router Pornhub: VPN fixa no namespace ph-proton.\n"
+        "DNS Proton 10.2.0.1. Este comando é apenas informativo; "
         "/phvpn on e /phvpn off não alteram a conexão."
     )
 
 
 async def _ensure_vpn_route() -> None:
-    """Fail closed: prevent starting yt-dlp without the VPN-specific route."""
+    """Fail closed: require VPN route inside the isolated network namespace."""
     proc = await asyncio.create_subprocess_exec(
-        "ip", "-4", "route", "get", "1.1.1.1", "from", _VPN_ADDRESS,
+        "ip", "-4", "-n", _VPN_NAMESPACE, "route", "get", "1.1.1.1",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -83,7 +82,7 @@ async def _ensure_vpn_route() -> None:
 async def _download_video(url: str, directory: Path) -> Path:
     await _ensure_vpn_route()
     cmd = [
-        _YTDLP_BIN,
+        "ip", "netns", "exec", _VPN_NAMESPACE, _YTDLP_BIN,
         "-4",
         "--no-playlist",
         "--impersonate", "chrome",
@@ -98,7 +97,6 @@ async def _download_video(url: str, directory: Path) -> Path:
         "--merge-output-format", "mp4",
         "-o", str(directory / "%(id)s.%(ext)s"),
     ]
-    cmd.extend(["--source-address", _VPN_ADDRESS])
     cmd.append(url)
 
     process = await asyncio.create_subprocess_exec(
@@ -184,7 +182,7 @@ async def download_pornhub_test(message: types.Message):
             with suppress(Exception):
                 await status.edit_text(
                     "❌ Não foi possível baixar/enviar esse vídeo. "
-                    "Verifique o túnel protonbot e os logs da VPS."
+                    "Verifique o serviço ph-proton-netns e os logs da VPS."
                 )
     finally:
         lease.finish()
