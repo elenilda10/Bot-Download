@@ -19,6 +19,7 @@ from services.platforms.facebook_media import (
     facebook_caption,
     facebook_gallery_arguments,
     facebook_ytdlp_arguments,
+    facebook_video_caption,
 )
 
 logging = logging.bind(service="universal_extractor")
@@ -552,7 +553,10 @@ async def _download_with_ytdlp(
             stdout, _ = await asyncio.wait_for(proc_info.communicate(), timeout=90)
             if proc_info.returncode == 0 and stdout:
                 data = json.loads(stdout.decode("utf-8", errors="replace"))
-                title = data.get("title") or data.get("description") or ""
+                title = (
+                    facebook_video_caption(data) if _is_facebook_url(target_url)
+                    else data.get("title") or data.get("description") or ""
+                )
                 uploader = data.get("uploader") or data.get("channel") or "Universal"
                 break
         except (asyncio.TimeoutError, OSError, ValueError) as exc:
@@ -677,7 +681,10 @@ async def _download_with_ytdlp(
             try:
                 with open(info_path, "r", encoding="utf-8") as fp:
                     info = json.load(fp)
-                title = info.get("title") or info.get("description") or title
+                # Prefer Facebook's post caption/description over yt-dlp's
+                # often generic title ("Video"). Leave empty when Facebook
+                # provides no genuine caption instead of inventing one.
+                title = facebook_video_caption(info) or title
                 uploader = info.get("uploader") or info.get("channel") or uploader
             except (OSError, ValueError, AttributeError):
                 pass
