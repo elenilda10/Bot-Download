@@ -1,0 +1,15 @@
+[Unit]
+Description=Proton WireGuard isolated namespace for Bot-Download router
+Wants=network-online.target
+After=network-online.target
+Conflicts=wg-quick@protonbot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ph-proton-netns start
+ExecStop=/usr/local/sbin/ph-proton-netns stop
+TimeoutStartSec=45
+
+[Install]
+WantedBy=multi-user.target
