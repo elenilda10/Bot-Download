@@ -355,6 +355,7 @@ async def _download_kwai(
 async def _download_with_gallery_dl(
     url: str, output_dir: str, post_id: str,
     *, facebook_browser_profile: Optional[str] = None,
+    facebook_expected_photo_ids: tuple[str, ...] | None = None,
 ) -> Optional[UniversalMediaResult]:
     target_dir = os.path.join(output_dir, f"gdl_{post_id}")
     os.makedirs(target_dir, exist_ok=True)
@@ -459,7 +460,9 @@ async def _download_with_gallery_dl(
                     logging.warning("Facebook group post photo identity not verified")
                     return None
             elif _facebook_profile_post_id(url):
-                if not _verified_facebook_profile_photos(url, downloaded):
+                if not _verified_facebook_profile_photos(
+                    url, downloaded, facebook_expected_photo_ids,
+                ):
                     logging.warning("Facebook profile post photo identity not verified")
                     return None
         media_list = []
