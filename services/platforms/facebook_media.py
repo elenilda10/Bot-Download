@@ -13,7 +13,8 @@ import json
 import os
 import re
 from typing import Callable, Optional
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from html import unescape
 
 from services.logger import logger as logging
 
@@ -206,6 +207,62 @@ def _facebook_group_post_id(url: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def _facebook_profile_post_id(url: str) -> Optional[str]:
+    """Only specific numeric profile/page posts, never a profile timeline."""
+    if not _is_facebook_url(url):
+        return None
+    path = urlsplit(url).path
+    match = re.fullmatch(r"/\d+/posts/(\d+)/?", path, re.IGNORECASE)
+    return match.group(1) if match else None
+
+
+def _verified_facebook_profile_photos(url: str, paths: list[str]) -> bool:
+    """Allow only photos traceable to the requested profile publication.
+
+    The gallery-dl post parser places the photo link extracted from the
+    publication into post_photo metadata. For a single-photo share the photo
+    owner may differ from the sharing profile, and set_id may be empty.
+    For multi-photo sets require pcb.<POST_ID> album identity.
+    """
+    post_id = _facebook_profile_post_id(url)
+    if not post_id or not 1 <= len(paths) <= 10:
+        return False
+    expected_set = f"pcb.{post_id}"
+    multi = len(paths) > 1
+    for path in paths:
+        photo_id, ext = os.path.splitext(os.path.basename(path))
+        if ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or not photo_id.isdigit():
+            return False
+        try:
+            with open(path + ".json", "r", encoding="utf-8") as stream:
+                metadata = json.load(stream)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(metadata, dict) or str(metadata.get("id")) != photo_id:
+            return False
+        set_id = str(metadata.get("set_id") or "")
+        # Single photo with no album token: require exact source photo ID.
+        if not multi and set_id == "":
+            linked = metadata.get("post_photo")
+            if not isinstance(linked, str):
+                return False
+            link = unquote(unescape(linked.replace("\\/", "/")))
+            parsed = urlsplit(link)
+            if parsed.scheme != "https" or not _is_facebook_url(link):
+                return False
+            if parsed.path.lower().rstrip("/") not in {"/photo", "/photo.php"}:
+                return False
+            if parse_qs(parsed.query).get("fbid") != [photo_id]:
+                return False
+        else:
+            # Never allow a photo set belonging to a different publication.
+            if set_id != expected_set:
+                return False
+            if f"({expected_set})" not in os.path.basename(os.path.dirname(path)):
+                return False
+    return True
+
+
 def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
     """Fail closed unless every image is tied to the requested post.
 
@@ -271,9 +328,14 @@ def facebook_ytdlp_arguments(
 
 
 def facebook_caption(metadata: dict) -> str:
-    """Facebook's true post text, not gallery-dl's generated album title."""
-    original = metadata.get("caption")
-    return original.strip() if isinstance(original, str) else ""
+    """Prioritize sharing-post text over the original photo's caption."""
+    if not isinstance(metadata, dict):
+        return ""
+    for key in ("post_text", "caption"):
+        original = metadata.get(key)
+        if isinstance(original, str) and original.strip():
+            return original.strip()
+    return ""
 
 
 
@@ -355,15 +417,28 @@ async def download_facebook_media(
                 and bool(re.search(r"(?:^|&)fbid=\d+(?:&|$)", urlsplit(target).query))
             )
             is_verified_group_post = _facebook_group_post_id(target) is not None
+            is_verified_profile_post = _facebook_profile_post_id(target) is not None
             has_canonical_video_id = bool(
                 re.fullmatch(r"/(?:reel|reels|videos)/\d+/?", target_path)
                 or (target_path == "/watch/" and re.search(
                     r"(?:^|&)v=\d+(?:&|$)", urlsplit(target).query
                 ))
             )
-            if not (is_direct_photo or has_canonical_video_id or is_verified_group_post):
+            if not (
+                is_direct_photo or has_canonical_video_id
+                or is_verified_group_post or is_verified_profile_post
+            ):
                 logging.warning("Facebook authenticated fallback requires direct media ID")
                 return None
+            if is_verified_profile_post:
+                # Validate the gallery result against the requested post.
+                profile_photos = await _download_with_gallery_dl(
+                    target, output_dir, post_id,
+                    facebook_browser_profile=facebook_browser_profile,
+                )
+                if profile_photos and profile_photos.media_list:
+                    logging.info("Facebook profile post photos verified")
+                return profile_photos
             if is_verified_group_post:
                 # This publication might be members-only: admin private chat
                 # only, and Telegram file_id cache disabled for all Facebook.
@@ -404,6 +479,9 @@ async def download_facebook_media(
         # Facebook post/album extractors have returned photos belonging to
         # different posts. Without a direct photo ID we cannot verify them.
         if not _is_facebook_video_url(target):
+            if _facebook_profile_post_id(target):
+                # Public data needs the same exact post/media verification.
+                return await _download_with_gallery_dl(target, output_dir, post_id)
             match = re.search(
                 r"(?:^|&)fbid=(\d+)(?:&|$)", urlsplit(target).query
             ) if urlsplit(target).path.lower() == "/photo.php" else None
