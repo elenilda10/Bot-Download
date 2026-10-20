@@ -437,7 +437,10 @@ def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
         parent = os.path.basename(os.path.dirname(path))
         if f"({expected_set})" not in parent:
             return False
-        sidecar = os.path.splitext(path)[0] + ".json"
+        # gallery-dl --write-metadata appends ".json" to the *full* media
+        # filename (example: 1629584308563349.jpg.json), not to its stem.
+        # The older "1629584308563349.json" lookup rejected valid images.
+        sidecar = path + ".json"
         try:
             with open(sidecar, "r", encoding="utf-8") as fp:
                 metadata = json.load(fp)
