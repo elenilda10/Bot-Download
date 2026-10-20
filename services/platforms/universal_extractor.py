@@ -405,6 +405,53 @@ async def _download_kwai(
     )
 
 
+def _facebook_group_post_id(url: str) -> Optional[str]:
+    """Accept only a specific numeric group post, never a group feed."""
+    if not _is_facebook_url(url):
+        return None
+    path = urlsplit(url).path
+    match = re.fullmatch(
+        r"/groups/\d+/(?:permalink|posts)/(\d+)/?", path, re.IGNORECASE
+    )
+    return match.group(1) if match else None
+
+
+def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
+    """Fail closed unless every image is tied to the requested post.
+
+    gallery-dl labels a group post's image set as pcb.<POST_ID>. The
+    downloaded directory AND the JSON sidecar must agree. A previous Facebook
+    extraction downloaded an image from an unrelated post; merely receiving a
+    JPEG or matching a profile name is not sufficient evidence.
+    """
+    post_id = _facebook_group_post_id(url)
+    if not post_id or not (1 <= len(paths) <= 10):
+        return False
+    expected_set = f"pcb.{post_id}"
+    for path in paths:
+        name, ext = os.path.splitext(os.path.basename(path))
+        if ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            return False
+        if not name.isdigit():
+            return False
+        parent = os.path.basename(os.path.dirname(path))
+        if f"({expected_set})" not in parent:
+            return False
+        sidecar = os.path.splitext(path)[0] + ".json"
+        try:
+            with open(sidecar, "r", encoding="utf-8") as fp:
+                metadata = json.load(fp)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(metadata, dict):
+            return False
+        if str(metadata.get("set_id", "")) != expected_set:
+            return False
+        if str(metadata.get("id", "")) != name:
+            return False
+    return True
+
+
 async def _download_with_gallery_dl(
     url: str, output_dir: str, post_id: str,
     *, facebook_browser_profile: Optional[str] = None,
@@ -417,14 +464,14 @@ async def _download_with_gallery_dl(
     cmd = [
         binary,
         "-d", target_dir,
-        "-o", "directory=",
         "--write-metadata",
         "--no-mtime",
         "--user-agent", _DEFAULT_UA,
     ]
 
     if not _is_facebook_url(url):
-        cmd.extend(["--filename", "{post_id}_{num}.{extension}"])
+        # Preserve Facebook's gallery set directory for identity checks.
+        cmd.extend(["-o", "directory=", "--filename", "{post_id}_{num}.{extension}"])
 
     if _is_facebook_url(url):
         # Cap the download BEFORE transferring large Facebook albums.
@@ -505,6 +552,10 @@ async def _download_with_gallery_dl(
         if _is_facebook_url(url):
             # Only a single Facebook post/gallery, never an entire profile.
             downloaded = downloaded[:10]
+            if _facebook_group_post_id(url):
+                if not _verified_facebook_group_photos(url, downloaded):
+                    logging.warning("Facebook group post photo identity not verified")
+                    return None
         media_list = []
         for idx, path in enumerate(downloaded):
             ext = os.path.splitext(path)[1].lower()
@@ -806,15 +857,26 @@ async def download_universal_media(
                 target_path == "/photo.php"
                 and bool(re.search(r"(?:^|&)fbid=\d+(?:&|$)", urlsplit(target).query))
             )
+            is_verified_group_post = _facebook_group_post_id(target) is not None
             has_canonical_video_id = bool(
                 re.fullmatch(r"/(?:reel|reels|videos)/\d+/?", target_path)
                 or (target_path == "/watch/" and re.search(
                     r"(?:^|&)v=\d+(?:&|$)", urlsplit(target).query
                 ))
             )
-            if not (is_direct_photo or has_canonical_video_id):
+            if not (is_direct_photo or has_canonical_video_id or is_verified_group_post):
                 logging.warning("Facebook authenticated fallback requires direct media ID")
                 return None
+            if is_verified_group_post:
+                # This publication might be members-only: admin private chat
+                # only, and Telegram file_id cache disabled for all Facebook.
+                group_photos = await _download_with_gallery_dl(
+                    target, output_dir, post_id,
+                    facebook_browser_profile=facebook_browser_profile,
+                )
+                if group_photos and group_photos.media_list:
+                    logging.info("Facebook group post photos verified")
+                return group_photos
             if is_direct_photo:
                 photo = await _download_with_gallery_dl(
                     target, output_dir, post_id,
