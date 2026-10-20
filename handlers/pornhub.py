@@ -5,9 +5,12 @@ interface, DNS 10.2.0.1 and no eth0 route. Tunnel failure never uses Contabo.
 The bot's other handlers continue to run in the original host namespace.
 """
 import asyncio
+import json
 import logging
+import math
 import re
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -45,6 +48,95 @@ _YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
 class VideoTooLargeError(Exception):
     """The downloaded video exceeds the current bot's media size limit."""
+
+
+@dataclass
+class DownloadedVideo:
+    path: Path
+    description: str | None
+    duration: int | None = None
+    width: int | None = None
+    height: int | None = None
+    thumbnail: Path | None = None
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return int(round(number)) if math.isfinite(number) and number >= 1 else None
+
+
+def _site_description(info: dict) -> str | None:
+    """Prefer the video's real title/description; SaveVid formats and escapes it."""
+    title = str(info.get("title") or "").strip()
+    description = str(info.get("description") or "").strip()
+    if description and description.casefold().startswith(title.casefold()) and title:
+        caption = description
+    else:
+        caption = "\n\n".join(part for part in (title, description) if part)
+    return caption[:800].rstrip() or None
+
+
+async def _probe_and_make_thumbnail(video: DownloadedVideo) -> None:
+    """Read MP4 metadata and generate a JPEG preview inside the VPN namespace."""
+    if video.path.suffix.lower() != ".mp4":
+        return
+
+    # Metadata may be missing from the MP4 produced by HLS extraction. Passing
+    # duration/width/height makes Telegram render video size more consistently.
+    probe_cmd = [
+        "ip", "netns", "exec", _VPN_NAMESPACE,
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height:format=duration",
+        "-of", "json", str(video.path),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *probe_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        output, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
+        if proc.returncode == 0:
+            info = json.loads(output)
+            stream = next(iter(info.get("streams") or []), {})
+            video.duration = _positive_int(info.get("format", {}).get("duration")) or video.duration
+            video.width = _positive_int(stream.get("width")) or video.width
+            video.height = _positive_int(stream.get("height")) or video.height
+    except (OSError, ValueError, asyncio.TimeoutError):
+        logger.warning("Pornhub ffprobe unavailable; using extractor metadata")
+        if "proc" in locals() and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
+
+    thumbnail_path = video.path.parent / "preview.jpg"
+    ffmpeg_cmd = [
+        "ip", "netns", "exec", _VPN_NAMESPACE,
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+        "-y", "-ss", "1", "-i", str(video.path),
+        "-frames:v", "1",
+        "-vf", "scale=320:320:force_original_aspect_ratio=decrease",
+        "-q:v", "5", str(thumbnail_path),
+    ]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=30)
+        # Telegram thumbnail restrictions: JPEG, <= 320 px, < 200 KB.
+        if (proc.returncode == 0 and thumbnail_path.is_file()
+                and 0 < thumbnail_path.stat().st_size < 200_000):
+            video.thumbnail = thumbnail_path
+    except (OSError, asyncio.TimeoutError):
+        logger.warning("Pornhub thumbnail unavailable; sending video without preview")
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
 
 
 def _extract_video_url(text: str) -> str | None:
@@ -96,7 +188,7 @@ async def _ensure_vpn_route() -> None:
         raise RuntimeError("VPN indisponível: rota isolada não encontrada")
 
 
-async def _download_video(url: str, directory: Path) -> Path:
+async def _download_video(url: str, directory: Path) -> DownloadedVideo:
     await _ensure_vpn_route()
     cmd = [
         "ip", "netns", "exec", _VPN_NAMESPACE, _YTDLP_BIN,
@@ -109,6 +201,7 @@ async def _download_video(url: str, directory: Path) -> Path:
         "--fragment-retries", "2",
         "--concurrent-fragments", "2",
         "--no-progress",
+        "--write-info-json",
         "--max-filesize", str(_MAX_DOWNLOAD_BYTES),
         "-f", "best[height<=480]/best[height<=720]",
         "--merge-output-format", "mp4",
@@ -142,7 +235,26 @@ async def _download_video(url: str, directory: Path) -> Path:
     video = max(files, key=lambda f: f.stat().st_size)
     if video.stat().st_size > _MAX_DOWNLOAD_BYTES:
         raise VideoTooLargeError("Arquivo acima do limite de teste")
-    return video
+
+    # Info JSON is downloaded by yt-dlp inside ph-proton and removed with the
+    # temporary directory. Never fetch source metadata from the host network.
+    info_path = next(iter(directory.glob("*.info.json")), None)
+    info = {}
+    if info_path is not None:
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("Pornhub metadata unavailable; using default caption")
+
+    result = DownloadedVideo(
+        path=video,
+        description=_site_description(info),
+        duration=_positive_int(info.get("duration")),
+        width=_positive_int(info.get("width")),
+        height=_positive_int(info.get("height")),
+    )
+    await _probe_and_make_thumbnail(result)
+    return result
 
 
 @router.message(
@@ -181,7 +293,8 @@ async def download_pornhub_test(message: types.Message):
 
         async with _DOWNLOAD_LIMIT:
             with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
-                file = await _download_video(url, Path(tmp))
+                media = await _download_video(url, Path(tmp))
+                file = media.path
                 await safe_edit_text(
                     status, bm.uploading_status(lang=user_lang), parse_mode=ParseMode.HTML
                 )
@@ -190,13 +303,20 @@ async def download_pornhub_test(message: types.Message):
                 )
                 bot_url = await get_bot_url(bot)
                 caption = bm.captions(
-                    user_settings.get("captions", "on"), None, bot_url
+                    user_settings.get("captions", "on"), media.description, bot_url
                 )
 
                 if file.suffix.lower() == ".mp4":
                     sent = await message.reply_video(
                         FSInputFile(file),
                         supports_streaming=True,
+                        duration=media.duration,
+                        width=media.width,
+                        height=media.height,
+                        thumbnail=(FSInputFile(media.thumbnail, filename="thumb.jpg")
+                                   if media.thumbnail else None),
+                        cover=(FSInputFile(media.thumbnail, filename="cover.jpg")
+                               if media.thumbnail else None),
                         caption=caption or None,
                         parse_mode=ParseMode.HTML,
                         allow_sending_without_reply=True,
