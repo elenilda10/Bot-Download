@@ -116,6 +116,13 @@ async def test_handler_downloads_reel_directly_and_sends_original_caption(monkey
         facebook, "load_user_settings",
         AsyncMock(return_value={"language": "pt", "captions": "on"}),
     )
+    monkeypatch.setattr(
+        facebook, "_create_callback_token",
+        AsyncMock(return_value="0" * 24),
+    )
+    monkeypatch.setattr(
+        facebook, "_load_cache", AsyncMock(return_value=None),
+    )
     monkeypatch.setattr(facebook, "get_bot_url", AsyncMock(return_value="https://t.me/test_bot"))
     monkeypatch.setattr(facebook, "react_to_message", AsyncMock())
     monkeypatch.setattr(facebook, "send_analytics", AsyncMock())
