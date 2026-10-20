@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import os
 import re
 import time
@@ -69,6 +70,126 @@ def _store_url_hash(url: str) -> str:
 
 def _get_url_from_hash(short_hash: str) -> Optional[str]:
     return _URL_CACHE.get(short_hash)
+
+
+def _cache_key(url_hash: str, media_kind: str) -> str:
+    """Namespace V2: never treat a cached video/photo file_id as a document."""
+    return build_media_cache_key(
+        "universal", variant=f"v2:{media_kind}:{url_hash}"
+    )
+
+
+def _file_button_caption(lang: str | None) -> str:
+    return "📄 Arquivo original" if _is_pt(lang) else "📄 Original file"
+
+
+def _universal_keyboard(
+    url: str, url_hash: str, user_settings: dict,
+    *, lang: str | None, is_video: bool,
+):
+    return kb.return_video_info_keyboard(
+        views=None, likes=None, comments=None, shares=None,
+        music_play_url=None, video_url=url,
+        user_settings=user_settings,
+        audio_callback_data=f"audio:univ:{url_hash}" if is_video else None,
+        file_callback_data=f"doc:univ:{url_hash}",
+        lang=lang or "pt", has_video=is_video,
+    )
+
+
+async def _try_cached_universal(
+    message: types.Message, url: str, url_hash: str,
+    settings: dict, *, lang: str | None, bot_url: str,
+) -> bool:
+    """Serve existing Telegram media without re-running gallery-dl or yt-dlp."""
+    caption = bm.captions(settings.get("captions", "on"), None, bot_url)
+
+    if settings.get("as_document") == "on":
+        cached_document_id = await db.get_file_id(_cache_key(url_hash, "document"))
+        if cached_document_id:
+            try:
+                sent = await message.reply_document(
+                    document=cached_document_id,
+                    caption=caption or None, parse_mode=ParseMode.HTML,
+                    disable_content_type_detection=True,
+                    allow_sending_without_reply=True,
+                    reply_markup=_universal_keyboard(
+                        url, url_hash, settings, lang=lang, is_video=False
+                    ),
+                )
+                if sent and sent.document:
+                    logging.info("Universal cache hit: document")
+                    return True
+            except TelegramBadRequest:
+                logging.warning("Universal document cache ID rejected")
+    else:
+        for kind in ("video", "photo"):
+            cached_id = await db.get_file_id(_cache_key(url_hash, kind))
+            if not cached_id:
+                continue
+            keyboard = _universal_keyboard(
+                url, url_hash, settings, lang=lang, is_video=(kind == "video")
+            )
+            try:
+                if kind == "video":
+                    sent = await message.reply_video(
+                        video=cached_id, caption=caption or None,
+                        parse_mode=ParseMode.HTML, supports_streaming=True,
+                        reply_markup=keyboard, allow_sending_without_reply=True,
+                    )
+                    valid = bool(sent and sent.video)
+                else:
+                    sent = await message.reply_photo(
+                        photo=cached_id, caption=caption or None,
+                        parse_mode=ParseMode.HTML, reply_markup=keyboard,
+                        allow_sending_without_reply=True,
+                    )
+                    valid = bool(sent and sent.photo)
+                if valid:
+                    logging.info("Universal cache hit: %s", kind)
+                    return True
+            except TelegramBadRequest:
+                logging.warning("Universal %s cache ID rejected", kind)
+
+    # Telegram media groups do not have inline keyboards; cache the complete
+    # ordered album under a V2 manifest entry (never use as a Telegram ID).
+    manifest_raw = await db.get_file_id(_cache_key(url_hash, "album"))
+    if not manifest_raw:
+        return False
+    try:
+        manifest = json.loads(manifest_raw)
+        entries = manifest["items"]
+        if (manifest.get("version") != 1 or not isinstance(entries, list)
+                or not 2 <= len(entries) <= 10):
+            return False
+        album = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                return False
+            kind, file_id = entry.get("kind"), entry.get("file_id")
+            if not isinstance(file_id, str) or not file_id:
+                return False
+            item_caption = caption or None if index == 0 else None
+            if kind == "video":
+                album.append(InputMediaVideo(
+                    media=file_id, caption=item_caption, parse_mode=ParseMode.HTML,
+                    supports_streaming=True,
+                ))
+            elif kind == "photo":
+                album.append(InputMediaPhoto(
+                    media=file_id, caption=item_caption, parse_mode=ParseMode.HTML,
+                ))
+            else:
+                return False
+        sent_album = await message.reply_media_group(
+            media=album, allow_sending_without_reply=True,
+        )
+        if sent_album:
+            logging.info("Universal cache hit: album (%s items)", len(entries))
+            return True
+    except (ValueError, KeyError, TypeError, TelegramBadRequest):
+        logging.warning("Universal cached album unavailable; downloading again")
+    return False
 
 
 def _is_image_item(item) -> bool:
@@ -252,6 +373,20 @@ async def process_universal_link(
             )
         bot_url = await get_bot_url(bot)
 
+        url_hash = _store_url_hash(url)
+        if await _try_cached_universal(
+            message, url, url_hash, user_settings,
+            lang=user_lang, bot_url=bot_url,
+        ):
+            if status_message:
+                await safe_delete_message(status_message)
+            if request_lease is not None:
+                request_lease.mark_success()
+            await maybe_delete_user_message(
+                message, user_settings.get("delete_message")
+            )
+            return
+
         res = await download_universal_media(url, on_progress=on_progress)
         if not res or not res.media_list:
             if status_message:
@@ -277,22 +412,10 @@ async def process_universal_link(
             else None
         )
 
-        url_hash = _store_url_hash(url)
         is_first_image = _is_image_item(first_item) if first_item else False
-
-        audio_cb = f"audio:univ:{url_hash}" if not is_first_image else None
-        doc_cb = f"doc:univ:{url_hash}"
-
-        keyboard = kb.return_video_info_keyboard(
-            None,
-            None,
-            None,
-            None,
-            preview_url,
-            url,
-            user_settings,
-            audio_callback_data=audio_cb,
-            file_callback_data=doc_cb,
+        keyboard = _universal_keyboard(
+            url, url_hash, user_settings, lang=user_lang,
+            is_video=not is_first_image,
         )
 
         local_files_to_clean = []
@@ -305,8 +428,29 @@ async def process_universal_link(
                 local_files_to_clean.append(item.url)
 
             is_image = _is_image_item(item)
-            if not is_image and item.type == "video":
-                video_file = FSInputFile(item.url) if is_local else URLInputFile(item.url)
+            as_document = user_settings.get("as_document") == "on"
+            source_file = (
+                FSInputFile(item.url, filename=os.path.basename(item.url))
+                if is_local else URLInputFile(item.url)
+            )
+
+            if as_document:
+                # A document is a new Telegram upload. A video/photo file_id
+                # cannot be converted into a document merely by reusing it.
+                sent_message = await message.reply_document(
+                    document=source_file, caption=caption or None,
+                    parse_mode=ParseMode.HTML,
+                    disable_content_type_detection=True,
+                    reply_markup=keyboard,
+                    allow_sending_without_reply=True,
+                )
+                if sent_message and sent_message.document:
+                    await db.add_file(
+                        _cache_key(url_hash, "document"),
+                        sent_message.document.file_id, "document",
+                    )
+                    logging.info("Universal cache stored: document")
+            elif not is_image and item.type == "video":
                 thumb_file = (
                     FSInputFile(item.thumb)
                     if (item.thumb and os.path.exists(item.thumb))
@@ -316,7 +460,7 @@ async def process_universal_link(
                     local_files_to_clean.append(item.thumb)
 
                 sent_message = await message.reply_video(
-                    video=video_file,
+                    video=source_file,
                     allow_sending_without_reply=True,
                     thumbnail=thumb_file,
                     caption=caption or None,
@@ -328,20 +472,25 @@ async def process_universal_link(
                     reply_markup=keyboard,
                 )
                 if sent_message and sent_message.video:
-                    doc_cache_key = build_media_cache_key("universal", variant=f"doc:{url_hash}")
-                    await db.add_file(doc_cache_key, sent_message.video.file_id, "video")
+                    await db.add_file(
+                        _cache_key(url_hash, "video"),
+                        sent_message.video.file_id, "video",
+                    )
+                    logging.info("Universal cache stored: video")
             else:
-                photo_file = FSInputFile(item.url) if is_local else URLInputFile(item.url)
                 sent_message = await message.reply_photo(
-                    photo=photo_file,
+                    photo=source_file,
                     allow_sending_without_reply=True,
                     caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard,
                 )
                 if sent_message and sent_message.photo:
-                    doc_cache_key = build_media_cache_key("universal", variant=f"doc:{url_hash}")
-                    await db.add_file(doc_cache_key, sent_message.photo[-1].file_id, "photo")
+                    await db.add_file(
+                        _cache_key(url_hash, "photo"),
+                        sent_message.photo[-1].file_id, "photo",
+                    )
+                    logging.info("Universal cache stored: photo")
 
         else:
             media_group = []
@@ -380,10 +529,33 @@ async def process_universal_link(
                     )
 
             if media_group:
-                await message.reply_media_group(
+                sent_album = await message.reply_media_group(
                     media=media_group,
                     allow_sending_without_reply=True,
                 )
+                if sent_album and len(sent_album) == len(media_group):
+                    album_entries = []
+                    for item in sent_album:
+                        if item.video:
+                            album_entries.append({
+                                "kind": "video", "file_id": item.video.file_id,
+                            })
+                        elif item.photo:
+                            album_entries.append({
+                                "kind": "photo", "file_id": item.photo[-1].file_id,
+                            })
+                        else:
+                            break
+                    if len(album_entries) == len(sent_album):
+                        await db.add_file(
+                            _cache_key(url_hash, "album"),
+                            json.dumps(
+                                {"version": 1, "items": album_entries},
+                                separators=(",", ":"),
+                            ),
+                            "album_manifest",
+                        )
+                        logging.info("Universal cache stored: album (%s items)", len(album_entries))
 
         if status_message:
             await safe_delete_message(status_message)
@@ -415,33 +587,56 @@ async def process_universal_link(
 
 @router.callback_query(F.data.startswith("doc:univ:"))
 async def download_universal_doc_callback(call: types.CallbackQuery):
-    if not call.message:
+    if not call.message or not isinstance(call.message, types.Message):
+        await call.answer()
         return
     await call.answer()
     user_lang = await db.get_language(call.from_user.id)
     url_hash = call.data.removeprefix("doc:univ:")
-    doc_cache_key = build_media_cache_key("universal", variant=f"doc:{url_hash}")
+    if not re.fullmatch(r"[a-f0-9]{12}", url_hash):
+        return
+
+    # Old doc:{hash} entries actually hold video/photo file_ids. Never reuse
+    # them with reply_document; a separate key guarantees Telegram document.
+    doc_cache_key = _cache_key(url_hash, "document")
     cached_file_id = await db.get_file_id(doc_cache_key)
+    file_caption = _file_button_caption(user_lang)
+
     if cached_file_id:
         try:
-            await call.message.reply_document(
+            sent = await call.message.reply_document(
                 document=cached_file_id,
                 allow_sending_without_reply=True,
-                caption=(
-                "📄 Arquivo original"
-                if not str(user_lang).lower().startswith("en")
-                else "📄 Original file"
-            ),
+                caption=file_caption,
                 disable_content_type_detection=True,
             )
-            return
+            if sent and sent.document:
+                logging.info("Universal file button: document cache hit")
+                return
         except TelegramBadRequest:
-            pass
+            logging.warning("Universal file button cached document rejected")
 
     original_url = _get_url_from_hash(url_hash)
     if not original_url:
-        user_lang = await db.get_language(call.from_user.id)
-        await call.message.reply(bm.something_went_wrong(lang=user_lang), allow_sending_without_reply=True)
+        # After restart, the callback URL map may be empty. Extract it from
+        # the original message if still available, with hash verification.
+        replied = call.message.reply_to_message
+        if replied:
+            raw = get_message_text(replied)
+            match = re.search(_UNIVERSAL_LINK_REGEX, raw or "")
+            if match:
+                candidate = match.group(0).strip()
+                if hashlib.md5(candidate.encode()).hexdigest()[:12] == url_hash:
+                    original_url = candidate
+                    _URL_CACHE[url_hash] = candidate
+
+    if not original_url:
+        await call.message.reply(
+            "Envie o link novamente para baixar como arquivo."
+            if _is_pt(user_lang) else
+            "Please send the link again to download it as a file.",
+            allow_sending_without_reply=True,
+        )
         return
 
     status_message = await call.message.answer(
@@ -450,30 +645,38 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     try:
         res = await download_universal_media(original_url)
         if not res or not res.media_list:
-            await safe_delete_message(status_message)
+            await handle_download_error(call.message, lang=user_lang)
             return
 
         first_item = res.media_list[0]
-        is_local = os.path.exists(first_item.url)
-        file_input = FSInputFile(first_item.url) if is_local else URLInputFile(first_item.url)
-
-        sent = await call.message.reply_document(
-            document=file_input,
-            allow_sending_without_reply=True,
-            caption=(
-                "📄 Arquivo original"
-                if not str(user_lang).lower().startswith("en")
-                else "📄 Original file"
-            ),
-            disable_content_type_detection=True,
+        is_local = os.path.isfile(first_item.url)
+        document = (
+            FSInputFile(
+                first_item.url, filename=os.path.basename(first_item.url)
+            ) if is_local else URLInputFile(first_item.url)
         )
-        if sent and sent.document:
-            await db.add_file(doc_cache_key, sent.document.file_id, "document")
-
-        if is_local:
-            await remove_file(first_item.url)
+        try:
+            sent = await call.message.reply_document(
+                document=document,
+                allow_sending_without_reply=True,
+                caption=file_caption,
+                disable_content_type_detection=True,
+            )
+            if sent and sent.document:
+                await db.add_file(
+                    doc_cache_key, sent.document.file_id, "document"
+                )
+                logging.info("Universal file button: document cached")
+            else:
+                logging.warning("Universal file button: non-document response")
+        finally:
+            if is_local:
+                await remove_file(first_item.url)
+            if first_item.thumb and os.path.isfile(first_item.thumb):
+                await remove_file(first_item.thumb)
     except Exception as exc:
-        logging.error("Erro ao enviar doc:univ callback: %s", exc)
+        logging.error("Universal file button failed: %s", type(exc).__name__)
+        await handle_download_error(call.message, lang=user_lang)
     finally:
         await safe_delete_message(status_message)
 
