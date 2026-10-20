@@ -21,7 +21,7 @@ def _create_photo(tmp_path, *, set_id="pcb.2061916421192547", photo_id="16295843
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{photo_id}.jpg"
     path.write_bytes(b"test-image")
-    path.with_suffix(".json").write_text(
+    path.with_name(path.name + ".json").write_text(
         json.dumps({"id": photo_id, "set_id": set_id}),
         encoding="utf-8",
     )
@@ -49,13 +49,13 @@ def test_rejects_wrong_group_photo_set(tmp_path):
 
 def test_rejects_unverified_metadata(tmp_path):
     photo = _create_photo(tmp_path)
-    photo.with_suffix(".json").unlink()
+    photo.with_name(photo.name + ".json").unlink()
     assert not _verified_facebook_group_photos(GROUP_URL, [str(photo)])
 
 
 def test_rejects_mismatched_media_id(tmp_path):
     photo = _create_photo(tmp_path)
-    photo.with_suffix(".json").write_text(
+    photo.with_name(photo.name + ".json").write_text(
         json.dumps({"id": "999999", "set_id": "pcb.2061916421192547"}),
         encoding="utf-8",
     )
