@@ -194,8 +194,9 @@ async def process_universal_link(
 
     user_settings = await load_user_settings(db, message)
     user_lang = user_settings.get("language") or await db.get_language(message.from_user.id)
-    clean_url = url.split("?")[0].split("#")[0].strip()
-    post_id = hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
+    # Different signed URLs/query IDs may point to different media.
+    progress_url = url.split("#", 1)[0].strip()
+    post_id = hashlib.blake2s(progress_url.encode("utf-8"), digest_size=8).hexdigest()
 
     status_message: Optional[types.Message] = None
     progress_kb = _make_progress_keyboard(post_id, lang=user_lang)
