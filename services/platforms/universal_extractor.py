@@ -385,144 +385,173 @@ async def _download_with_ytdlp(
     post_id: Optional[str] = None,
     **kwargs: Any,
 ) -> Optional[UniversalMediaResult]:
-    clean_url = _clean_url(url)
+    # A number of generic extractors need ?id=, signed URLs or other query
+    # parameters. _clean_url() drops them, so preserve the query for yt-dlp.
+    target_url = url.split("#", 1)[0].strip()
     if not post_id:
-        post_id = hashlib.blake2s(clean_url.encode("utf-8"), digest_size=8).hexdigest()
-
+        post_id = hashlib.blake2s(target_url.encode("utf-8"), digest_size=8).hexdigest()
     os.makedirs(output_dir, exist_ok=True)
 
     binary = YTDLP_BIN if os.path.exists(YTDLP_BIN) else "yt-dlp"
-    final_output_template = os.path.join(output_dir, f"{post_id}.%(ext)s")
+    output_template = os.path.join(output_dir, f"{post_id}.%(ext)s")
     thumb_path = os.path.join(output_dir, f"{post_id}_thumb.jpg")
+    cookie_file = _resolve_cookie(target_url)
 
-    cookie_file = _resolve_cookie(clean_url)
-
+    # Normal yt-dlp requests remain the default. When a site rejects them,
+    # retry once with curl_cffi-powered Chrome impersonation if available.
+    # No new router, proxy or VPN is enabled for the Universal handler.
     title = ""
     uploader = "Universal"
-    cmd_info = [
-        binary,
-        "--dump-single-json",
-        "--no-warnings",
-        "--no-check-certificates",
-        "--user-agent", _DEFAULT_UA,
+    info_args = [
+        binary, "--dump-single-json", "--no-warnings",
+        "--no-check-certificates", "--user-agent", _DEFAULT_UA,
+        "--no-playlist", "--socket-timeout", "30", "--retries", "2",
     ]
     if cookie_file:
-        cmd_info.extend(["--cookies", cookie_file])
-    cmd_info.append(clean_url)
+        info_args.extend(["--cookies", cookie_file])
 
-    try:
-        proc_info = await asyncio.create_subprocess_exec(
-            *cmd_info,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout_info, _ = await proc_info.communicate()
-        if proc_info.returncode == 0 and stdout_info:
-            info_data = json.loads(stdout_info.decode("utf-8", errors="ignore"))
-            title = info_data.get("title") or info_data.get("description") or ""
-            uploader = info_data.get("uploader") or info_data.get("channel") or "Universal"
-    except Exception as exc:
-        logging.warning("JSON info error: %s", exc)
+    for impersonate in (False, True):
+        cmd = [
+            *info_args,
+            *(["--impersonate", "chrome"] if impersonate else []),
+            target_url,
+        ]
+        proc_info = None
+        try:
+            proc_info = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc_info.communicate(), timeout=90)
+            if proc_info.returncode == 0 and stdout:
+                data = json.loads(stdout.decode("utf-8", errors="replace"))
+                title = data.get("title") or data.get("description") or ""
+                uploader = data.get("uploader") or data.get("channel") or "Universal"
+                break
+        except (asyncio.TimeoutError, OSError, ValueError) as exc:
+            logging.warning("Universal yt-dlp info attempt failed (%s): %s",
+                            "chrome" if impersonate else "normal", type(exc).__name__)
+        finally:
+            if proc_info is not None and proc_info.returncode is None:
+                proc_info.kill()
+                await proc_info.communicate()
 
-    cmd_dl = [
-        binary,
-        "--newline",
-        "--no-warnings",
-        "--no-check-certificates",
+    base_download_args = [
+        binary, "--newline", "--no-warnings", "--no-check-certificates",
+        "--no-playlist", "--socket-timeout", "30", "--retries", "2",
+        "--fragment-retries", "2",
         "-f", "bestvideo*+bestaudio/best",
         "--merge-output-format", "mp4",
         "--user-agent", _DEFAULT_UA,
         "--print", "after_move:filepath",
-        "--progress-template", "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
-        "-o", final_output_template,
+        "--progress-template",
+        "PROG:%(progress.downloaded_bytes)s:%(progress.total_bytes_estimate)s:%(progress.speed)s",
+        "-o", output_template,
     ]
     if cookie_file:
-        cmd_dl.extend(["--cookies", cookie_file])
-    cmd_dl.append(clean_url)
+        base_download_args.extend(["--cookies", cookie_file])
+
+    async def _one_download(impersonate: bool) -> str | None:
+        cmd = [
+            *base_download_args,
+            *(["--impersonate", "chrome"] if impersonate else []),
+            target_url,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        output_path = None
+        # Drain stdout throughout the download so progress and subprocess pipes
+        # cannot block. Keep only a bounded error tail, not source URLs.
+        recent: list[str] = []
+
+        async def _consume() -> None:
+            nonlocal output_path
+            while True:
+                data = await proc.stdout.readline()
+                if not data:
+                    return
+                line = data.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                if line.startswith("PROG:") and on_progress:
+                    parts = line.split(":")
+                    if len(parts) >= 4:
+                        try:
+                            downloaded = int(parts[1]) if parts[1] not in {"", "NA"} else 0
+                            total = int(parts[2]) if parts[2] not in {"", "NA"} else None
+                            speed = float(parts[3]) if parts[3] not in {"", "NA"} else None
+                            on_progress(downloaded, total, speed)
+                        except (TypeError, ValueError, OverflowError):
+                            pass
+                elif os.path.isfile(line):
+                    output_path = line
+                else:
+                    recent.append(line)
+                    if len(recent) > 8:
+                        recent.pop(0)
+
+        try:
+            await asyncio.wait_for(_consume(), timeout=900)
+            await asyncio.wait_for(proc.wait(), timeout=15)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            raise
+
+        if proc.returncode != 0:
+            logging.warning(
+                "Universal yt-dlp download failed: mode=%s code=%s",
+                "chrome" if impersonate else "normal", proc.returncode,
+            )
+            return None
+        if output_path and os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
+            return output_path
+        for path in sorted(glob.glob(os.path.join(output_dir, f"{post_id}.*"))):
+            if (os.path.isfile(path)
+                    and not path.endswith((".part", ".ytdl", ".jpg", ".json", ".temp"))
+                    and os.path.getsize(path) > 0):
+                return path
+        return None
 
     try:
-        proc_dl = await asyncio.create_subprocess_exec(
-            *cmd_dl,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        final_path_from_stdout = None
-        while True:
-            line_bytes = await proc_dl.stdout.readline()
-            if not line_bytes:
+        target_video = None
+        for impersonate in (False, True):
+            target_video = await _one_download(impersonate)
+            if target_video:
                 break
-            line = line_bytes.decode("utf-8", errors="ignore").strip()
-            if not line:
-                continue
-            if line.startswith("PROG:") and on_progress:
-                parts = line.split(":")
-                if len(parts) >= 4:
-                    try:
-                        dl = int(parts[1]) if parts[1] and parts[1] != "NA" else 0
-                        tot = int(parts[2]) if parts[2] and parts[2] != "NA" else None
-                        spd = float(parts[3]) if parts[3] and parts[3] != "NA" else None
-                        on_progress(dl, tot, spd)
-                    except Exception:
-                        pass
-            elif not line.startswith("[") and os.path.exists(line):
-                final_path_from_stdout = line
-
-        _, stderr_dl = await proc_dl.communicate()
-
-        target_video = final_path_from_stdout
-        if not target_video or not os.path.exists(target_video):
-            candidates = glob.glob(os.path.join(output_dir, f"{post_id}*"))
-            valid = [
-                c for c in candidates
-                if not c.endswith((".part", ".ytdl", ".jpg", ".json", ".temp")) and os.path.getsize(c) > 0
-            ]
-            target_video = valid[0] if valid else None
 
         if not target_video:
-            err_msg = stderr_dl.decode("utf-8", errors="ignore") if stderr_dl else "Sem stderr"
-            logging.error("Nenhum arquivo final encontrado para post_id=%s. Erro yt-dlp: %s", post_id, err_msg[:300])
+            logging.warning("Universal yt-dlp produced no file: post_id=%s", post_id)
             return None
 
         ext = os.path.splitext(target_video)[1].lower()
         if ext in _IMAGE_EXTS:
             return UniversalMediaResult(
-                id=post_id,
-                description=title,
-                author=uploader,
-                media_list=[
-                    UniversalMediaItem(
-                        url=target_video,
-                        type="photo",
-                        thumb=target_video,
-                        index=0,
-                    )
-                ],
+                id=post_id, description=title, author=uploader,
+                media_list=[UniversalMediaItem(
+                    url=target_video, type="photo", thumb=target_video, index=0,
+                )],
             )
 
         meta = await _get_video_metadata(target_video)
         thumb = await _generate_thumbnail(target_video, thumb_path)
-
         return UniversalMediaResult(
-            id=post_id,
-            description=title,
-            author=uploader,
-            media_list=[
-                UniversalMediaItem(
-                    url=target_video,
-                    type="video",
-                    thumb=thumb,
-                    width=meta["width"],
-                    height=meta["height"],
-                    duration=meta["duration"],
-                    index=0,
-                )
-            ],
+            id=post_id, description=title, author=uploader,
+            media_list=[UniversalMediaItem(
+                url=target_video,
+                type="video", thumb=thumb,
+                width=meta["width"], height=meta["height"],
+                duration=meta["duration"], index=0,
+            )],
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        logging.error("Universal download failed: %s", exc)
-
-    return None
+        logging.warning("Universal yt-dlp processing failed: %s", type(exc).__name__)
+        return None
 
 
 async def download_universal_media(
@@ -535,7 +564,8 @@ async def download_universal_media(
     os.makedirs(output_dir, exist_ok=True)
 
     if not post_id:
-        clean = _clean_url(url)
+        # Keep meaningful query parameters in the media identity.
+        clean = url.split("#", 1)[0].strip()
         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
 
     if is_kwai_url(url):
