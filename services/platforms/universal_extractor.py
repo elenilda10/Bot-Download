@@ -13,8 +13,10 @@ from services.platforms.kwai_media import extract_kwai_video_page, is_kwai_url
 from services.platforms.facebook_media import (
     _facebook_failure_reason,
     _facebook_group_post_id,
+    _facebook_profile_post_id,
     _is_facebook_url,
     _verified_facebook_group_photos,
+    _verified_facebook_profile_photos,
     download_facebook_media,
     facebook_caption,
     facebook_gallery_arguments,
@@ -455,6 +457,10 @@ async def _download_with_gallery_dl(
             if _facebook_group_post_id(url):
                 if not _verified_facebook_group_photos(url, downloaded):
                     logging.warning("Facebook group post photo identity not verified")
+                    return None
+            elif _facebook_profile_post_id(url):
+                if not _verified_facebook_profile_photos(url, downloaded):
+                    logging.warning("Facebook profile post photo identity not verified")
                     return None
         media_list = []
         for idx, path in enumerate(downloaded):
