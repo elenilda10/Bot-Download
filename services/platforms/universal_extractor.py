@@ -356,7 +356,15 @@ async def _download_with_gallery_dl(
     url: str, output_dir: str, post_id: str,
     *, facebook_browser_profile: Optional[str] = None,
     facebook_expected_photo_ids: tuple[str, ...] | None = None,
+    facebook_gallery_test_skip_post_check: bool = False,
 ) -> Optional[UniversalMediaResult]:
+    # Testing bypass is private/admin-only and must be explicitly enabled by
+    # the caller. Never disable production identity checks for public users.
+    if facebook_gallery_test_skip_post_check and (
+        not _is_facebook_url(url) or not facebook_browser_profile
+    ):
+        logging.warning("Facebook unverified gallery test requires admin Firefox profile")
+        return None
     target_dir = os.path.join(output_dir, f"gdl_{post_id}")
     os.makedirs(target_dir, exist_ok=True)
 
@@ -455,7 +463,11 @@ async def _download_with_gallery_dl(
         if _is_facebook_url(url):
             # Only a single Facebook post/gallery, never an entire profile.
             downloaded = downloaded[:10]
-            if _facebook_group_post_id(url):
+            if facebook_gallery_test_skip_post_check:
+                # Deliberately unverified: only /fbteste in admin private chat.
+                # Never store a Telegram file_id from this experimental path.
+                logging.warning("Facebook gallery-first test: post identity check SKIPPED")
+            elif _facebook_group_post_id(url):
                 if not _verified_facebook_group_photos(url, downloaded):
                     logging.warning("Facebook group post photo identity not verified")
                     return None
