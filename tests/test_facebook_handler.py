@@ -25,6 +25,9 @@ def test_canonical_video_and_photo_link():
     assert facebook._canonical_fb_media_url(
         "https://www.facebook.com/photo.php?fbid=1743744750448069&rdid=tracking"
     ) == "https://www.facebook.com/photo.php?fbid=1743744750448069&rdid=tracking"
+    assert facebook._canonical_fb_media_url(
+        "https://www.facebook.com/groups/256772258373648/permalink/2061916421192547/?rdid=123&share_url=tracking"
+    ) == "https://www.facebook.com/groups/256772258373648/permalink/2061916421192547/"
     assert facebook._canonical_fb_media_url("https://example.com/reel/123") is None
 
 
@@ -91,4 +94,25 @@ async def test_handler_delegates_canonical_url(monkeypatch):
     await facebook.process_facebook_link(object())
     assert facebook.process_universal_link.await_args.kwargs["direct_url"] == (
         "https://www.facebook.com/reel/2480096172822069/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_group_share_link(monkeypatch):
+    proc = type("Process", (), {
+        "returncode": 0,
+        "communicate": AsyncMock(return_value=(
+            b"HTTP/2 302\r\nlocation: https://www.facebook.com/groups/256772258373648/permalink/2061916421192547/?rdid=tracking\r\n\r\n",
+            b"",
+        )),
+    })()
+    monkeypatch.setattr(
+        facebook.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)
+    )
+    result = await facebook._resolve_facebook_short_link(
+        "https://www.facebook.com/share/p/1E77eC6n4S/"
+    )
+    assert result == (
+        "https://www.facebook.com/groups/256772258373648/"
+        "permalink/2061916421192547/"
     )
