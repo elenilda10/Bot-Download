@@ -124,21 +124,93 @@ async def test_gallery_accepts_exact_link_and_prefers_shared_caption(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_facebook_service_routes_only_specific_profile_post_to_gallery(monkeypatch, tmp_path):
-    expected = SimpleNamespace(media_list=[SimpleNamespace(type="photo")])
+async def test_facebook_service_downloads_profile_photo_by_exact_post_id(monkeypatch, tmp_path):
+    photo = _photo(tmp_path, caption="Original photo caption")
+    expected = SimpleNamespace(
+        description="Original photo caption",
+        media_list=[SimpleNamespace(type="photo", url=str(photo))],
+    )
     gallery = AsyncMock(return_value=expected)
     monkeypatch.setattr(universal, "_download_with_gallery_dl", gallery)
     monkeypatch.setattr(
-        fb, "_facebook_profile_post_expected_photo_ids",
-        AsyncMock(return_value=(PHOTO_ID,)),
+        fb, "_facebook_profile_post_metadata",
+        AsyncMock(return_value={
+            "ids": (PHOTO_ID,), "description": "Texto da publicação compartilhada",
+        }),
     )
     result = await fb.download_facebook_media(
         PROFILE_POST, output_dir=str(tmp_path),
         facebook_browser_profile="/private/firefox",
     )
     assert result is expected
+    assert result.description == "Texto da publicação compartilhada"
+    assert gallery.await_args.args[0] == (
+        "https://www.facebook.com/photo/?fbid=" + PHOTO_ID + "&set="
+    )
     assert gallery.await_args.kwargs["facebook_browser_profile"] == "/private/firefox"
-    assert gallery.await_args.kwargs["facebook_expected_photo_ids"] == (PHOTO_ID,)
+    assert "facebook_expected_photo_ids" not in gallery.await_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_profile_direct_photo_rejects_different_media_id(monkeypatch, tmp_path):
+    wrong_photo = _photo(tmp_path, photo_id="1162826316324741",
+                         meta_id="1162826316324741",
+                         post_photo="https://www.facebook.com/photo/?fbid=1162826316324741")
+    wrong = SimpleNamespace(
+        description="Remember password",
+        media_list=[SimpleNamespace(type="photo", url=str(wrong_photo))],
+    )
+    monkeypatch.setattr(
+        fb, "_facebook_profile_post_metadata",
+        AsyncMock(return_value={"ids": (PHOTO_ID,), "description": "Correct shared post"}),
+    )
+    result = await fb._download_facebook_profile_post_photos(
+        PROFILE_POST, str(tmp_path), "testwrong",
+        browser_profile="/private/firefox",
+        gallery_downloader=AsyncMock(return_value=wrong),
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_profile_direct_photo_rejects_wrong_sidecar_even_if_filename_matches(
+    monkeypatch, tmp_path,
+):
+    path = _photo(tmp_path, meta_id="1162826316324741")
+    fake = SimpleNamespace(
+        description="Any", media_list=[SimpleNamespace(type="photo", url=str(path))],
+    )
+    monkeypatch.setattr(
+        fb, "_facebook_profile_post_metadata",
+        AsyncMock(return_value={"ids": (PHOTO_ID,), "description": "post"}),
+    )
+    result = await fb._download_facebook_profile_post_photos(
+        PROFILE_POST, str(tmp_path), "testwrongsidecar",
+        browser_profile=None,
+        gallery_downloader=AsyncMock(return_value=fake),
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_profile_public_download_does_not_forward_private_cookies(monkeypatch, tmp_path):
+    photo = _photo(tmp_path)
+    result = SimpleNamespace(
+        description="Photo", media_list=[SimpleNamespace(type="photo", url=str(photo))],
+    )
+    downloader = AsyncMock(return_value=result)
+    monkeypatch.setattr(universal, "_download_with_gallery_dl", downloader)
+    monkeypatch.setattr(
+        fb, "_facebook_profile_post_metadata",
+        AsyncMock(return_value={"ids": (PHOTO_ID,), "description": "Shared"}),
+    )
+    sent = await fb.download_facebook_media(
+        PROFILE_POST, output_dir=str(tmp_path), facebook_browser_profile=None,
+    )
+    assert sent is result
+    assert downloader.await_args.kwargs["facebook_browser_profile"] is None
+    assert sent.description == "Shared"
+
 
 
 
