@@ -12,6 +12,7 @@ from services.logger import logger as logging
 from services.platforms.kwai_media import extract_kwai_video_page, is_kwai_url
 from services.platforms.facebook_media import (
     _facebook_failure_reason,
+    _facebook_gallery_first_conflicts_with_post,
     _facebook_group_post_id,
     _facebook_profile_post_id,
     _is_facebook_url,
@@ -472,9 +473,11 @@ async def _download_with_gallery_dl(
             # Only a single Facebook post/gallery, never an entire profile.
             downloaded = downloaded[:10]
             if facebook_gallery_test_skip_post_check or facebook_gallery_public_unverified:
-                # Gallery-first receives exactly the resolved post URL. Facebook
-                # can produce mismatched post content; this path is NOT verified.
-                # The message handler disables caching for these downloads.
+                # Do not let an explicitly conflicting album/photo/login page
+                # reach Telegram. This is NOT full post-identity verification.
+                if _facebook_gallery_first_conflicts_with_post(url, downloaded):
+                    logging.warning("Facebook gallery-first: mismatched media metadata")
+                    return None
                 logging.warning("Facebook gallery-first: post identity NOT verified")
             elif _facebook_group_post_id(url):
                 if not _verified_facebook_group_photos(url, downloaded):
