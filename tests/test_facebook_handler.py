@@ -20,16 +20,16 @@ def test_extract_facebook_link_does_not_capture_unrelated_urls():
 
 
 def test_canonical_video_and_photo_link():
-    assert facebook._canonical_fb_media_url(
+    assert facebook_media._canonical_fb_media_url(
         "https://www.facebook.com/reel/2480096172822069/?share_url=tracking"
     ) == "https://www.facebook.com/reel/2480096172822069/"
-    assert facebook._canonical_fb_media_url(
+    assert facebook_media._canonical_fb_media_url(
         "https://www.facebook.com/photo.php?fbid=1743744750448069&rdid=tracking"
     ) == "https://www.facebook.com/photo.php?fbid=1743744750448069&rdid=tracking"
-    assert facebook._canonical_fb_media_url(
+    assert facebook_media._canonical_fb_media_url(
         "https://www.facebook.com/groups/256772258373648/permalink/2061916421192547/?rdid=123&share_url=tracking"
     ) == "https://www.facebook.com/groups/256772258373648/permalink/2061916421192547/"
-    assert facebook._canonical_fb_media_url("https://example.com/reel/123") is None
+    assert facebook_media._canonical_fb_media_url("https://example.com/reel/123") is None
 
 
 @pytest.mark.asyncio
