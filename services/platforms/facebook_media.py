@@ -114,6 +114,23 @@ def _canonical_fb_media_url(url: str) -> str | None:
 
     parts = urlsplit(url)
     path = parts.path
+    # A Facebook share/p redirect may end in story.php. gallery-dl cannot
+    # reliably handle its tracking parameters, so use a numeric post URL only
+    # when profile, story and composite post identity all agree.
+    if path.lower() == "/story.php":
+        query = parse_qs(parts.query)
+        profile_ids = query.get("id", [])
+        story_ids = query.get("story_fbid", [])
+        post_ids = query.get("post_id", [])
+        if (
+            len(profile_ids) == 1 and len(story_ids) == 1
+            and profile_ids[0].isdigit() and story_ids[0].isdigit()
+            and (not post_ids or post_ids == [f"{profile_ids[0]}_{story_ids[0]}"])
+        ):
+            return (
+                f"https://www.facebook.com/{profile_ids[0]}/"
+                f"posts/{story_ids[0]}/"
+            )
     match = _REEL_PATH.fullmatch(path)
     if match:
         return f"https://www.facebook.com/reel/{match.group(1)}/"
