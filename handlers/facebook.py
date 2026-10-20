@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from aiogram import F, Router, types
 
@@ -72,52 +72,67 @@ def _canonical_fb_media_url(url: str) -> str | None:
 
 
 async def _resolve_facebook_short_link(url: str) -> str | None:
-    """Resolve Facebook /share/ and fb.watch links with the system curl.
+    """Resolve Facebook short links using curl GETs without unsafe redirects.
 
-    Direct yt-dlp works on /reel/<id> but not the short URL. curl's ordinary
-    GET redirect flow was verified on the VPS, unlike aiohttp's redirect path.
-    Only Facebook media destinations are accepted; no browser cookies here.
+    curl's TLS/HTTP behavior worked on the VPS for /share/r/ where aiohttp
+    did not reliably resolve. Every hop is checked BEFORE requesting it,
+    preventing Facebook link redirects to unrelated or internal hosts.
+    No cookies or authenticated headers are passed to curl.
     """
-    if not _needs_redirect(url):
-        return _canonical_fb_media_url(url)
     if not _is_facebook_url(url) or not _is_facebook_media_link(url):
         return None
+    current = url
+    for _ in range(5):
+        if not _needs_redirect(current):
+            return _canonical_fb_media_url(current)
 
-    command = [
-        "curl", "--silent", "--show-error", "--location",
-        "--max-redirs", "5", "--max-time", "16", "--connect-timeout", "5",
-        "--proto", "=https", "--proto-redir", "=https",
-        "--user-agent", "Mozilla/5.0", "--output", "/dev/null",
-        "--write-out", "%{url_effective}", url,
-    ]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *command, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
+        command = [
+            "curl", "--silent", "--show-error",
+            "--max-time", "12", "--connect-timeout", "5",
+            "--proto", "=https",
+            "--user-agent", "Mozilla/5.0",
+            "--output", "/dev/null", "--dump-header", "-", current,
+        ]
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=19)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            logging.warning("Facebook short-link resolution timed out")
+            proc = await asyncio.create_subprocess_exec(
+                *command, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=14)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                logging.warning("Facebook short-link resolution timed out")
+                return None
+        except (OSError, ValueError):
+            logging.warning("Facebook short-link resolver unavailable")
             return None
-    except (OSError, ValueError):
-        logging.warning("Facebook short-link resolver unavailable")
-        return None
 
-    if proc.returncode != 0:
-        logging.warning("Facebook short-link resolver failed: code=%s", proc.returncode)
-        return None
+        if proc.returncode != 0:
+            logging.warning("Facebook short-link resolver failed: code=%s", proc.returncode)
+            return None
 
-    final_url = stdout.decode("utf-8", errors="replace").strip()
-    if _needs_redirect(final_url):
-        logging.warning("Facebook short link remained unresolved")
-        return None
-    target = _canonical_fb_media_url(final_url)
-    if not target:
-        logging.warning("Facebook short link resolved to unsupported destination")
-    return target
+        # A single GET response is enough: read the Location response header
+        # without following the redirect or downloading the target page.
+        header_lines = stdout.decode("utf-8", errors="replace").splitlines()
+        locations = [
+            line.split(":", 1)[1].strip()
+            for line in header_lines
+            if line.lower().startswith("location:")
+        ]
+        if not locations:
+            logging.warning("Facebook short link did not return a redirect")
+            return None
+
+        next_url = urljoin(current, locations[-1])
+        if urlsplit(next_url).scheme != "https" or not _is_facebook_url(next_url):
+            logging.warning("Facebook short-link redirect rejected (non-Facebook)")
+            return None
+        current = next_url
+
+    logging.warning("Facebook short-link redirect limit reached")
+    return None
 
 
 @router.message(
