@@ -3,11 +3,13 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from html import unescape
+from urllib.parse import parse_qs, unquote, urlsplit
 
 # Funciona tanto na raiz do projeto quanto dentro de scripts/.
 BASE = Path(__file__).resolve().parent
@@ -18,6 +20,7 @@ sys.path.insert(0, str(BASE))
 from dotenv import load_dotenv
 from services.platforms.facebook_media import (
     _facebook_group_post_id,
+    _facebook_profile_post_id,
     _is_facebook_media_link,
     _is_facebook_url,
     _verified_facebook_group_photos,
@@ -35,6 +38,52 @@ def midias(pasta):
         f for f in pasta.rglob("*")
         if f.is_file() and f.suffix.lower() in EXTENSIONS and f.stat().st_size > 0
     )
+
+
+def diagnosticar_post_perfil(link, arquivos):
+    """Mostra indícios sem fingir comprovação do ID da publicação.
+
+    O Facebook/gallery-dl pode extrair uma foto diferente da solicitada e
+    ainda gerar metadados internamente consistentes. Só o autor e o fbid
+    coincidirem NÃO demonstra o vínculo ao post.
+    """
+    post_id = _facebook_profile_post_id(link)
+    if not post_id:
+        return
+    perfil = urlsplit(link).path.strip("/").split("/")[0]
+    print(f"🔎 Publicação de perfil/página: {post_id} (perfil {perfil})")
+    for arquivo in arquivos:
+        if arquivo.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            print(f"  • {arquivo.name}: não é foto; vínculo não verificado")
+            continue
+        try:
+            meta = json.loads(
+                arquivo.with_name(arquivo.name + ".json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            print(f"  • {arquivo.name}: metadados ausentes; NÃO VERIFICADO")
+            continue
+        if not isinstance(meta, dict):
+            print(f"  • {arquivo.name}: metadados inválidos; NÃO VERIFICADO")
+            continue
+        foto_id = arquivo.stem
+        origem = unquote(unescape(str(meta.get("post_photo") or "").replace("\\/", "/")))
+        parsed = urlsplit(origem)
+        fbids = parse_qs(parsed.query).get("fbid", [])
+        url_foto_valida = (
+            parsed.scheme == "https"
+            and _is_facebook_url(origem)
+            and parsed.path.lower().rstrip("/") in {"/photo", "/photo.php"}
+        )
+        meta_bate = str(meta.get("id")) == foto_id
+        post_photo_bate = url_foto_valida and fbids == [foto_id]
+        autor_bate = str(meta.get("user_id")) == perfil
+        print(f"  • Foto ID: {foto_id}")
+        print(f"    Arquivo = ID do JSON: {meta_bate}")
+        print(f"    Arquivo = fbid do post_photo: {post_photo_bate}")
+        print(f"    Autor = perfil do post: {autor_bate}")
+        print(f"    Texto post_text disponível: {bool(meta.get('post_text'))}")
+        print("    ⚠️ Nenhum desses campos vincula diretamente a foto ao post", post_id)
 
 
 def validar_midias(link, arquivos):
@@ -115,6 +164,8 @@ def baixar(link, pasta, *, autenticado=False):
         return False
 
     aprovado, motivo = validar_midias(link, files)
+    if _facebook_profile_post_id(link):
+        diagnosticar_post_perfil(link, files)
     if aprovado:
         print("✅ IDENTIDADE VERIFICADA:", motivo)
     else:
