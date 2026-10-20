@@ -19,6 +19,7 @@ from aiogram.enums import ChatAction, ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile
 
+import keyboards as kb
 import messages as bm
 from app_context import bot, db
 from config import ADMIN_ID, MAX_FILE_SIZE
@@ -62,6 +63,10 @@ class DownloadedVideo:
     width: int | None = None
     height: int | None = None
     thumbnail: Path | None = None
+    views: int | None = None
+    likes: int | None = None
+    comments: int | None = None
+    shares: int | None = None
 
 
 def _positive_int(value: object) -> int | None:
@@ -70,6 +75,14 @@ def _positive_int(value: object) -> int | None:
     except (TypeError, ValueError, OverflowError):
         return None
     return int(round(number)) if math.isfinite(number) and number >= 1 else None
+
+
+def _nonnegative_int(value: object) -> int | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return int(number) if math.isfinite(number) and number >= 0 else None
 
 
 def _site_description(info: dict) -> str | None:
@@ -256,6 +269,10 @@ async def _download_video(url: str, directory: Path) -> DownloadedVideo:
         duration=_positive_int(info.get("duration")),
         width=_positive_int(info.get("width")),
         height=_positive_int(info.get("height")),
+        views=_nonnegative_int(info.get("view_count")),
+        likes=_nonnegative_int(info.get("like_count")),
+        comments=_nonnegative_int(info.get("comment_count")),
+        shares=_nonnegative_int(info.get("repost_count")),
     )
     await _probe_and_make_thumbnail(result)
     return result
@@ -276,24 +293,53 @@ def _cache_keys(url: str) -> tuple[str, str]:
     )
 
 
+def _build_video_buttons(
+    url: str,
+    settings: dict,
+    *,
+    lang: str = "pt",
+    metadata: DownloadedVideo | None = None,
+    as_document: bool = False,
+):
+    """Use the same keyboard/settings builder as the rest of SaveVid."""
+    viewkey = _video_identity(url)
+    return kb.return_video_info_keyboard(
+        views=metadata.views if metadata else None,
+        likes=metadata.likes if metadata else None,
+        comments=metadata.comments if metadata else None,
+        shares=metadata.shares if metadata else None,
+        music_play_url=None,
+        video_url=url,
+        user_settings=settings,
+        audio_callback_data=f"ph:mp3:{viewkey}",
+        file_callback_data=None if as_document else f"ph:doc:{viewkey}",
+        lang=lang,
+        has_video=True,
+        platform="pornhub",  # Music recognition is IG/TikTok-only by design.
+    )
+
+
 async def _reply_with_cached_file(
     message: types.Message,
     *,
     file_id: str,
     as_document: bool,
     caption: str,
+    reply_markup=None,
 ) -> types.Message | None:
     """Reuse Telegram's file_id; invalid IDs fall back to the VPN download."""
     try:
         if as_document:
             return await message.reply_document(
                 document=file_id,
+                reply_markup=reply_markup,
                 caption=caption or None,
                 parse_mode=ParseMode.HTML,
                 allow_sending_without_reply=True,
             )
         return await message.reply_video(
             video=file_id,
+            reply_markup=reply_markup,
             caption=caption or None,
             parse_mode=ParseMode.HTML,
             supports_streaming=True,
@@ -344,6 +390,8 @@ async def download_pornhub_test(message: types.Message):
         )
 
         video_cache_key, doc_cache_key = _cache_keys(url)
+        as_document = user_settings.get("as_document") == "on"
+        selected_cache_key = doc_cache_key if as_document else video_cache_key
         bot_url = await get_bot_url(bot)
         # The shared cache stores file IDs, not source-page metadata. Cached
         # sends keep the SaveVid footer and user's current caption settings.
@@ -355,13 +403,8 @@ async def download_pornhub_test(message: types.Message):
         # download it twice, even when they arrive from different chats.
         async with _DOWNLOAD_LIMIT:
             sent = None
-            for key, is_document in (
-                (video_cache_key, False),
-                (doc_cache_key, True),
-            ):
-                cached_id = await db.get_file_id(key)
-                if not cached_id:
-                    continue
+            cached_id = await db.get_file_id(selected_cache_key)
+            if cached_id:
                 await safe_edit_text(
                     status, bm.uploading_status(lang=user_lang),
                     parse_mode=ParseMode.HTML,
@@ -370,15 +413,20 @@ async def download_pornhub_test(message: types.Message):
                     bot, message.chat.id, ChatAction.UPLOAD_VIDEO, None
                 )
                 sent = await _reply_with_cached_file(
-                    message, file_id=cached_id, as_document=is_document,
+                    message,
+                    file_id=cached_id,
+                    as_document=as_document,
                     caption=cached_caption,
+                    reply_markup=_build_video_buttons(
+                        url, user_settings, lang=user_lang,
+                        as_document=as_document,
+                    ),
                 )
                 if sent:
                     logger.info(
                         "Pornhub Telegram media reused from shared cache: %s",
-                        "document" if is_document else "video",
+                        "document" if as_document else "video",
                     )
-                    break
 
             if sent is None:
                 with tempfile.TemporaryDirectory(prefix="pornhub-test-") as tmp:
@@ -396,10 +444,15 @@ async def download_pornhub_test(message: types.Message):
                         media.description, bot_url,
                     )
 
-                    if file.suffix.lower() == ".mp4":
+                    reply_markup = _build_video_buttons(
+                        url, user_settings, lang=user_lang,
+                        metadata=media, as_document=as_document,
+                    )
+                    if not as_document and file.suffix.lower() == ".mp4":
                         sent = await message.reply_video(
                             FSInputFile(file),
                             supports_streaming=True,
+                            reply_markup=reply_markup,
                             duration=media.duration,
                             width=media.width,
                             height=media.height,
@@ -418,6 +471,7 @@ async def download_pornhub_test(message: types.Message):
                     else:
                         sent = await message.reply_document(
                             FSInputFile(file),
+                            reply_markup=reply_markup,
                             caption=caption or None,
                             parse_mode=ParseMode.HTML,
                             allow_sending_without_reply=True,
