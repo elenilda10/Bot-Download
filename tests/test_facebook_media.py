@@ -99,3 +99,26 @@ def test_facebook_tool_args_never_enable_cookies_by_default():
     assert "--cookies-from-browser" in facebook_media.facebook_ytdlp_arguments(
         "/private/firefox-profile"
     )
+
+
+
+def test_video_caption_uses_author_description_before_generic_title():
+    assert facebook_media.facebook_video_caption({
+        "title": "Video",
+        "description": "Texto original do Reel 🔥",
+    }) == "Texto original do Reel 🔥"
+    assert facebook_media.facebook_video_caption({
+        "caption": "  Legenda do criador\n",
+        "description": "Outra descrição",
+        "title": "Video",
+    }) == "Legenda do criador"
+    assert facebook_media.facebook_video_caption({
+        "title": "Video",
+        "description": "",
+    }) == ""
+    assert facebook_media.facebook_video_caption({
+        "title": "Facebook video #2480096172822069",
+    }) == ""
+    assert facebook_media.facebook_video_caption({
+        "title": "Título real",
+    }) == "Título real"
