@@ -496,7 +496,16 @@ async def _download_with_ytdlp(
         try:
             await asyncio.wait_for(_consume(), timeout=900)
             await asyncio.wait_for(proc.wait(), timeout=15)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
+        except asyncio.TimeoutError:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            logging.warning(
+                "Universal yt-dlp timed out: mode=%s",
+                "chrome" if impersonate else "normal",
+            )
+            return None
+        except asyncio.CancelledError:
             if proc.returncode is None:
                 proc.kill()
             await proc.communicate()
