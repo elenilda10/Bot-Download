@@ -275,6 +275,34 @@ def facebook_caption(metadata: dict) -> str:
     original = metadata.get("caption")
     return original.strip() if isinstance(original, str) else ""
 
+
+
+def facebook_video_caption(metadata: dict) -> str:
+    """Prefer the original Reel/video post description over a generic title.
+
+    yt-dlp can produce title="Video" (and similar generated placeholders)
+    even when the accompanying description contains the author's post text.
+    Do not invent a caption if the remote metadata has no usable text.
+    """
+    if not isinstance(metadata, dict):
+        return ""
+    generic = {
+        "video", "facebook video", "facebook reel", "reel",
+        "watch video", "vídeo", "vídeo do facebook",
+    }
+    for key in ("caption", "description", "title", "fulltitle"):
+        raw = metadata.get(key)
+        if not isinstance(raw, str):
+            continue
+        value = raw.strip()
+        if (
+            value
+            and value.casefold() not in generic
+            and not re.fullmatch(r"Facebook video #\d+", value, re.IGNORECASE)
+        ):
+            return value
+    return ""
+
 async def download_facebook_media(
     url: str,
     output_dir: str = "downloads",
