@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -320,19 +321,24 @@ async def auditar_link(original, numero, raiz, testar_firefox=True, testar_video
             print(f"    yt-dlp/{teste['acesso']}: {teste['status']} | {len(teste['midias'])} midias")
 
     tentativas = registro["tentativas"]
-    fotos_ou_videos = [
-        (t["ferramenta"], t["acesso"], sorted(
-            m["id_arquivo"] for m in t["midias"]
-        )) for t in tentativas if t["midias"]
-    ]
-    if len(fotos_ou_videos) >= 2 and len({
-        tuple(row[2]) for row in fotos_ou_videos
-    }) > 1:
+    # Comparar somente a MESMA ferramenta entre acessos.
+    # Uma imagem e um video do mesmo post podem ter IDs diferentes normalmente.
+    divergencias = []
+    for ferramenta in ("gallery-dl", "yt-dlp"):
+        conjuntos = {
+            tuple(sorted(m["id_arquivo"] for m in t["midias"]))
+            for t in tentativas
+            if t["ferramenta"] == ferramenta and t["midias"]
+        }
+        if len(conjuntos) > 1:
+            divergencias.append(ferramenta)
+    if divergencias:
         registro["observacoes"].append(
-            "DIVERGENCIA entre IDs extraidos: comparar ferramentas/acessos; "
-            "nao aprovar imagem por coincidencia de metadados"
+            "CONFLITO entre IDs no acesso publico e Firefox em "
+            + ", ".join(divergencias) + "; nenhuma aprovacao automatica"
         )
-    if any(t["status"] == "verificado" for t in tentativas):
+        registro["status"] = "conflito"
+    elif any(t["status"] == "verificado" for t in tentativas):
         registro["status"] = "verificado"
     elif any(t["midias"] for t in tentativas):
         registro["status"] = "nao_verificado"
@@ -345,6 +351,44 @@ async def auditar_link(original, numero, raiz, testar_firefox=True, testar_video
     if not testar_firefox or not PROFILE:
         registro["observacoes"].append("Firefox nao testado nesta execucao")
     return registro
+
+
+def autoteste():
+    """Checagens sem rede, sem cookies e sem fazer download."""
+    assert tipo_post("https://www.facebook.com/groups/9/permalink/123/") == "grupo"
+    assert tipo_post("https://www.facebook.com/77/posts/123/") == "perfil_pagina"
+    assert tipo_post("https://www.facebook.com/reel/123/") == "reel"
+    assert tipo_post("https://www.facebook.com/photo/?fbid=987") == "foto_direta"
+    assert id_video_esperado("https://www.facebook.com/reel/123/") == "123"
+    assert id_video_esperado("https://www.facebook.com/watch/?v=987") == "987"
+    with tempfile.TemporaryDirectory() as tmp:
+        pasta = Path(tmp) / "Photos from Example (pcb.123)"
+        pasta.mkdir()
+        foto = pasta / "987.jpg"
+        foto.write_bytes(b"imagem de teste")
+        meta = {
+            "id": "987", "set_id": "pcb.123", "user_id": "77",
+            "post_photo": "https://www.facebook.com/photo/?fbid=987",
+            "post_text": "Texto de teste",
+        }
+        Path(str(foto) + ".json").write_text(json.dumps(meta), encoding="utf-8")
+        status, _ = validar_imagens(
+            "https://www.facebook.com/groups/9/permalink/123/", [foto]
+        )
+        assert status == "verificado", "grupo de fotos com identidade completa"
+        status, _ = validar_imagens(
+            "https://www.facebook.com/77/posts/123/", [foto]
+        )
+        assert status == "nao_verificado", "post de perfil exige vínculo próprio"
+        status, _ = validar_imagens(
+            "https://www.facebook.com/photo/?fbid=987", [foto]
+        )
+        assert status == "verificado", "foto direta com ID consistente"
+        status, _ = validar_imagens(
+            "https://www.facebook.com/photo/?fbid=888", [foto]
+        )
+        assert status == "nao_verificado", "ID errado não pode ser aprovado"
+    print("✅ AUTOTESTE LOCAL APROVADO: grupo, perfil, foto direta, Reel e video.")
 
 
 def ler_entradas(args):
@@ -379,7 +423,7 @@ def escrever_relatorios(raiz, registros, config):
         "total_links": len(registros),
         "totais": {
             status: sum(r["status"] == status for r in registros)
-            for status in ("verificado", "nao_verificado", "falha")
+            for status in ("verificado", "nao_verificado", "conflito", "falha")
         },
         "resultados": registros,
     }
@@ -405,6 +449,7 @@ def escrever_relatorios(raiz, registros, config):
         f"Links: {len(registros)} | {resumo['totais']}",
         "VERIFICADO = ID da midia ligado a um identificador pedido pela URL.",
         "NAO VERIFICADO = download existe, mas associacao ao post nao foi demonstrada.",
+        "CONFLITO = IDs diferentes por modo de acesso, exige revisao manual.",
         "FALHA = sem midia ou erro.",
         "",
     ]
@@ -427,6 +472,8 @@ def escrever_relatorios(raiz, registros, config):
 async def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description="Superauditoria de posts Facebook em lote")
+    parser.add_argument("--autoteste", action="store_true",
+                        help="Verificar classificadores/validadores sem rede")
     parser.add_argument("--arquivo", help="TXT com um link por linha")
     parser.add_argument("--url", action="append", help="URL para auditoria; pode repetir")
     parser.add_argument("--sem-firefox", action="store_true", help="Nao utilizar sessao autenticada")
@@ -434,6 +481,9 @@ async def main():
     parser.add_argument("--max-video-mb", type=int, default=150,
                         help="Tamanho maximo por video (padrao 150 MB)")
     args = parser.parse_args()
+    if args.autoteste:
+        autoteste()
+        return
     if not 1 <= args.max_video_mb <= 300:
         parser.error("--max-video-mb deve estar entre 1 e 300")
     if not GALLERY.exists():
