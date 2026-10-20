@@ -193,12 +193,12 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
             bm.downloading_video_status(lang=user_lang)
         )
 
+    local_files_to_clean: list[str] = []
     try:
         await send_analytics(user_id=message.from_user.id, chat_type=message.chat.type, action_name="instagram")
         user_settings = await load_user_settings(db, message)
         bot_url = await get_bot_url(bot)
 
-        local_files_to_clean: list[str] = []
         async with _get_post_lock(url):
             # Cache first: reusing a Telegram file_id avoids extraction,
             # downloading, re-uploading and expensive thumbnail processing.
