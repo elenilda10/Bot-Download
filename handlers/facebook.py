@@ -26,14 +26,14 @@ logging = logging.bind(service="facebook")
 # Domain-anchored pattern: not facebook.com.evil.example. No generic catch-all,
 # because a matching aiogram handler stops propagation to other platform routers.
 FACEBOOK_LINK_REGEX = (
-    r"https?://(?:(?:[a-z0-9-]+\\.)*facebook\\.com|"
-    r"(?:www\\.)?fb\\.com|(?:www\\.)?fb\\.watch|"
-    r"(?:www\\.)?fbs\\.watch)"
-    r"(?::443)?(?=[/?#\\s]|$)[^\\s<>]*"
+    r"https?://(?:(?:[a-z0-9-]+\.)*facebook\.com|"
+    r"(?:www\.)?fb\.com|(?:www\.)?fb\.watch|"
+    r"(?:www\.)?fbs\.watch)"
+    r"(?::443)?(?=[/?#\s]|$)[^\s<>]*"
 )
 _LINK_PATTERN = re.compile(FACEBOOK_LINK_REGEX, re.IGNORECASE)
-_REEL_PATH = re.compile(r"/(?:reel|reels)/(\\d+)/?", re.IGNORECASE)
-_VIDEO_PATH = re.compile(r"/videos/(\\d+)/?", re.IGNORECASE)
+_REEL_PATH = re.compile(r"/(?:reel|reels)/(\d+)/?", re.IGNORECASE)
+_VIDEO_PATH = re.compile(r"/videos/(\d+)/?", re.IGNORECASE)
 _SHORT_FB_HOSTS = {"fb.watch", "www.fb.watch", "fbs.watch", "www.fbs.watch"}
 
 
