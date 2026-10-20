@@ -118,3 +118,126 @@ async def test_universal_bypass_requires_both_fb_url_and_browser_profile(tmp_pat
         facebook_browser_profile="/firefox/admin",
         facebook_gallery_test_skip_post_check=True,
     ) is None
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", [None, "/firefox/admin"])
+async def test_standard_gallery_first_respects_cookie_scope(monkeypatch, profile):
+    url = "https://www.facebook.com/100044420049874/posts/1725673385589980/"
+    fake = SimpleNamespace(
+        media_list=[SimpleNamespace(type="photo", url="/tmp/test.jpg")],
+        description="Foto",
+    )
+    gallery = AsyncMock(return_value=fake)
+    monkeypatch.setattr(universal_extractor, "_download_with_gallery_dl", gallery)
+    monkeypatch.setattr(universal_extractor, "_download_with_ytdlp", AsyncMock())
+    result = await facebook_media.download_facebook_media(
+        url, output_dir="/tmp",
+        facebook_gallery_first=True,
+        facebook_browser_profile=profile,
+    )
+    assert result is fake
+    assert gallery.await_args.kwargs["facebook_browser_profile"] == profile
+    assert gallery.await_args.kwargs["facebook_gallery_public_unverified"] == (profile is None)
+    assert gallery.await_args.kwargs["facebook_gallery_test_skip_post_check"] == bool(profile)
+
+
+def test_gallery_first_rejects_obviously_wrong_album_and_login_screen(tmp_path):
+    import json
+
+    path = tmp_path / "154.jpg"
+    path.write_bytes(b"image")
+    url = "https://www.facebook.com/groups/137676310429643/permalink/2237506800446573/"
+    meta = {
+        "id": "154", "set_id": "pcb.999999",
+        "post_photo": "https://www.facebook.com/photo/?fbid=154",
+    }
+    (tmp_path / "154.jpg.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert facebook_media._facebook_gallery_first_conflicts_with_post(
+        url, [str(path)],
+    )
+
+    meta["set_id"] = "pcb.2237506800446573"
+    (tmp_path / "154.jpg.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert not facebook_media._facebook_gallery_first_conflicts_with_post(
+        url, [str(path)],
+    )
+
+    meta["post_text"] = "Remember password"
+    (tmp_path / "154.jpg.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert facebook_media._facebook_gallery_first_conflicts_with_post(
+        url, [str(path)],
+    )
+
+
+@pytest.mark.asyncio
+async def test_normal_handler_gallery_first_album_has_no_progress_or_extra_url(monkeypatch, tmp_path):
+    monkeypatch.setenv("FB_GALLERY_FIRST", "1")
+    monkeypatch.setattr(facebook, "OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(facebook, "_create_callback_token", AsyncMock(return_value="a" * 24))
+    old_cache = AsyncMock()
+    monkeypatch.setattr(facebook, "_load_cache", old_cache)
+    fake_db = SimpleNamespace(
+        get_language=AsyncMock(return_value="pt"),
+        add_file=AsyncMock(),
+    )
+    monkeypatch.setattr(facebook, "db", fake_db)
+    monkeypatch.setattr(facebook, "_resolve_facebook_short_link", AsyncMock(
+        return_value="https://www.facebook.com/100044420049874/posts/1725673385589980/"
+    ))
+    monkeypatch.setattr(facebook, "get_message_text", lambda _:
+        "https://www.facebook.com/share/1MGrq5g49B/")
+    monkeypatch.setattr(facebook.cmd_mod, "is_banned", AsyncMock(return_value=False))
+    monkeypatch.setattr(facebook, "should_skip_duplicate_business_message", AsyncMock(return_value=False))
+    lease = SimpleNamespace(mark_success=AsyncMock(), finish=AsyncMock())
+    monkeypatch.setattr(facebook, "claim_message_request", AsyncMock(return_value=lease))
+    monkeypatch.setattr(facebook, "load_user_settings", AsyncMock(
+        return_value={"language": "pt", "captions": "on"}
+    ))
+    monkeypatch.setattr(facebook, "get_bot_url", AsyncMock(return_value="https://t.me/test"))
+    monkeypatch.setattr(facebook, "react_to_message", AsyncMock())
+    monkeypatch.setattr(facebook, "send_analytics", AsyncMock())
+    monkeypatch.setattr(facebook, "safe_edit_text", AsyncMock())
+    monkeypatch.setattr(facebook, "safe_delete_message", AsyncMock())
+    monkeypatch.setattr(facebook, "maybe_delete_user_message", AsyncMock())
+    monkeypatch.setattr(facebook, "bot", SimpleNamespace(send_chat_action=AsyncMock()))
+    monkeypatch.delenv("FACEBOOK_FIREFOX_PROFILE", raising=False)
+
+    async def gallery_download(url, *, output_dir, **options):
+        assert options["facebook_gallery_first"] is True
+        assert options["facebook_browser_profile"] is None
+        from pathlib import Path
+        p1, p2 = Path(output_dir) / "one.jpg", Path(output_dir) / "two.jpg"
+        p1.write_bytes(b"photo-one")
+        p2.write_bytes(b"photo-two")
+        return SimpleNamespace(
+            description="Legenda original",
+            media_list=[
+                SimpleNamespace(url=str(p1), type="photo", thumb=None),
+                SimpleNamespace(url=str(p2), type="photo", thumb=None),
+            ],
+        )
+
+    downloader = AsyncMock(side_effect=gallery_download)
+    monkeypatch.setattr(facebook, "download_facebook_media", downloader)
+
+    status = SimpleNamespace()
+    message = SimpleNamespace(
+        from_user=SimpleNamespace(id=1234),
+        chat=SimpleNamespace(id=1234, type="private"),
+        message_id=42,
+        answer=AsyncMock(return_value=status),
+        reply_media_group=AsyncMock(return_value=[
+            SimpleNamespace(photo=[SimpleNamespace(file_id="id1")], video=None, document=None, audio=None),
+            SimpleNamespace(photo=[SimpleNamespace(file_id="id2")], video=None, document=None, audio=None),
+        ]),
+    )
+    await facebook.process_facebook_link(message)
+    downloader.assert_awaited_once()
+    message.reply_media_group.assert_awaited_once()
+    # Only the download status message, no obsolete "Publicação original" reply.
+    assert message.answer.await_count == 1
+    assert "reply_markup" not in message.answer.await_args.kwargs
+    old_cache.assert_not_awaited()
+    fake_db.add_file.assert_not_awaited()
