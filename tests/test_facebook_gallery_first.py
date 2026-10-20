@@ -241,3 +241,23 @@ async def test_normal_handler_gallery_first_album_has_no_progress_or_extra_url(m
     assert "reply_markup" not in message.answer.await_args.kwargs
     old_cache.assert_not_awaited()
     fake_db.add_file.assert_not_awaited()
+
+
+
+def test_gallery_first_preserves_multi_photo_album_when_post_photo_repeats(tmp_path):
+    import json
+
+    files = []
+    for photo_id in ("111", "222"):
+        photo = tmp_path / f"{photo_id}.jpg"
+        photo.write_bytes(b"photo")
+        (tmp_path / f"{photo_id}.jpg.json").write_text(
+            json.dumps({
+                "id": photo_id, "set_id": "pcb.2237506800446573",
+                "post_photo": "https://www.facebook.com/photo/?fbid=111",
+            }),
+            encoding="utf-8",
+        )
+        files.append(str(photo))
+    url = "https://www.facebook.com/groups/137676310429643/permalink/2237506800446573/"
+    assert not facebook_media._facebook_gallery_first_conflicts_with_post(url, files)
