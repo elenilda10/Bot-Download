@@ -227,7 +227,24 @@ def main() -> None:
                 return
             for name in changed:
                 git("add", "-f", "--", name, cwd=worktree)
-            git("diff", "--cached", "--check", cwd=worktree)
+            # Bulk VPS snapshots can contain pre-existing trailing whitespace.
+            # Preserve original code byte-for-byte; do not block publication just
+            # for formatting, but still reject unresolved Git conflict markers.
+            whitespace = git("diff", "--cached", "--check", cwd=worktree, check=False)
+            if whitespace.returncode:
+                report = (whitespace.stdout + whitespace.stderr).decode("utf-8", "replace")
+                if (
+                    whitespace.returncode > 1
+                    or "leftover conflict marker" in report.lower()
+                    or "fatal:" in report.lower()
+                ):
+                    raise RuntimeError("Diff contém conflito não resolvido ou erro de Git; nada enviado")
+                warnings = [line for line in report.splitlines() if line.strip()]
+                print(
+                    "AVISO: verificação de formatação encontrou",
+                    len(warnings),
+                    "ocorrência(s); preservando código original da VPS."
+                )
             print(f"Arquivos prontos para commit: {len(changed)}")
             for name in changed:
                 print("  +", name)
