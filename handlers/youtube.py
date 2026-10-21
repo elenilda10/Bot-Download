@@ -605,7 +605,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
                 bot, message.chat.id, "upload_audio", business_id
             )
             return await send_audio_with_thumbnail(
-                message.reply_audio,
+                message.answer_audio,
                 audio=file_id,
                 title=yt["title"],
                 performer=audio_artist,
@@ -652,7 +652,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
                 else bot_avatar
             )
             return await send_audio_with_thumbnail(
-                message.reply_audio,
+                message.answer_audio,
                 audio=FSInputFile(
                     path,
                     filename=build_audio_filename(yt.get("title")),
@@ -770,7 +770,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
                 bot, call.message.chat.id, "upload_audio", business_id
             )
             return await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=file_id,
                 title=yt.get("title"),
                 performer=audio_artist,
@@ -817,7 +817,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
                 else bot_avatar
             )
             return await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=FSInputFile(
                     path,
                     filename=build_audio_filename(yt.get("title")),
