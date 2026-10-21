@@ -120,7 +120,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
-            return await message.reply_audio(
+            return await message.answer_audio(
                 audio=file_id,
                 allow_sending_without_reply=True,
                 caption=bm.captions(user_settings["captions"], None, bot_url),
@@ -137,7 +137,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             )
             youtube_track = await asyncio.to_thread(search_youtube_track, query)
             if not youtube_track or not youtube_track.get("webpage_url"):
-                await message.reply(bm.spotify_source_not_found(lang=user_lang), allow_sending_without_reply=True)
+                await message.answer(bm.spotify_source_not_found(lang=user_lang), allow_sending_without_reply=True)
                 return False
             return True
 
@@ -193,7 +193,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+            await message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
 
         await run_audio_flow(
             cache_key=cache_key,
@@ -211,7 +211,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
         )
     except SpotifyError as exc:
         logging.warning("Spotify metadata error: url=%s error=%s", source_url, exc)
-        await message.reply(bm.spotify_metadata_failed(lang=user_lang), allow_sending_without_reply=True)
+        await message.answer(bm.spotify_metadata_failed(lang=user_lang), allow_sending_without_reply=True)
     except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError) as exc:
         await handle_download_backpressure_error(
             exc,
