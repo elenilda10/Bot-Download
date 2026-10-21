@@ -169,7 +169,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
                 else await get_bot_avatar_thumbnail(bot)
             )
             return await send_audio_with_thumbnail(
-                message.reply_audio,
+                message.answer_audio,
                 audio=FSInputFile(
                     path,
                     filename=build_audio_filename(track.get("title")),
