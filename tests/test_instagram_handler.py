@@ -203,7 +203,7 @@ async def test_instagram_media_group_uses_cached_file_ids(monkeypatch):
 
     assert instagram.inst_service.download_media.await_count == 0
     assert message.answer_media_group.await_count == 1
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 20
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert message.answer_video.await_args.kwargs["video"] == "cached-video-id"
     assert message.reply_video.await_count == 0
 
@@ -254,7 +254,7 @@ async def test_instagram_media_group_replies_only_on_first_sent_message(monkeypa
         None,
     )
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 20
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert "reply_to_message_id" not in message.answer_video.await_args.kwargs
     assert message.answer_video.await_args.kwargs["video"].path == "/tmp/2.mp4"
     assert message.reply_video.await_count == 0
@@ -315,7 +315,7 @@ async def test_instagram_media_group_sends_all_items_when_carousel_exceeds_ten(m
     assert result is True
     assert instagram.inst_service.download_media.await_count == 13
     assert message.answer_media_group.await_count == 2
-    assert message.answer_media_group.await_args_list[0].kwargs["reply_to_message_id"] == 20
+    assert "reply_to_message_id" not in message.answer_media_group.await_args_list[0].kwargs
     assert "reply_to_message_id" not in message.answer_media_group.await_args_list[1].kwargs
     assert message.answer_photo.await_args.kwargs["photo"].path == "/tmp/12.jpg"
     assert message.reply_photo.await_count == 0
