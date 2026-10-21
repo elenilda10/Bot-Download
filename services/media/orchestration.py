@@ -91,8 +91,8 @@ def make_message_backpressure_handler(
         await handle_download_backpressure(
             exc,
             business_id=business_id,
-            on_rate_limit_reply=lambda retry_after: message.reply(build_rate_limit_text(retry_after)),
-            on_queue_busy_reply=lambda position: message.reply(build_queue_busy_text(position)),
+            on_rate_limit_reply=lambda retry_after: message.answer(build_rate_limit_text(retry_after)),
+            on_queue_busy_reply=lambda position: message.answer(build_queue_busy_text(position)),
             on_business_error=lambda: handle_download_error(message, business_id=business_id),
         )
 

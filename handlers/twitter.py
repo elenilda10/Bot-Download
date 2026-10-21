@@ -134,7 +134,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
             await bot.send_chat_action(message.chat.id, ChatAction.RECORD_VIDEO)
 
         user_lang = await db.get_language(message.from_user.id)
-        status_message = await message.reply(
+        status_message = await message.answer(
             bm.downloading_video_status(lang=user_lang),
             allow_sending_without_reply=True,
         )
@@ -166,7 +166,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                     limit=4096,
                 )
 
-                await message.reply(
+                await message.answer(
                     text_caption,
                     allow_sending_without_reply=True,
                     parse_mode=ParseMode.HTML,
@@ -209,7 +209,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
 
             if item.type == "video":
                 thumb_input = FSInputFile(item.thumb) if item.thumb and os.path.exists(item.thumb) else None
-                await message.reply_video(
+                await message.answer_video(
                     video=file_input,
                     allow_sending_without_reply=True,
                     caption=caption,
@@ -222,7 +222,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                     supports_streaming=True,
                 )
             else:
-                await message.reply_photo(
+                await message.answer_photo(
                     photo=file_input,
                     allow_sending_without_reply=True,
                     caption=caption,
@@ -259,7 +259,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                     )
 
             if media_group:
-                await message.reply_media_group(
+                await message.answer_media_group(
                     media=media_group,
                     allow_sending_without_reply=True,
                 )

@@ -166,7 +166,7 @@ async def handle_xvideos(message: types.Message) -> None:
                         )
 
                     if como_arquivo:
-                        enviado = await message.reply_document(
+                        enviado = await message.answer_document(
                             document=cached_id,
                             caption=caption,
                             parse_mode="HTML",
@@ -175,7 +175,7 @@ async def handle_xvideos(message: types.Message) -> None:
                             allow_sending_without_reply=True,
                         )
                     else:
-                        enviado = await message.reply_video(
+                        enviado = await message.answer_video(
                             video=cached_id,
                             caption=caption,
                             parse_mode="HTML",
@@ -205,7 +205,7 @@ async def handle_xvideos(message: types.Message) -> None:
                         )
 
                     if como_arquivo:
-                        enviado = await message.reply_document(
+                        enviado = await message.answer_document(
                             document=FSInputFile(media.path),
                             caption=caption,
                             parse_mode="HTML",
@@ -218,7 +218,7 @@ async def handle_xvideos(message: types.Message) -> None:
                             media.path
                         )
 
-                        enviado = await message.reply_video(
+                        enviado = await message.answer_video(
                             video=FSInputFile(media.path),
                             thumbnail=(
                                 FSInputFile(capa)

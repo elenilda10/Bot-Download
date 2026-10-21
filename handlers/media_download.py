@@ -36,7 +36,7 @@ async def _process_inline_album_deeplink(message: types.Message, payload: str) -
 
     request = get_inline_album_request(token)
     if not request:
-        await message.reply(bm.inline_album_link_invalid(lang=user_lang))
+        await message.answer(bm.inline_album_link_invalid(lang=user_lang))
         return True
 
     try:
@@ -50,10 +50,10 @@ async def _process_inline_album_deeplink(message: types.Message, payload: str) -
             request.service,
             summarize_url_for_log(request.url),
         )
-        await message.reply(bm.something_went_wrong(lang=user_lang))
+        await message.answer(bm.something_went_wrong(lang=user_lang))
         return True
 
-    await message.reply(bm.inline_album_link_invalid(lang=user_lang))
+    await message.answer(bm.inline_album_link_invalid(lang=user_lang))
     return True
 
 
@@ -177,7 +177,7 @@ async def process_batch_links(message: types.Message):
                     summarize_url_for_log(url),
                     exc,
                 )
-                await message.reply(bm.something_went_wrong(lang=user_lang))
+                await message.answer(bm.something_went_wrong(lang=user_lang))
 
         await safe_delete_message(status_message)
         status_message = await message.answer(bm.batch_links_finished(len(selected_links), lang=user_lang))
@@ -211,7 +211,7 @@ async def _process_batch_links_parallel(
                     summarize_url_for_log(url),
                     exc,
                 )
-                await message.reply(bm.something_went_wrong(lang=user_lang))
+                await message.answer(bm.something_went_wrong(lang=user_lang))
             finally:
                 await safe_delete_message(status_message)
 
