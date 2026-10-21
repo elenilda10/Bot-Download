@@ -259,7 +259,7 @@ async def test_process_tiktok_video_reuses_inflight_download_across_business_cha
             from_user=SimpleNamespace(id=42, username="sender"),
             chat=SimpleNamespace(id=chat_id, type="private"),
             message_id=message_id,
-            reply_video=AsyncMock(side_effect=reply_video),
+            answer_video=AsyncMock(side_effect=reply_video),
         )
 
     monkeypatch.setattr(tiktok, "send_analytics", AsyncMock())
@@ -372,7 +372,7 @@ async def test_process_tiktok_photos_replies_only_on_first_sent_message(monkeypa
         ["https://cdn.example.com/1.jpg", "https://cdn.example.com/2.jpg"],
     )
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 7
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert (
         message.answer_photo.await_args.kwargs["photo"]
         == "https://cdn.example.com/2.jpg"
