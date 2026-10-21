@@ -24,7 +24,7 @@ async def test_process_spotify_downloads_matching_track_with_metadata(monkeypatc
         business_connection_id=None,
         chat=SimpleNamespace(id=99, type="private"),
         answer=AsyncMock(return_value=SimpleNamespace(delete=AsyncMock())),
-        reply_audio=AsyncMock(
+        answer_audio=AsyncMock(
             return_value=SimpleNamespace(audio=SimpleNamespace(file_id="telegram-audio-id"))
         ),
         reply=AsyncMock(),
@@ -68,7 +68,7 @@ async def test_process_spotify_downloads_matching_track_with_metadata(monkeypatc
     spotify.download_mp3_with_ytdlp_metrics.assert_awaited_once()
     spotify.prepare_mp3_metadata.assert_awaited_once_with(str(audio_path), track)
     prepared_metadata.cleanup.assert_called_once_with()
-    kwargs = message.reply_audio.await_args.kwargs
+    kwargs = message.answer_audio.await_args.kwargs
     assert kwargs["audio"].filename == "Track Name.mp3"
     assert kwargs["title"] == "Track Name"
     assert kwargs["performer"] == "Artist Name"
