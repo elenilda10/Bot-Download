@@ -165,7 +165,7 @@ async def _send_with_reaction(
     emoji: Optional[str] = None,
     business_id: Optional[int] = None,
     skip_if_business: bool = True,
-    method: str = "reply",
+    method: str = "answer",
     **kwargs: Any,
 ) -> None:
     if emoji:
@@ -188,9 +188,6 @@ async def _send_with_reaction(
                     "chat_id": message.chat.id,
                     "text": text,
                     "receiver_user_id": user_id,
-                    "reply_parameters": {
-                        "message_id": message.message_id
-                    }
                 }
                 res = await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -204,9 +201,11 @@ async def _send_with_reaction(
         except Exception as exc:
             print("[EFÊMERO EXCEÇÃO]:", exc)
 
-    responder = getattr(message, method, None)
+    # Error/status notifications must not depend on a moderated-away link.
+    safe_method = method.replace("reply", "answer", 1) if method.startswith("reply") else method
+    responder = getattr(message, safe_method, None)
     if not responder:
-        raise AttributeError(f"Message object has no method '{method}'")
+        raise AttributeError(f"Message object has no method '{safe_method}'")
 
     try:
         await responder(text, **kwargs)
@@ -232,7 +231,7 @@ async def handle_download_error(
     emoji: str = "👎",
     business_id: Optional[int] = None,
     skip_if_business: bool = True,
-    method: str = "reply",
+    method: str = "answer",
     lang: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
@@ -255,7 +254,7 @@ async def handle_video_too_large(
     *,
     business_id: Optional[int] = None,
     skip_if_business: bool = True,
-    method: str = "reply",
+    method: str = "answer",
     lang: Optional[str] = None,
     **kwargs: Any,
 ) -> None:
