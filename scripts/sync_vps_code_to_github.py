@@ -63,7 +63,7 @@ def run(*args: str, cwd: Path = SOURCE, check: bool = True, input_bytes: bytes |
     )
     if check and result.returncode:
         msg = result.stderr.decode("utf-8", "replace").strip()
-        msg = re.sub(r"(https?://)[^/@\\s]+@", r"\\1***@", msg)
+        msg = re.sub(r"(https?://)[^/@\s]+@", r"\1***@", msg)
         if args[:2] == ("git", "push"):
             msg = "verifique se o Git da VPS tem permissão para enviar ao GitHub"
         raise RuntimeError(f"{args[0]} {args[1] if len(args)>1 else ''} falhou: {msg[:500]}")
