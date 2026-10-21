@@ -165,7 +165,6 @@ async def test_send_cached_media_entries_replies_only_on_first_batch_and_caches_
         message_id=7,
         answer_media_group=AsyncMock(return_value=[SimpleNamespace(photo=[SimpleNamespace(file_id="sent-photo-id")])]),
         answer_video=AsyncMock(return_value=SimpleNamespace(video=SimpleNamespace(file_id="sent-video-id"))),
-        reply_video=AsyncMock(),
         answer_photo=AsyncMock(),
         reply_photo=AsyncMock(),
     )
@@ -195,12 +194,12 @@ async def test_send_cached_media_entries_replies_only_on_first_batch_and_caches_
         reply_markup=None,
     )
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 7
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert message.answer_video.await_args.kwargs["video"].path == "/tmp/2.mp4"
     assert message.answer_video.await_args.kwargs["width"] == 720
     assert message.answer_video.await_args.kwargs["height"] == 1280
     assert message.answer_video.await_args.kwargs["supports_streaming"] is True
-    assert message.reply_video.await_count == 0
+    assert message.answer_video.await_count == 0
     assert db_service.add_file.await_count == 2
 
 
@@ -217,7 +216,6 @@ async def test_send_cached_media_entries_supports_url_based_photo_entries(monkey
         answer_photo=AsyncMock(return_value=SimpleNamespace(photo=[SimpleNamespace(file_id="last-photo-id")])),
         reply_photo=AsyncMock(),
         answer_video=AsyncMock(),
-        reply_video=AsyncMock(),
     )
     db_service = SimpleNamespace(add_file=AsyncMock())
     entries = [
@@ -245,7 +243,7 @@ async def test_send_cached_media_entries_supports_url_based_photo_entries(monkey
         reply_markup=None,
     )
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 11
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert message.answer_photo.await_args.kwargs["photo"] == "https://cdn.example.com/2.jpg"
     db_service.add_file.assert_awaited_once_with("album#1", "last-photo-id", "photo")
 
@@ -268,7 +266,6 @@ async def test_send_cached_media_entries_splits_large_albums_into_multiple_batch
         answer_photo=AsyncMock(return_value=SimpleNamespace(photo=[SimpleNamespace(file_id="last-photo-id")])),
         reply_photo=AsyncMock(),
         answer_video=AsyncMock(),
-        reply_video=AsyncMock(),
     )
     db_service = SimpleNamespace(add_file=AsyncMock())
     entries = [
@@ -293,7 +290,7 @@ async def test_send_cached_media_entries_splits_large_albums_into_multiple_batch
     assert message.answer_media_group.await_count == 2
     first_batch_kwargs = message.answer_media_group.await_args_list[0].kwargs
     second_batch_kwargs = message.answer_media_group.await_args_list[1].kwargs
-    assert first_batch_kwargs["reply_to_message_id"] == 99
+    assert "reply_to_message_id" not in first_batch_kwargs
     assert "reply_to_message_id" not in second_batch_kwargs
     assert len(first_batch_kwargs["media"]) == 10
     assert len(second_batch_kwargs["media"]) == 2
@@ -316,7 +313,6 @@ async def test_send_cached_media_entries_probes_all_batch_videos_and_caches_grou
         answer_photo=AsyncMock(return_value=SimpleNamespace(photo=[SimpleNamespace(file_id="last-photo-id")])),
         reply_photo=AsyncMock(),
         answer_video=AsyncMock(),
-        reply_video=AsyncMock(),
     )
     db_service = SimpleNamespace(add_file=AsyncMock())
     entries = [
@@ -366,12 +362,12 @@ async def test_send_cached_media_entries_probes_all_batch_videos_and_caches_grou
 
 def _make_sender_message():
     return SimpleNamespace(
-        reply_video=AsyncMock(
+        answer_video=AsyncMock(
             return_value=SimpleNamespace(
                 document=None, video=SimpleNamespace(file_id="video-file-id")
             )
         ),
-        reply_document=AsyncMock(
+        answer_document=AsyncMock(
             return_value=SimpleNamespace(
                 document=SimpleNamespace(file_id="doc-file-id"), video=None
             )
@@ -396,20 +392,21 @@ async def test_make_video_or_document_senders_sends_cached_video():
 
     sent = await send_cached("cached-file-id")
 
-    message.reply_video.assert_awaited_once_with(
+    message.answer_video.assert_awaited_once_with(
         video="cached-file-id",
+        allow_sending_without_reply=True,
         caption="caption",
         reply_markup=reply_markup,
         parse_mode="HTML",
     )
-    message.reply_document.assert_not_awaited()
+    message.answer_document.assert_not_awaited()
     assert extract_file_id(sent) == "video-file-id"
 
 
 @pytest.mark.asyncio
 async def test_make_video_or_document_senders_cached_bad_request_returns_none():
     message = _make_sender_message()
-    message.reply_video.side_effect = TelegramBadRequest(
+    message.answer_video.side_effect = TelegramBadRequest(
         method=SimpleNamespace(__api_method__="sendVideo"),
         message="Telegram server says - Bad Request: wrong file identifier",
     )
@@ -444,10 +441,10 @@ async def test_make_video_or_document_senders_sends_downloaded_document(monkeypa
     sent = await send_downloaded("/tmp/video.mp4")
 
     probe.assert_not_awaited()
-    kwargs = message.reply_document.await_args.kwargs
+    kwargs = message.answer_document.await_args.kwargs
     assert isinstance(kwargs["document"], FSInputFile)
     assert kwargs["disable_content_type_detection"] is True
-    message.reply_video.assert_not_awaited()
+    message.answer_video.assert_not_awaited()
     assert extract_file_id(sent) == "doc-file-id"
 
 
@@ -469,7 +466,7 @@ async def test_make_video_or_document_senders_sends_downloaded_video(monkeypatch
     await send_downloaded("/tmp/video.mp4")
 
     probe.assert_awaited_once_with("/tmp/video.mp4")
-    kwargs = message.reply_video.await_args.kwargs
+    kwargs = message.answer_video.await_args.kwargs
     assert isinstance(kwargs["video"], FSInputFile)
     assert kwargs["width"] == 640
     assert kwargs["height"] == 360
