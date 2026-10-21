@@ -233,10 +233,17 @@ def main() -> None:
             whitespace = git("diff", "--cached", "--check", cwd=worktree, check=False)
             if whitespace.returncode:
                 report = (whitespace.stdout + whitespace.stderr).decode("utf-8", "replace")
+                details = report.lower()
+                known_whitespace = (
+                    "trailing whitespace" in details
+                    or "new blank line at eof" in details
+                    or "space before tab in indent" in details
+                )
                 if (
-                    whitespace.returncode > 1
-                    or "leftover conflict marker" in report.lower()
-                    or "fatal:" in report.lower()
+                    whitespace.returncode >= 128
+                    or not known_whitespace
+                    or "leftover conflict marker" in details
+                    or "fatal:" in details
                 ):
                     raise RuntimeError("Diff contém conflito não resolvido ou erro de Git; nada enviado")
                 warnings = [line for line in report.splitlines() if line.strip()]
