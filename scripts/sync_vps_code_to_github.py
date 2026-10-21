@@ -152,7 +152,7 @@ def merge_text(name: str, base: bytes, upstream: bytes, local: bytes, tmp: Path)
         str(tmp / "main"), str(tmp / "base"), str(tmp / "vps"),
         check=False,
     )
-    if process.returncode == 1:
+    if 0 < process.returncode <= 127:
         # VPS is authoritative for this one-time export. The branch is for
         # review and will NOT be auto-merged into main.
         print(f"REVISAR CONFLITO: {name} (mantida a versao da VPS na branch)")
