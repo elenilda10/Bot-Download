@@ -65,7 +65,6 @@ async def _send_ephemeral_group_error(
             "text": text,
             "parse_mode": "HTML",
             "receiver_user_id": user_id,
-            "reply_parameters": {"message_id": message_id},
         }
         if callback_query_id:
             payload["callback_query_id"] = callback_query_id
