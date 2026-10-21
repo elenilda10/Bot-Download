@@ -180,7 +180,7 @@ def _extract_video_url(text: str) -> str | None:
 async def show_pornhub_test_vpn(message: types.Message):
     if not message.from_user or message.from_user.id != ADMIN_ID:
         return
-    await message.reply(
+    await message.answer(
         "🔒 Router Pornhub: VPN fixa no namespace ph-proton.\n"
         "DNS Proton 10.2.0.1. Este comando é apenas informativo; "
         "/phvpn on e /phvpn off não alteram a conexão."
@@ -367,14 +367,14 @@ async def _reply_with_cached_file(
     """Reuse Telegram's file_id; invalid IDs fall back to the VPN download."""
     try:
         if as_document:
-            return await message.reply_document(
+            return await message.answer_document(
                 document=file_id,
                 reply_markup=reply_markup,
                 caption=caption or None,
                 parse_mode=ParseMode.HTML,
                 allow_sending_without_reply=True,
             )
-        return await message.reply_video(
+        return await message.answer_video(
             video=file_id,
             reply_markup=reply_markup,
             caption=caption or None,
@@ -453,7 +453,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                 )
                 try:
                     if kind == "doc":
-                        sent = await message.reply_document(
+                        sent = await message.answer_document(
                             document=cached_id, caption=footer,
                             parse_mode=ParseMode.HTML,
                             reply_markup=_build_video_buttons(
@@ -462,7 +462,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                             allow_sending_without_reply=True,
                         )
                     else:
-                        sent = await message.reply_audio(
+                        sent = await message.answer_audio(
                             audio=cached_id, caption=footer,
                             parse_mode=ParseMode.HTML,
                             allow_sending_without_reply=True,
@@ -486,7 +486,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                         media.description, bot_url,
                     )
                     if kind == "doc":
-                        sent = await message.reply_document(
+                        sent = await message.answer_document(
                             FSInputFile(media.path),
                             caption=caption,
                             parse_mode=ParseMode.HTML,
@@ -503,7 +503,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                     else:
                         mp3 = await _convert_video_to_mp3(media.path, directory)
                         title = (media.description or "Audio").splitlines()[0][:100]
-                        sent = await message.reply_audio(
+                        sent = await message.answer_audio(
                             audio=FSInputFile(mp3, filename=f"{viewkey}.mp3"),
                             title=title,
                             caption=caption,
@@ -624,7 +624,7 @@ async def download_pornhub_test(message: types.Message):
                         metadata=media, as_document=as_document,
                     )
                     if not as_document and file.suffix.lower() == ".mp4":
-                        sent = await message.reply_video(
+                        sent = await message.answer_video(
                             FSInputFile(file),
                             supports_streaming=True,
                             reply_markup=reply_markup,
@@ -644,7 +644,7 @@ async def download_pornhub_test(message: types.Message):
                             allow_sending_without_reply=True,
                         )
                     else:
-                        sent = await message.reply_document(
+                        sent = await message.answer_document(
                             FSInputFile(file),
                             reply_markup=reply_markup,
                             caption=caption or None,
