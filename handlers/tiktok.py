@@ -762,7 +762,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
                 business_id,
             )
             return await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=db_file_id,
                 caption=bm.captions(None, None, bot_url),
                 bot_avatar=bot_avatar,
@@ -823,7 +823,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
         )
         await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
         sent_message = await send_audio_with_thumbnail(
-            call.message.reply_audio,
+            call.message.answer_audio,
             audio=FSInputFile(metrics.path),
             title=info.description or (
                 "Áudio do TikTok"
