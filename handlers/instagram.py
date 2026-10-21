@@ -97,14 +97,14 @@ async def _try_instagram_cache(
         try:
             keyboard = _cached_keyboard(url, settings, kind, lang)
             if kind == "video":
-                sent = await message.reply_video(
+                sent = await message.answer_video(
                     video=cached_id, caption=caption or None,
                     parse_mode=ParseMode.HTML, supports_streaming=True,
                     reply_markup=keyboard, allow_sending_without_reply=True,
                 )
                 valid = bool(sent and sent.video)
             else:
-                sent = await message.reply_photo(
+                sent = await message.answer_photo(
                     photo=cached_id, caption=caption or None,
                     parse_mode=ParseMode.HTML, reply_markup=keyboard,
                     allow_sending_without_reply=True,
@@ -142,7 +142,7 @@ async def _try_instagram_cache(
                 group.append(InputMediaPhoto(**common))
             else:
                 return False
-        sent_group = await message.reply_media_group(
+        sent_group = await message.answer_media_group(
             media=group, allow_sending_without_reply=True,
         )
         if sent_group and len(sent_group) == len(group):
@@ -267,7 +267,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                         FSInputFile(item.thumb)
                         if item.thumb and os.path.isfile(item.thumb) else None
                     )
-                    sent = await message.reply_video(
+                    sent = await message.answer_video(
                         video=file_input, thumbnail=thumbnail,
                         caption=caption or None, parse_mode=ParseMode.HTML,
                         width=item.width or 1280, height=item.height or 720,
@@ -280,7 +280,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                         )
                         logging.info("Instagram cache stored: video")
                 else:
-                    sent = await message.reply_photo(
+                    sent = await message.answer_photo(
                         photo=file_input, caption=caption or None,
                         parse_mode=ParseMode.HTML, reply_markup=keyboard,
                         allow_sending_without_reply=True,
@@ -313,7 +313,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                     else:
                         group.append(InputMediaPhoto(**common))
 
-                sent_group = await message.reply_media_group(
+                sent_group = await message.answer_media_group(
                     media=group, allow_sending_without_reply=True
                 )
                 if sent_group and len(sent_group) == len(group):
