@@ -356,7 +356,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         if not yt:
             if status_message:
                 await safe_delete_message(status_message)
-            await message.reply(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
+            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
             return
 
         video_id = yt.get("id") or "video"
@@ -581,7 +581,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
 
         yt = await _get_youtube_video_with_timeout(url)
         if not yt:
-            await message.reply(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
+            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
             return
 
         audio_duration = yt.get("duration")
@@ -678,7 +678,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+            await message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
 
         result = await run_audio_flow(
             cache_key=cache_key,
@@ -837,7 +837,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
             await handle_download_error(call.message, business_id=business_id)
 
         async def _on_too_large():
-            await call.message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+            await call.message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
 
         await run_audio_flow(
             cache_key=cache_key,
