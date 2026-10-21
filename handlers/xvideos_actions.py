@@ -192,14 +192,14 @@ async def handle_xvideos_button(call: types.CallbackQuery):
             if cached:
                 try:
                     if parts[1] == "a":
-                        sent = await message.reply_audio(
+                        sent = await message.answer_audio(
                             audio=cached,
                             caption=caption,
                             parse_mode="HTML",
                             allow_sending_without_reply=True,
                         )
                     else:
-                        sent = await message.reply_document(
+                        sent = await message.answer_document(
                             document=cached,
                             caption=caption,
                             parse_mode="HTML",
@@ -227,7 +227,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
                         audio = await convert_mp3(
                             media.path, folder
                         )
-                        sent = await message.reply_audio(
+                        sent = await message.answer_audio(
                             audio=FSInputFile(audio),
                             caption=caption,
                             parse_mode="HTML",
@@ -235,7 +235,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
                         )
                         attachment = sent.audio
                     else:
-                        sent = await message.reply_document(
+                        sent = await message.answer_document(
                             document=FSInputFile(media.path),
                             caption=caption,
                             parse_mode="HTML",
