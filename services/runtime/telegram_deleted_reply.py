@@ -31,12 +31,15 @@ _REPLYABLE_SEND_METHODS = frozenset({
     "SendVenue",
     "SendPoll",
     "SendDice",
+    "SendPaidMedia",
+    "CopyMessage",
 })
 
 _MISSING_REPLY_ERRORS = (
     "message to be replied not found",
     "replied message not found",
     "reply message not found",
+    "reply to message not found",
     "message to reply not found",
     "message to be replied to not found",
 )
