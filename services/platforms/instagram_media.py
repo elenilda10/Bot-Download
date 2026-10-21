@@ -21,6 +21,11 @@ EXTENSION_COOKIES_PATH = "/root/Bot-Download/cookies.txt"
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
+# Opt-in: use the independently validated gallery-dl build only for Stories.
+# Keep the existing gallery-dl and cookie-file behavior for other Instagram URLs.
+INSTAGRAM_STORY_GDL_BIN = os.getenv("INSTAGRAM_STORY_GDL_BIN", "").strip()
+INSTAGRAM_FIREFOX_PROFILE = os.getenv("INSTAGRAM_FIREFOX_PROFILE", "").strip()
+
 PUBLIC_COBALT_INSTANCES = [
     "https://cobalt-api.kwiatekm.tokyo",
     "https://cobalt.xy2.dev",
@@ -88,8 +93,12 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
         os.makedirs(target_dir, exist_ok=True)
 
         binary = GDL_BIN if os.path.exists(GDL_BIN) else "gallery-dl"
+        if story_id and INSTAGRAM_STORY_GDL_BIN:
+            if os.path.isfile(INSTAGRAM_STORY_GDL_BIN) and os.access(INSTAGRAM_STORY_GDL_BIN, os.X_OK):
+                binary = INSTAGRAM_STORY_GDL_BIN
+            else:
+                logger.warning("Instagram Story: gallery-dl configurado indisponivel; usando padrao")
 
-        # Aqui entra a flag corrigida com {shortcode}_{num}.{extension}
         cmd = [
             binary,
             "--no-part",
@@ -97,15 +106,23 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
             "--retries", "3",
             "-d", target_dir,
             "-o", "directory=",
-            "--filename", "{shortcode}_{num}.{extension}",
             "--write-metadata",
-            "--user-agent", BROWSER_UA,
         ]
 
-        if story_id:
-            cmd.extend(["--filter", f"str(media_id) == '{story_id}' or str(id) == '{story_id}' or str(post_id) == '{story_id}'"])
+        # A URL /stories/usuario/ID/ ja identifica um unico Story.
+        # Nao aplicar filtros ou template de shortcode (que e proprio de posts).
+        # O nome padrao do gallery-dl usa o ID do Story para MP4/JPG.
+        if not story_id:
+            cmd.extend(["--filename", "{shortcode}_{num}.{extension}"])
+            cmd.extend(["--user-agent", BROWSER_UA])
 
-        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
+        profile_cookies_db = os.path.join(INSTAGRAM_FIREFOX_PROFILE, "cookies.sqlite")
+        if story_id and INSTAGRAM_FIREFOX_PROFILE and os.path.isfile(profile_cookies_db):
+            cmd.extend([
+                "--cookies-from-browser",
+                f"firefox/instagram.com:{INSTAGRAM_FIREFOX_PROFILE}",
+            ])
+        elif os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
             cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
 
         cmd.append(url)
@@ -154,7 +171,8 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
                             pass
                 saved_files = matching_files
             else:
-                saved_files = [saved_files[0]]
+                logger.warning("Instagram Story: nenhum arquivo corresponde ao ID %s", story_id)
+                return None
 
         media_items = []
         for idx, fpath in enumerate(saved_files):
