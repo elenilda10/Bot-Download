@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish VPS source-code changes to a NEW GitHub branch, without touching the running tree.
+"""Publish the full VPS source-code snapshot to a NEW GitHub branch, without touching the running tree.
 
 The VPS contains runtime state, media, Firefox cookies, backups and certificates.
 This tool only stages reviewed source-code extensions, rejects obvious secrets,
@@ -72,11 +72,11 @@ def git(*args: str, cwd: Path = SOURCE, check: bool = True):
 
 
 def candidates() -> list[str]:
-    modified = git("diff", "--name-only", "-z", "HEAD", "--").stdout
+    tracked = git("ls-files", "--cached", "-z").stdout
     new = git("ls-files", "--others", "--exclude-standard", "-z").stdout
     return sorted({
         s.decode("utf-8", "surrogateescape")
-        for s in (modified + new).split(b"\0") if s
+        for s in (tracked + new).split(b"\0") if s
     })
 
 
@@ -170,15 +170,15 @@ def main() -> None:
         raise RuntimeError("O remote origin não aponta para o repositório GitHub esperado.")
     selected = [name for name in candidates() if allowed(name)]
     if not selected:
-        print("Nenhum arquivo de código alterado/novo encontrado.")
+        print("Nenhum arquivo de código encontrado.")
         return
-    print(f"Arquivos de código selecionados: {len(selected)}")
+    print(f"Arquivos de código na VPS: {len(selected)}")
     print("Dados privados, backups, cookies e mídias não serão enviados.")
     source_files = {}
     total = 0
     for name in selected:
         if not (SOURCE / name).exists():
-            raise RuntimeError(f"Arquivo de código excluído localmente: {name}; revisão necessária.")
+            raise RuntimeError(f"Arquivo de código ausente/excluído localmente: {name}; revisão necessária.")
         raw = read_local(name)
         total += len(raw)
         if total > LIMIT_TOTAL:
@@ -205,11 +205,12 @@ def main() -> None:
                         print(f"REVISAR CONFLITO: {name} (arquivo novo na VPS e na main; priorizada VPS)")
                     if base is not None and upstream is None:
                         print(f"REVISAR CONFLITO: {name} (removido da main; restaurado da VPS)")
-                    merged = (
-                        merge_text(name, base, upstream, local, merge_tmp)
-                        if base is not None and upstream is not None
-                        else local
-                    )
+                    # Snapshot faithful to the code on VPS; no automatic merge
+                    # into main is performed. Review any displaced upstream
+                    # changes before merging the resulting branch.
+                    if upstream is not None and local != upstream and base != upstream:
+                        print(f"REVISAR DIVERGENCIA: {name} (branch usa VPS; main intacta)")
+                    merged = local
                     inspect_text(merged, name)
                     if merged == upstream:
                         continue
@@ -230,7 +231,7 @@ def main() -> None:
             git("commit", "-m", "Sync VPS application code (exclude secrets and runtime data)", cwd=worktree)
             print("Enviando para branch isolada...")
             git("push", "-u", "origin", branch, cwd=worktree)
-            print("SUCESSO: código publicado em branch para revisão.")
+            print("SUCESSO: snapshot de codigo da VPS publicado em branch para revisao.")
             print(f"BRANCH={branch}")
             print(f"LINK=https://github.com/{REPO}/tree/{branch}")
             print("A main não foi alterada; o serviço não foi reiniciado.")
