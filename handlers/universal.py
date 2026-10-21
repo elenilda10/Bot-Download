@@ -77,7 +77,7 @@ def _recover_callback_url(message: types.Message, url_hash: str) -> str | None:
     original = _get_url_from_hash(url_hash)
     if original:
         return original
-    replied = message.reply_to_message
+    replied = message.answer_to_message
     if replied:
         text = get_message_text(replied)
         match = re.search(_UNIVERSAL_LINK_REGEX, text or "")
@@ -137,7 +137,7 @@ async def _try_cached_universal(
         cached_document_id = await db.get_file_id(_cache_key(url_hash, "document"))
         if cached_document_id:
             try:
-                sent = await message.reply_document(
+                sent = await message.answer_document(
                     document=cached_document_id,
                     caption=caption or None, parse_mode=ParseMode.HTML,
                     disable_content_type_detection=True,
@@ -161,14 +161,14 @@ async def _try_cached_universal(
             )
             try:
                 if kind == "video":
-                    sent = await message.reply_video(
+                    sent = await message.answer_video(
                         video=cached_id, caption=caption or None,
                         parse_mode=ParseMode.HTML, supports_streaming=True,
                         reply_markup=keyboard, allow_sending_without_reply=True,
                     )
                     valid = bool(sent and sent.video)
                 else:
-                    sent = await message.reply_photo(
+                    sent = await message.answer_photo(
                         photo=cached_id, caption=caption or None,
                         parse_mode=ParseMode.HTML, reply_markup=keyboard,
                         allow_sending_without_reply=True,
@@ -210,7 +210,7 @@ async def _try_cached_universal(
                 ))
             else:
                 return False
-        sent_album = await message.reply_media_group(
+        sent_album = await message.answer_media_group(
             media=album, allow_sending_without_reply=True,
         )
         if sent_album:
@@ -483,7 +483,7 @@ async def process_universal_link(
             if as_document:
                 # A document is a new Telegram upload. A video/photo file_id
                 # cannot be converted into a document merely by reusing it.
-                sent_message = await message.reply_document(
+                sent_message = await message.answer_document(
                     document=source_file, caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     disable_content_type_detection=True,
@@ -503,7 +503,7 @@ async def process_universal_link(
                 )
                 # Both Telegram fields matter: thumbnail for the file preview
                 # and cover for its in-chat presentation.
-                sent_message = await message.reply_video(
+                sent_message = await message.answer_video(
                     video=source_file,
                     allow_sending_without_reply=True,
                     thumbnail=(
@@ -529,7 +529,7 @@ async def process_universal_link(
                     )
                     logging.info("Universal cache stored: video")
             else:
-                sent_message = await message.reply_photo(
+                sent_message = await message.answer_photo(
                     photo=source_file,
                     allow_sending_without_reply=True,
                     caption=caption or None,
@@ -587,7 +587,7 @@ async def process_universal_link(
                     )
 
             if media_group:
-                sent_album = await message.reply_media_group(
+                sent_album = await message.answer_media_group(
                     media=media_group,
                     allow_sending_without_reply=True,
                 )
@@ -656,7 +656,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     # previously cached file_id. Facebook MP3 and file buttons are disabled.
     callback_url = _recover_callback_url(call.message, url_hash)
     if callback_url and _is_facebook_url(callback_url):
-        await call.message.reply(
+        await call.message.answer(
             "Este botão ainda não está disponível para o Facebook.",
             allow_sending_without_reply=True,
         )
@@ -670,7 +670,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
 
     if cached_file_id:
         try:
-            sent = await call.message.reply_document(
+            sent = await call.message.answer_document(
                 document=cached_file_id,
                 allow_sending_without_reply=True,
                 caption=file_caption,
@@ -685,7 +685,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     original_url = _recover_callback_url(call.message, url_hash)
 
     if not original_url:
-        await call.message.reply(
+        await call.message.answer(
             "Envie o link novamente para baixar como arquivo."
             if _is_pt(user_lang) else
             "Please send the link again to download it as a file.",
@@ -710,7 +710,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
             ) if is_local else URLInputFile(first_item.url)
         )
         try:
-            sent = await call.message.reply_document(
+            sent = await call.message.answer_document(
                 document=document,
                 allow_sending_without_reply=True,
                 caption=file_caption,
@@ -748,7 +748,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     # previously cached file_id. Facebook MP3 and file buttons are disabled.
     callback_url = _recover_callback_url(call.message, url_hash)
     if callback_url and _is_facebook_url(callback_url):
-        await call.message.reply(
+        await call.message.answer(
             "Este botão ainda não está disponível para o Facebook.",
             allow_sending_without_reply=True,
         )
@@ -764,7 +764,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         cached_audio_id = await db.get_file_id(audio_cache_key)
 
     if not cached_audio_id and not original_url:
-        await call.message.reply(
+        await call.message.answer(
             "Envie o link novamente para baixar o MP3."
             if _is_pt(user_lang) else
             "Please send the link again to download MP3.",
@@ -788,7 +788,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
                 call.message.business_connection_id,
             )
             sent_cached_audio = await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=cached_audio_id,
                 caption=bm.captions(None, None, bot_url),
                 bot_avatar=bot_avatar,
@@ -803,7 +803,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
             logging.warning("Universal cached audio ID rejected")
         if not original_url:
             await safe_delete_message(status_message)
-            await call.message.reply(
+            await call.message.answer(
                 "Envie o link novamente para baixar o MP3."
                 if _is_pt(user_lang) else
                 "Please send the link again to download MP3.",
@@ -840,7 +840,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
             return
 
         if os.path.getsize(output_mp3_path) >= MAX_FILE_SIZE:
-            await call.message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+            await call.message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
             await remove_file(output_mp3_path)
             await safe_delete_message(status_message)
             return
@@ -849,7 +849,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         await send_chat_action_if_needed(bot, call.message.chat.id, "upload_audio", call.message.business_connection_id)
 
         sent_audio = await send_audio_with_thumbnail(
-            call.message.reply_audio,
+            call.message.answer_audio,
             audio=FSInputFile(output_mp3_path),
             title=res.description or (
                 "Áudio"
