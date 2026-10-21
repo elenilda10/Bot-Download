@@ -112,7 +112,7 @@ async def test_threads_service_fetches_canonical_post_url(tmp_path):
 @pytest.mark.asyncio
 async def test_threads_text_post_replies_with_post_text(monkeypatch):
     message = type("Message", (), {})()
-    message.reply = AsyncMock(return_value=object())
+    message.answer = AsyncMock(return_value=object())
     post = threads.ThreadsPost(
         id="text_only",
         description="Only text",
@@ -131,8 +131,8 @@ async def test_threads_text_post_replies_with_post_text(monkeypatch):
     )
 
     assert sent is True
-    assert "Only text" in message.reply.await_args.args[0]
-    assert message.reply.await_args.kwargs["parse_mode"] == "HTML"
+    assert "Only text" in message.answer.await_args.args[0]
+    assert message.answer.await_args.kwargs["parse_mode"] == "HTML"
 
 
 @pytest.mark.asyncio
