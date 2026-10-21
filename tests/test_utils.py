@@ -273,7 +273,7 @@ async def test_remove_file_ignores_missing(tmp_path):
 async def test_handle_download_backpressure_error_uses_custom_too_large_text():
     message = SimpleNamespace(
         business_connection_id=None,
-        reply=AsyncMock(),
+        answer=AsyncMock(),
     )
 
     await utils.handle_download_backpressure_error(
@@ -283,7 +283,7 @@ async def test_handle_download_backpressure_error_uses_custom_too_large_text():
         too_large_text=bm.audio_too_large(),
     )
 
-    message.reply.assert_awaited_once_with(bm.audio_too_large())
+    message.answer.assert_awaited_once_with(bm.audio_too_large())
 
 
 @pytest.mark.asyncio
@@ -369,10 +369,10 @@ async def test_react_to_message_handles_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_with_reaction_invokes_reply(monkeypatch):
+async def test_send_with_reaction_invokes_answer(monkeypatch):
     mock_react = AsyncMock()
     monkeypatch.setattr(telegram_ui_utils, "react_to_message", mock_react)
-    message = SimpleNamespace(reply=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock(), reply=AsyncMock())
 
     await utils._send_with_reaction(
         message, "hello", emoji="fire", business_id=7, skip_if_business=False
@@ -384,7 +384,7 @@ async def test_send_with_reaction_invokes_reply(monkeypatch):
         business_id=7,
         skip_if_business=False,
     )
-    message.reply.assert_awaited_once_with("hello")
+    message.answer.assert_awaited_once_with("hello")
 
 
 @pytest.mark.asyncio
