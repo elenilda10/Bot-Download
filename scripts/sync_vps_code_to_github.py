@@ -152,8 +152,13 @@ def merge_text(name: str, base: bytes, upstream: bytes, local: bytes, tmp: Path)
         str(tmp / "main"), str(tmp / "base"), str(tmp / "vps"),
         check=False,
     )
+    if process.returncode == 1:
+        # VPS is authoritative for this one-time export. The branch is for
+        # review and will NOT be auto-merged into main.
+        print(f"REVISAR CONFLITO: {name} (mantida a versao da VPS na branch)")
+        return local
     if process.returncode != 0:
-        raise RuntimeError(f"Conflito entre a VPS e a main no arquivo {name}; nada enviado.")
+        raise RuntimeError(f"Falha no merge de {name}; nada enviado.")
     return process.stdout
 
 
@@ -197,9 +202,9 @@ def main() -> None:
                     base = ref_contents("HEAD", name)
                     upstream = ref_contents("origin/main", name)
                     if base is None and upstream is not None and local != upstream:
-                        raise RuntimeError(f"Arquivo {name} foi criado na main e na VPS com conteúdo diferente; nada enviado.")
+                        print(f"REVISAR CONFLITO: {name} (arquivo novo na VPS e na main; priorizada VPS)")
                     if base is not None and upstream is None:
-                        raise RuntimeError(f"Arquivo {name} foi removido da main; nada enviado.")
+                        print(f"REVISAR CONFLITO: {name} (removido da main; restaurado da VPS)")
                     merged = (
                         merge_text(name, base, upstream, local, merge_tmp)
                         if base is not None and upstream is not None
