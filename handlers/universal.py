@@ -788,7 +788,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
                 call.message.business_connection_id,
             )
             sent_cached_audio = await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=cached_audio_id,
                 caption=bm.captions(None, None, bot_url),
                 bot_avatar=bot_avatar,
@@ -849,7 +849,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         await send_chat_action_if_needed(bot, call.message.chat.id, "upload_audio", call.message.business_connection_id)
 
         sent_audio = await send_audio_with_thumbnail(
-            call.message.reply_audio,
+            call.message.answer_audio,
             audio=FSInputFile(output_mp3_path),
             title=res.description or (
                 "Áudio"
