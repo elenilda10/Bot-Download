@@ -254,8 +254,8 @@ def make_video_or_document_senders(
     Callable[[types.Message], str | None],
 ]:
     """Build the (send_cached, send_downloaded, extract_file_id) triple shared
-    by the single-video message flows: as_document switches reply_document
-    (with disable_content_type_detection) vs reply_video, and a cached send
+    by the single-video message flows: as_document switches answer_document
+    (with disable_content_type_detection) vs answer_video, and a cached send
     that hits TelegramBadRequest resolves to None so the flow re-downloads."""
 
     async def send_cached(file_id: str) -> types.Message | None:
@@ -267,7 +267,7 @@ def make_video_or_document_senders(
         )
         try:
             if as_document:
-                return await message.reply_document(
+                return await message.answer_document(
                     document=file_id,
                     allow_sending_without_reply=True,
                     caption=caption,
@@ -275,7 +275,7 @@ def make_video_or_document_senders(
                     parse_mode=parse_mode or "HTML",
                     disable_content_type_detection=True,
                 )
-            return await message.reply_video(
+            return await message.answer_video(
                 video=file_id,
                 allow_sending_without_reply=True,
                 caption=caption,
@@ -287,7 +287,7 @@ def make_video_or_document_senders(
 
     async def send_downloaded(path: str) -> types.Message:
         if as_document:
-            return await message.reply_document(
+            return await message.answer_document(
                 document=FSInputFile(path),
                 allow_sending_without_reply=True,
                 caption=caption,
@@ -297,7 +297,7 @@ def make_video_or_document_senders(
             )
         video_kwargs, thumb_path = await build_video_send_kwargs(path)
         try:
-            return await message.reply_video(
+            return await message.answer_video(
                 video=FSInputFile(path),
                 allow_sending_without_reply=True,
                 caption=caption,
@@ -436,9 +436,6 @@ async def send_cached_media_entries(
                     media_group.add_photo(media=media_ref, caption=item_caption, parse_mode=parse_mode or "HTML")
 
             send_kwargs = {"media": media_group.build()}
-            if offset == 0:
-                send_kwargs["reply_to_message_id"] = message.message_id
-
             sent_group = await message.answer_media_group(**send_kwargs)
             last_sent_message = sent_group[-1] if sent_group else None
 
@@ -470,19 +467,18 @@ async def send_cached_media_entries(
     send_kwargs: dict[str, Any] = {
         "caption": caption,
         "reply_markup": reply_markup,
-        "reply_to_message_id": message.message_id,
     }
     if parse_mode is not None:
         send_kwargs["parse_mode"] = parse_mode
 
     if as_document:
         send_kwargs["disable_content_type_detection"] = True
-        sent_message = await message.reply_document(document=media_ref, **send_kwargs)
+        sent_message = await message.answer_document(document=media_ref, **send_kwargs)
     elif media_kind == "video":
         send_kwargs.update(await build_video_send_kwargs(str(last_entry.get(path_key)) if last_entry.get(path_key) else None))
-        sent_message = await message.reply_video(video=media_ref, **send_kwargs)
+        sent_message = await message.answer_video(video=media_ref, **send_kwargs)
     else:
-        sent_message = await message.reply_photo(photo=media_ref, **send_kwargs)
+        sent_message = await message.answer_photo(photo=media_ref, **send_kwargs)
 
     await _cache_sent_entry(
         db_service,
