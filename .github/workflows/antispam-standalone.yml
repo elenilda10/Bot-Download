@@ -1,0 +1,23 @@
+name: Deleted-link delivery guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  standalone-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check Python syntax
+        run: python -m compileall -q handlers services tests
+      - name: Check no source-message dependencies in downloads
+        run: python -m unittest discover -s tests -p test_antispam_standalone_delivery.py -v
