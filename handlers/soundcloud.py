@@ -164,7 +164,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
                 bot, message.chat.id, "upload_audio", business_id
             )
             return await send_audio_with_thumbnail(
-                message.reply_audio,
+                message.answer_audio,
                 audio=file_id,
                 caption=bm.captions(user_settings["captions"], None, bot_url),
                 bot_url=bot_url,
@@ -230,7 +230,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
                 else bot_avatar
             )
             return await send_audio_with_thumbnail(
-                message.reply_audio,
+                message.answer_audio,
                 audio=FSInputFile(
                     path,
                     filename=build_audio_filename(track.title),
@@ -254,7 +254,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             await handle_download_error(message, business_id=business_id)
 
         async def _on_too_large():
-            await message.reply(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+            await message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
 
         async def _on_cache_store_error(exc: Exception) -> None:
             logging.error(
