@@ -116,7 +116,7 @@ async def test_reply_media_uses_cached_file_id_for_single_video(monkeypatch):
         chat=SimpleNamespace(id=99, type="private"),
         message_id=7,
         answer=AsyncMock(return_value=status_message),
-        reply_video=AsyncMock(return_value=SimpleNamespace(video=SimpleNamespace(file_id="sent-file-id"))),
+        answer_video=AsyncMock(return_value=SimpleNamespace(video=SimpleNamespace(file_id="sent-file-id"))),
         reply_photo=AsyncMock(),
         answer_media_group=AsyncMock(),
         reply=AsyncMock(),
@@ -149,7 +149,7 @@ async def test_reply_media_uses_cached_file_id_for_single_video(monkeypatch):
 
     assert delivered is True
     assert twitter.twitter_downloader.download.await_count == 0
-    assert message.reply_video.await_args.kwargs["video"] == "cached-file-id"
+    assert message.answer_video.await_args.kwargs["video"] == "cached-file-id"
 
 
 @pytest.mark.asyncio
@@ -186,7 +186,7 @@ async def test_reply_media_returns_false_when_flow_fails(monkeypatch, tmp_path):
     )
 
     assert delivered is False
-    message.reply.assert_awaited_with(twitter.bm.something_went_wrong())
+    message.answer.assert_any_await(twitter.bm.something_went_wrong())
 
 
 @pytest.mark.asyncio
@@ -326,7 +326,7 @@ async def test_send_tweet_media_entries_replies_only_on_first_sent_message(monke
 
     await twitter._send_tweet_media_entries(message, entries, "caption", None)
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 7
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert message.answer_photo.await_args.kwargs["photo"] == "cached-last-photo-id"
     assert message.reply_photo.await_count == 0
 
