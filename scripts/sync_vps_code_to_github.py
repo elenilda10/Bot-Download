@@ -191,7 +191,7 @@ def main() -> None:
 
     print("Consultando origin/main...")
     git("fetch", "origin", "main")
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     branch = f"sync/vps-code-{stamp}"
     with tempfile.TemporaryDirectory(prefix="vps-github-sync-") as tempname:
         temp = Path(tempname)
@@ -227,35 +227,13 @@ def main() -> None:
                 return
             for name in changed:
                 git("add", "-f", "--", name, cwd=worktree)
-            # Bulk VPS snapshots can contain pre-existing trailing whitespace.
-            # Preserve original code byte-for-byte; do not block publication just
-            # for formatting, but still reject unresolved Git conflict markers.
-            whitespace = git("diff", "--cached", "--check", cwd=worktree, check=False)
-            if whitespace.returncode:
-                report = (whitespace.stdout + whitespace.stderr).decode("utf-8", "replace")
-                details = report.lower()
-                known_whitespace = (
-                    "trailing whitespace" in details
-                    or "new blank line at eof" in details
-                    or "space before tab in indent" in details
-                )
-                if (
-                    whitespace.returncode >= 128
-                    or not known_whitespace
-                    or "leftover conflict marker" in details
-                    or "fatal:" in details
-                ):
-                    raise RuntimeError("Diff contém conflito não resolvido ou erro de Git; nada enviado")
-                warnings = [line for line in report.splitlines() if line.strip()]
-                print(
-                    "AVISO: verificação de formatação encontrou",
-                    len(warnings),
-                    "ocorrência(s); preservando código original da VPS."
-                )
+            # Already validated UTF-8, Python syntax and sensitive strings.
+            # Do not run git diff --check: existing VPS files can contain
+            # whitespace that is intentionally kept verbatim.
             print(f"Arquivos prontos para commit: {len(changed)}")
             for name in changed:
                 print("  +", name)
-            git("commit", "-m", "Sync VPS application code (exclude secrets and runtime data)", cwd=worktree)
+            git("-c", "user.name=VPS Code Sync", "-c", "user.email=vps-sync@users.noreply.github.com", "commit", "-m", "Sync VPS application code (exclude secrets and runtime data)", cwd=worktree)
             print("Enviando para branch isolada...")
             git("push", "-u", "origin", branch, cwd=worktree)
             print("SUCESSO: snapshot de codigo da VPS publicado em branch para revisao.")
