@@ -123,7 +123,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
             f"📥 @{bot_username}"
         )
 
-        await message.reply_audio(
+        await message.answer_audio(
             audio=audio_file,
             allow_sending_without_reply=True,
             title=track.title,
