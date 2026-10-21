@@ -189,7 +189,7 @@ async def callback_identify_music(callback: types.CallbackQuery):
                     f"<b>Title:</b> {titulo}\n"
                     f"<b>Artist:</b> {artista}"
                 )
-            await message.reply(texto, parse_mode=ParseMode.HTML, reply_markup=kb_plataformas)
+            await message.answer(texto, parse_mode=ParseMode.HTML, reply_markup=kb_plataformas)
         else:
             msg_not_found = (
                 "❌ Não consegui identificar a música deste vídeo (o áudio pode estar alterado, baixo ou não listado no Shazam)."
@@ -206,7 +206,7 @@ async def callback_identify_music(callback: types.CallbackQuery):
                     callback_query_id=callback.id,
                 )
             if not sent_ephemeral:
-                err_msg = await message.reply(msg_not_found, parse_mode=ParseMode.HTML)
+                err_msg = await message.answer(msg_not_found, parse_mode=ParseMode.HTML)
                 asyncio.create_task(_delete_message_after_delay(err_msg, delay=8))
 
     except Exception as exc:
@@ -226,7 +226,7 @@ async def callback_identify_music(callback: types.CallbackQuery):
                 callback_query_id=callback.id,
             )
         if not sent_ephemeral:
-            err_msg = await message.reply(err_generic)
+            err_msg = await message.answer(err_generic)
             asyncio.create_task(_delete_message_after_delay(err_msg, delay=8))
     finally:
         if should_cleanup and resolved_path and os.path.exists(resolved_path):
@@ -250,7 +250,7 @@ async def handle_direct_private_video(message: types.Message):
         if is_pt
         else "🔍 Analyzing video audio to identify the song..."
     )
-    status_msg = await message.reply(txt_searching)
+    status_msg = await message.answer(txt_searching)
     await bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
 
     temp_video_dest = os.path.join(OUTPUT_DIR, f"direct_vid_{uuid.uuid4().hex[:8]}.mp4")
