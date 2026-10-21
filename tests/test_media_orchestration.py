@@ -130,48 +130,48 @@ def _make_backpressure_handler(message, business_id, handle_download_error):
 
 @pytest.mark.asyncio
 async def test_make_message_backpressure_handler_replies_with_rate_limit_text():
-    message = SimpleNamespace(reply=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock())
     handle_download_error = AsyncMock()
     handler = _make_backpressure_handler(message, None, handle_download_error)
 
     await handler(DownloadRateLimitError(5.0))
 
-    message.reply.assert_awaited_once_with("rate-limit:5.0")
+    message.answer.assert_awaited_once_with("rate-limit:5.0")
     handle_download_error.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_make_message_backpressure_handler_replies_with_queue_busy_text():
-    message = SimpleNamespace(reply=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock())
     handle_download_error = AsyncMock()
     handler = _make_backpressure_handler(message, None, handle_download_error)
 
     await handler(DownloadQueueBusyError(3))
 
-    message.reply.assert_awaited_once_with("queue-busy:3")
+    message.answer.assert_awaited_once_with("queue-busy:3")
     handle_download_error.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_make_message_backpressure_handler_uses_error_handler_for_business_chats():
-    message = SimpleNamespace(reply=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock())
     handle_download_error = AsyncMock()
     handler = _make_backpressure_handler(message, "biz-1", handle_download_error)
 
     await handler(DownloadRateLimitError(5.0))
 
     handle_download_error.assert_awaited_once_with(message, business_id="biz-1")
-    message.reply.assert_not_awaited()
+    message.answer.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_make_message_backpressure_handler_reraises_unknown_errors():
-    message = SimpleNamespace(reply=AsyncMock())
+    message = SimpleNamespace(answer=AsyncMock())
     handler = _make_backpressure_handler(message, None, AsyncMock())
 
     with pytest.raises(RuntimeError):
         await handler(RuntimeError("boom"))
-    message.reply.assert_not_awaited()
+    message.answer.assert_not_awaited()
 
 
 @pytest.mark.asyncio
