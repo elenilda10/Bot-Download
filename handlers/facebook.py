@@ -151,19 +151,19 @@ async def _send_cached(message: types.Message, cache: dict,
     if len(entries) == 1:
         item = entries[0]
         if item["kind"] == "video":
-            return await message.reply_video(
+            return await message.answer_video(
                 video=item["file_id"], caption=caption or None,
                 parse_mode=ParseMode.HTML, supports_streaming=True,
                 reply_markup=keyboard, allow_sending_without_reply=True,
             )
         if item["kind"] == "photo":
-            return await message.reply_photo(
+            return await message.answer_photo(
                 photo=item["file_id"], caption=caption or None,
                 parse_mode=ParseMode.HTML,
                 reply_markup=keyboard, allow_sending_without_reply=True,
             )
         if item["kind"] == "document":
-            return await message.reply_document(
+            return await message.answer_document(
                 document=item["file_id"], caption=caption or None,
                 parse_mode=ParseMode.HTML,
                 reply_markup=keyboard, allow_sending_without_reply=True,
@@ -179,7 +179,7 @@ async def _send_cached(message: types.Message, cache: dict,
             media=entry["file_id"], caption=item_caption,
             parse_mode=ParseMode.HTML,
         ))
-    sent = await message.reply_media_group(
+    sent = await message.answer_media_group(
         media=album, allow_sending_without_reply=True,
     )
     # Telegram doesn't support inline buttons on media groups. The user
@@ -316,7 +316,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                         cached.get("description", ""), bot_url,
                     )
                     if kind == "document":
-                        sent_cached = await call.message.reply_document(
+                        sent_cached = await call.message.answer_document(
                             document=entry["file_id"], caption=caption,
                             parse_mode=ParseMode.HTML, allow_sending_without_reply=True,
                         )
@@ -343,7 +343,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             facebook_gallery_first=_facebook_gallery_first_enabled(),
         )
         if not result or len(result.media_list) != 1:
-            await call.message.reply(
+            await call.message.answer(
                 "Não consegui recuperar uma mídia única desta publicação.",
                 allow_sending_without_reply=True,
             )
@@ -354,7 +354,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             or os.path.getsize(item.url) <= 0
             or os.path.getsize(item.url) >= MAX_FILE_SIZE
         ):
-            await call.message.reply(
+            await call.message.answer(
                 "Arquivo indisponível ou acima do limite.",
                 allow_sending_without_reply=True,
             )
@@ -362,7 +362,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         output_path = item.url
         if kind == "audio":
             if item.type != "video":
-                await call.message.reply(
+                await call.message.answer(
                     "Esta publicação não contém vídeo com áudio para converter.",
                     allow_sending_without_reply=True,
                 )
@@ -381,14 +381,14 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                 proc.kill()
                 await proc.communicate()
                 logging.warning("Facebook MP3 conversion timed out")
-                await call.message.reply(
+                await call.message.answer(
                     "A conversão do áudio excedeu o tempo limite.",
                     allow_sending_without_reply=True,
                 )
                 return
             if proc.returncode != 0:
                 logging.warning("Facebook MP3 conversion failed: %s", proc.returncode)
-                await call.message.reply(
+                await call.message.answer(
                     "Não consegui extrair áudio deste vídeo.",
                     allow_sending_without_reply=True,
                 )
@@ -398,7 +398,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             or os.path.getsize(output_path) <= 0
             or os.path.getsize(output_path) >= MAX_FILE_SIZE
         ):
-            await call.message.reply(
+            await call.message.answer(
                 "Não foi possível gerar o arquivo dentro do limite.",
                 allow_sending_without_reply=True,
             )
@@ -416,7 +416,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             action=ChatAction.UPLOAD_AUDIO if kind == "audio" else ChatAction.UPLOAD_DOCUMENT,
         )
         if kind == "document":
-            sent = await call.message.reply_document(
+            sent = await call.message.answer_document(
                 document=FSInputFile(output_path, filename=os.path.basename(output_path)),
                 caption=caption, parse_mode=ParseMode.HTML,
                 disable_content_type_detection=True,
@@ -438,7 +438,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         logging.exception(
             "Facebook %s callback failed: %s", kind, type(exc).__name__,
         )
-        await call.message.reply(
+        await call.message.answer(
             "Não consegui concluir o download. Tente novamente mais tarde.",
             allow_sending_without_reply=True,
         )
@@ -513,7 +513,7 @@ async def process_facebook_link(
     try:
         target = await _resolve_facebook_short_link(source)
         if not target:
-            await message.reply(
+            await message.answer(
                 "Não consegui abrir o link do Facebook. "
                 "Tente copiar o endereço direto do Reel, vídeo ou foto.",
                 allow_sending_without_reply=True,
@@ -535,7 +535,7 @@ async def process_facebook_link(
         profile = _auth_profile(user_id, message.chat.type, business_id)
         # Never use experimental gallery mode for anonymous or public chats.
         if facebook_gallery_first_test and not profile:
-            await message.reply("Teste permitido apenas ao administrador no privado.")
+            await message.answer("Teste permitido apenas ao administrador no privado.")
             return
         scope = fc.scope_for(profile, user_id)
         cache_kind = "document" if settings.get("as_document") == "on" else "media"
@@ -641,7 +641,7 @@ async def process_facebook_link(
             item = result.media_list[0]
             file = FSInputFile(item.url, filename=os.path.basename(item.url))
             if settings.get("as_document") == "on":
-                sent_media = await message.reply_document(
+                sent_media = await message.answer_document(
                     document=file, caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     disable_content_type_detection=True,
@@ -649,7 +649,7 @@ async def process_facebook_link(
                 )
             elif item.type == "video":
                 preview_path = item.thumb if item.thumb and os.path.isfile(item.thumb) else None
-                sent_media = await message.reply_video(
+                sent_media = await message.answer_video(
                     video=file,
                     thumbnail=FSInputFile(preview_path, filename="thumbnail.jpg") if preview_path else None,
                     cover=FSInputFile(preview_path, filename="cover.jpg") if preview_path else None,
@@ -661,7 +661,7 @@ async def process_facebook_link(
                     reply_markup=keyboard, allow_sending_without_reply=True,
                 )
             else:
-                sent_media = await message.reply_photo(
+                sent_media = await message.answer_photo(
                     photo=file, caption=caption or None,
                     parse_mode=ParseMode.HTML,
                     reply_markup=keyboard, allow_sending_without_reply=True,
@@ -683,7 +683,7 @@ async def process_facebook_link(
                     album.append(InputMediaPhoto(
                         media=file, caption=item_caption, parse_mode=ParseMode.HTML,
                     ))
-            sent_media = await message.reply_media_group(
+            sent_media = await message.answer_media_group(
                 media=album, allow_sending_without_reply=True,
             )
             # Album has no inline keyboard; no extra source-link message.
