@@ -322,7 +322,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                         )
                     else:
                         sent_cached = await send_audio_with_thumbnail(
-                            call.message.reply_audio,
+                            call.message.answer_audio,
                             audio=entry["file_id"], caption=caption,
                             bot_url=bot_url, parse_mode=ParseMode.HTML,
                         )
@@ -424,7 +424,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             )
         else:
             sent = await send_audio_with_thumbnail(
-                call.message.reply_audio,
+                call.message.answer_audio,
                 audio=FSInputFile(output_path, filename="facebook.mp3"),
                 title=(result.description or "Áudio do Facebook")[:128],
                 bot_url=bot_url, caption=caption,
