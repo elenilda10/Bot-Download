@@ -35,6 +35,9 @@ DOWNLOAD_MODULES = (
     "handlers/telegram_ui_utils.py",
     "services/media/delivery.py",
     "services/media/orchestration.py",
+    # The onboarding middleware runs before the download handlers. It also
+    # must not reply to a link that a moderation bot may have removed.
+    "middlewares/private_chat_guard.py",
 )
 
 
