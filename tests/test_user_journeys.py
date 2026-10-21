@@ -93,6 +93,12 @@ async def test_group_link_requires_dm_then_replays_after_private_start(monkeypat
         message_id=55,
     )
     group_message.reply = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SimpleNamespace(__api_method__="sendMessage"),
+            message="message to be replied not found",
+        )
+    )
+    group_message.answer = AsyncMock(
         return_value=SimpleNamespace(
             chat=SimpleNamespace(id=-100500),
             message_id=77,
@@ -113,7 +119,9 @@ async def test_group_link_requires_dm_then_replays_after_private_start(monkeypat
 
     assert result is None
     handler.assert_not_awaited()
-    group_message.reply.assert_awaited_once()
+    group_message.reply.assert_not_awaited()
+    group_message.answer.assert_awaited_once()
+    assert group_message.answer.await_args.kwargs["allow_sending_without_reply"] is True
     pending = pending_requests.get_pending(42)
     assert pending is not None
     assert pending.service == "youtube"
