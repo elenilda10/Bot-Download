@@ -237,7 +237,7 @@ async def test_pinterest_media_group_uses_cached_file_ids(monkeypatch):
 
     assert pinterest.pinterest_service.download_media.await_count == 0
     assert message.answer_media_group.await_count == 1
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 20
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert message.answer_video.await_args.kwargs["video"] == "cached-video-id"
     assert message.reply_video.await_count == 0
 
@@ -286,7 +286,7 @@ async def test_pinterest_media_group_replies_only_on_first_sent_message(monkeypa
         None,
     )
 
-    assert message.answer_media_group.await_args.kwargs["reply_to_message_id"] == 20
+    assert "reply_to_message_id" not in message.answer_media_group.await_args.kwargs
     assert "reply_to_message_id" not in message.answer_video.await_args.kwargs
     assert message.answer_video.await_args.kwargs["video"].path == "/tmp/2.mp4"
     assert message.reply_video.await_count == 0
