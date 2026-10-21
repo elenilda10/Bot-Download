@@ -26,8 +26,3 @@ logs/
 .vscode/
 .idea/
 .DS_Store
-
-# Dados de execução e backups privados
-.runtime_state.json
-*.dump
-backups/

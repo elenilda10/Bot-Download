@@ -1,0 +1,114 @@
+"""Offline regressions for the XVideos router's URL and player parsing."""
+import importlib.util
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "services" / "platforms" / "xvideos_media.py"
+
+
+def load_module():
+    # Test the real settings.py without importing services/__init__.py.
+    # The package initializer imports the download queue and production config.
+    # Fake only the enclosing package and config, not the settings implementation.
+    original_modules = {
+        key: sys.modules.get(key)
+        for key in ("config", "services", "services.settings")
+    }
+    config_stub = types.ModuleType("config")
+    config_stub.MAX_FILE_SIZE = 1500 * 1024 * 1024
+
+    services_package = types.ModuleType("services")
+    services_package.__path__ = [str(Path.cwd() / "services")]
+
+    try:
+        sys.modules["config"] = config_stub
+        sys.modules["services"] = services_package
+        sys.modules.pop("services.settings", None)
+
+        from importlib import import_module
+        settings = import_module("services.settings")
+        assert settings.VIDEO_QUALITY_BALANCED == "balanced"
+
+        spec = importlib.util.spec_from_file_location("xvideos_media_test", MODULE_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for key, previous in original_modules.items():
+            if previous is None:
+                sys.modules.pop(key, None)
+            else:
+                sys.modules[key] = previous
+
+service = load_module()
+
+
+class XVideosMediaTests(unittest.IsolatedAsyncioTestCase):
+    def test_video_link_extracts_canonical_https_url(self):
+        url = "https://www.xvideos.com/video.oltvhef0c13/example_title?foo=bar"
+        self.assertEqual(
+            service.extract_xvideos_url("watch " + url),
+            "https://www.xvideos.com/video.oltvhef0c13/example_title",
+        )
+
+    def test_rejects_unrelated_and_unsafe_urls(self):
+        self.assertIsNone(service.extract_xvideos_url("https://www.xvideos.com.evil.com/video.123/test"))
+        self.assertIsNone(service.extract_xvideos_url("http://www.xvideos.com/video.123/test"))
+        self.assertIsNone(service.extract_xvideos_url("https://example.org/video.123/test"))
+        self.assertIsNone(service._cdn_media_url("http://hls-cdn77.xvideos-cdn.com/playlist.m3u8"))
+        self.assertIsNone(service._cdn_media_url("https://hls-cdn77.xvideos-cdn.com.evil.org/x"))
+        self.assertIsNone(service._cdn_media_url("https://localhost/media.m3u8"))
+
+    def test_accepts_only_https_media_cdn(self):
+        url = "https://hls-cdn77.xvideos-cdn.com/path/master.m3u8?temporary=secret"
+        self.assertEqual(service._cdn_media_url(url), url)
+        self.assertIsNone(service._cdn_media_url("https://user@hls-cdn77.xvideos-cdn.com/test"))
+        self.assertIsNone(service._cdn_media_url("https://hls-cdn77.xvideos-cdn.com:8080/test"))
+
+    def test_extracts_encoded_player_id_and_cdn(self):
+        html = "html5player.setEncodedIdVideo('ENCODED_ab12'); html5player.setIdCdnHLS(77);"
+        self.assertEqual(service._player_arg(html, "setEncodedIdVideo"), "ENCODED_ab12")
+        self.assertEqual(service._player_arg(html, "setIdCdnHLS"), "77")
+        self.assertIsNone(service._player_arg(html, "setVideoHLS"))
+
+    def test_settings_quality_limits_and_selectors(self):
+        hls = "https://hls-cdn77.xvideos-cdn.com/master.m3u8"
+        mp4 = "https://mp4-cdn77.xvideos-cdn.com/high.mp4"
+        self.assertIsNone(service._max_height_for_quality(None))
+        self.assertIsNone(service._max_height_for_quality("best"))
+        self.assertEqual(service._max_height_for_quality("balanced"), 720)
+        self.assertEqual(service._max_height_for_quality("saver"), 480)
+        self.assertEqual(service._format_for_source(hls, "best"), "best")
+        self.assertEqual(service._format_for_source(hls, "balanced"), "best[height<=720]")
+        self.assertEqual(service._format_for_source(hls, "saver"), "best[height<=480]")
+        self.assertEqual(service._format_for_source(mp4, "saver"), "best")
+
+    async def test_quality_forwarded_to_download(self):
+        url = "https://www.xvideos.com/video.oltvhef0c13/title"
+        hls = "https://hls-cdn77.xvideos-cdn.com/master.m3u8"
+        expected = service.XVideosDownload(Path("/tmp/test.mp4"), 854, 480, 800)
+        with patch.object(service, "_discover_sources", AsyncMock(return_value=[hls])), \
+                patch.object(service, "_download_source", AsyncMock(return_value=expected)) as downloader:
+            await service.download_xvideos(url, Path("/tmp/test"), video_quality="saver")
+            downloader.assert_awaited_once_with(
+                hls, url, Path("/tmp/test") / "0", video_quality="saver"
+            )
+
+    async def test_prefers_hls_without_calling_mp4_on_success(self):
+        hls = "https://hls-cdn77.xvideos-cdn.com/index.m3u8"
+        mp4 = "https://mp4-cdn77.xvideos-cdn.com/video.mp4"
+        expected = service.XVideosDownload(Path("/tmp/test.mp4"), 1920, 1080, 800)
+        with patch.object(service, "_discover_sources", AsyncMock(return_value=[hls, mp4])), \
+                patch.object(service, "_download_source", AsyncMock(return_value=expected)) as downloader:
+            result = await service.download_xvideos("https://www.xvideos.com/video.oltvhef0c13/title", Path("/tmp/test"))
+            self.assertEqual(result.height, 1080)
+            downloader.assert_awaited_once()
+            self.assertEqual(downloader.call_args.args[0], hls)
+
+
+if __name__ == "__main__":
+    unittest.main()

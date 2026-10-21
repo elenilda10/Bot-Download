@@ -17,14 +17,13 @@ from utils.cobalt_client import fetch_cobalt_data
 
 logger = logging.getLogger(__name__)
 
+# INSTAGRAM_FIREFOX_STORY_PATCH_V1
+INSTAGRAM_STORY_GDL_BIN = os.getenv('INSTAGRAM_STORY_GDL_BIN', '').strip()
+INSTAGRAM_FIREFOX_PROFILE = os.getenv('INSTAGRAM_FIREFOX_PROFILE', '').strip()
+
 EXTENSION_COOKIES_PATH = "/root/Bot-Download/cookies.txt"
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
-
-# Opt-in: use the independently validated gallery-dl build only for Stories.
-# Keep the existing gallery-dl and cookie-file behavior for other Instagram URLs.
-INSTAGRAM_STORY_GDL_BIN = os.getenv("INSTAGRAM_STORY_GDL_BIN", "").strip()
-INSTAGRAM_FIREFOX_PROFILE = os.getenv("INSTAGRAM_FIREFOX_PROFILE", "").strip()
 
 PUBLIC_COBALT_INSTANCES = [
     "https://cobalt-api.kwiatekm.tokyo",
@@ -97,37 +96,47 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
             if os.path.isfile(INSTAGRAM_STORY_GDL_BIN) and os.access(INSTAGRAM_STORY_GDL_BIN, os.X_OK):
                 binary = INSTAGRAM_STORY_GDL_BIN
             else:
-                logger.warning("Instagram Story: gallery-dl configurado indisponivel; usando padrao")
+                logger.warning('Instagram Story: gallery-dl isolado nao encontrado')
 
+        # Aqui entra a flag corrigida com {shortcode}_{num}.{extension}
         cmd = [
             binary,
             "--no-part",
             "--no-mtime",
-            "--retries", "3",
+            "--retries", "1",
             "-d", target_dir,
             "-o", "directory=",
+            "--filename", "{shortcode}_{num}.{extension}",
             "--write-metadata",
+            "--user-agent", BROWSER_UA,
         ]
 
-        # A URL /stories/usuario/ID/ ja identifica um unico Story.
-        # Nao aplicar filtros ou template de shortcode (que e proprio de posts).
-        # O nome padrao do gallery-dl usa o ID do Story para MP4/JPG.
-        if not story_id:
-            cmd.extend(["--filename", "{shortcode}_{num}.{extension}"])
-            cmd.extend(["--user-agent", BROWSER_UA])
+        if story_id:
+            cmd.extend(["--filter", f"str(media_id) == '{story_id}' or str(id) == '{story_id}' or str(post_id) == '{story_id}'"])
 
-        profile_cookies_db = os.path.join(INSTAGRAM_FIREFOX_PROFILE, "cookies.sqlite")
-        if story_id and INSTAGRAM_FIREFOX_PROFILE and os.path.isfile(profile_cookies_db):
-            cmd.extend([
-                "--cookies-from-browser",
-                f"firefox/instagram.com:{INSTAGRAM_FIREFOX_PROFILE}",
-            ])
-        elif os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
+        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
             cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
+
+        if story_id:
+            # Remover filtros/templates de posts: o ID da URL ja seleciona o Story.
+            for flag in ('--filter', '--filename', '--user-agent'):
+                if flag in cmd:
+                    pos = cmd.index(flag)
+                    del cmd[pos:pos + 2]
+            if INSTAGRAM_FIREFOX_PROFILE:
+                cookies_db = os.path.join(INSTAGRAM_FIREFOX_PROFILE, 'cookies.sqlite')
+                if os.path.isfile(cookies_db):
+                    if '--cookies' in cmd:
+                        pos = cmd.index('--cookies')
+                        del cmd[pos:pos + 2]
+                    cmd.extend(('--cookies-from-browser',
+                                'firefox/instagram.com:' + INSTAGRAM_FIREFOX_PROFILE))
+                else:
+                    logger.warning('Instagram Story: Firefox cookies.sqlite ausente')
 
         cmd.append(url)
 
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if proc.returncode != 0:
             logger.warning("gallery-dl output/warn: %s", proc.stderr)
 
@@ -171,7 +180,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
                             pass
                 saved_files = matching_files
             else:
-                logger.warning("Instagram Story: nenhum arquivo corresponde ao ID %s", story_id)
+                logger.warning('Instagram Story: ID solicitado nao corresponde a midia baixada')
                 return None
 
         media_items = []
@@ -228,7 +237,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             metadata_cmd,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=30,
         )
 
         data = None
@@ -274,80 +283,23 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             ]
 
             if thumbnails:
-                from PIL import ImageFile
-
-                candidates = []
-                headers = {
-                    "User-Agent": BROWSER_UA,
-                    "Referer": "https://www.instagram.com/",
-                }
-
-                with httpx.Client(
-                    timeout=8.0,
-                    follow_redirects=True,
-                    headers=headers,
-                ) as probe_client:
-                    for thumb_index, thumb in enumerate(thumbnails):
-                        width_candidate = thumb.get("width") or 0
-                        height_candidate = thumb.get("height") or 0
-
-                        if not width_candidate or not height_candidate:
-                            try:
-                                parser = ImageFile.Parser()
-                                total = 0
-
-                                with probe_client.stream(
-                                    "GET", thumb["url"]
-                                ) as response:
-                                    response.raise_for_status()
-
-                                    for chunk in response.iter_bytes(16384):
-                                        parser.feed(chunk)
-                                        total += len(chunk)
-
-                                        if parser.image:
-                                            (
-                                                width_candidate,
-                                                height_candidate,
-                                            ) = parser.image.size
-                                            break
-
-                                        if total >= 262144:
-                                            break
-
-                            except Exception as exc:
-                                logger.debug(
-                                    "Falha ao verificar resolução: %s",
-                                    exc,
-                                )
-
-                        candidates.append((
-                            width_candidate * height_candidate,
-                            width_candidate,
-                            thumb_index,
-                            thumb,
-                            width_candidate,
-                            height_candidate,
-                        ))
-
-                selected = max(
-                    candidates,
-                    key=lambda item: (
-                        item[0],
-                        item[1],
-                        item[2],
+                # Do not HEAD/stream every thumbnail just to guess its size:
+                # a carousel may list many URLs, each costing up to 8 seconds.
+                # Prefer known dimensions, otherwise the last CDN candidate.
+                best = max(
+                    enumerate(thumbnails),
+                    key=lambda pair: (
+                        int(pair[1].get("width") or 0)
+                        * int(pair[1].get("height") or 0),
+                        pair[0],
                     ),
-                )
-
-                best = selected[3]
+                )[1]
                 image_url = best.get("url")
-                width = selected[4] or None
-                height = selected[5] or None
-
-                logger.info(
-                    "Instagram imagem selecionada: %sx%s",
-                    width,
-                    height,
+                width = best.get("width") or None
+                height = best.get("height") or None
+                logger.debug(
+                    "Instagram image chosen from %s CDN candidates",
+                    len(thumbnails),
                 )
             else:
                 image_url = entry.get("thumbnail")
@@ -665,6 +617,8 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
             COBALT_API_KEY,
             payload,
             source="instagram",
+            attempts=1,
+            timeout=10,
         )
         if (
             data
