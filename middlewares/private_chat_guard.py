@@ -85,9 +85,14 @@ class PrivateChatGuardMiddleware(BaseMiddleware):
             event.from_user.language_code if event.from_user else "en"
         )
 
-        notice = await event.reply(
+        # Antispam managers may delete the user's link before we finish
+        # checking whether the private chat is available. A reply would then
+        # fail with "message to be replied not found" and lose the pending
+        # request entirely. Send the notice independently of that message.
+        notice = await event.answer(
             bm.dm_start_required(lang=user_lang),
             reply_markup=kb.start_private_chat_keyboard(_bot_username, lang=user_lang),
+            allow_sending_without_reply=True,
         )
         set_pending(
             event.from_user.id,

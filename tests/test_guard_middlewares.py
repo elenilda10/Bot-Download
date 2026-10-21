@@ -322,7 +322,15 @@ async def test_private_chat_guard_creates_pending_request_when_user_has_no_dm(mo
     event.from_user = SimpleNamespace(id=42, is_bot=False)
     event.text = "https://tiktok.com/@demo/video/1"
     event.caption = None
+    # The antispam bot has already deleted the source link, so replying
+    # would fail. An independent answer must still preserve the request.
     event.reply = AsyncMock(
+        side_effect=TelegramBadRequest(
+            method=SimpleNamespace(__api_method__="sendMessage"),
+            message="message to be replied not found",
+        )
+    )
+    event.answer = AsyncMock(
         return_value=SimpleNamespace(
             chat=SimpleNamespace(id=-200),
             message_id=777,
@@ -332,11 +340,11 @@ async def test_private_chat_guard_creates_pending_request_when_user_has_no_dm(mo
     monkeypatch.setattr(private_chat_guard, "_bot_username", None)
     monkeypatch.setattr(private_chat_guard, "get_pending", lambda user_id: existing_pending)
     monkeypatch.setattr(private_chat_guard, "set_pending", lambda user_id, request: sent_requests.append((user_id, request)))
-    monkeypatch.setattr(private_chat_guard.bm, "dm_start_required", lambda: "Open DM")
+    monkeypatch.setattr(private_chat_guard.bm, "dm_start_required", lambda **kwargs: "Open DM")
     monkeypatch.setattr(
         private_chat_guard.kb,
         "start_private_chat_keyboard",
-        lambda username: f"keyboard:{username}",
+        lambda username, **kwargs: f"keyboard:{username}",
     )
 
     result = await middleware(handler, event, {"bot": bot})
@@ -344,7 +352,8 @@ async def test_private_chat_guard_creates_pending_request_when_user_has_no_dm(mo
     assert result is None
     bot.delete_message.assert_awaited_once_with(-100, 555)
     bot.get_me.assert_awaited_once()
-    event.reply.assert_awaited_once_with("Open DM", reply_markup="keyboard:maxloadbot")
+    event.reply.assert_not_awaited()
+    event.answer.assert_awaited_once_with("Open DM", reply_markup="keyboard:maxloadbot", allow_sending_without_reply=True)
     handler.assert_not_awaited()
     assert sent_requests[0][0] == 42
     assert sent_requests[0][1].service == "tiktok"
