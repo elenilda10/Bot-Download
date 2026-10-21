@@ -89,7 +89,7 @@ async def handle_mediafire(message: types.Message):
 
         if cached_file_id:
             try:
-                await message.reply_document(
+                await message.answer_document(
                     allow_sending_without_reply=True,
                     document=cached_file_id,
                     caption=caption,
@@ -101,7 +101,7 @@ async def handle_mediafire(message: types.Message):
                 lease.mark_success()
                 return
 
-        status = await message.reply(
+        status = await message.answer(
             bm.downloading_file_status(lang),
             allow_sending_without_reply=True,
             parse_mode="HTML",
@@ -120,7 +120,7 @@ async def handle_mediafire(message: types.Message):
                     parse_mode="HTML",
                 )
 
-                sent = await message.reply_document(
+                sent = await message.answer_document(
                     FSInputFile(file),
                     allow_sending_without_reply=True,
                     caption=caption,
