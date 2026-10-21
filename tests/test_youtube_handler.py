@@ -208,7 +208,7 @@ async def test_download_music_uses_cached_audio_file_id(monkeypatch):
         business_connection_id=None,
         chat=SimpleNamespace(id=99, type="private"),
         answer=AsyncMock(return_value=SimpleNamespace(delete=AsyncMock())),
-        reply_audio=AsyncMock(),
+        answer_audio=AsyncMock(),
         reply=AsyncMock(),
     )
     yt = {
@@ -235,10 +235,10 @@ async def test_download_music_uses_cached_audio_file_id(monkeypatch):
     await youtube.download_music(message)
 
     assert youtube.download_stream.await_count == 0
-    assert message.reply_audio.await_args.kwargs["audio"] == "cached-audio-id"
-    assert "thumbnail" not in message.reply_audio.await_args.kwargs
-    assert message.reply_audio.await_args.kwargs["performer"] == "@maxloadbot"
-    assert message.reply_audio.await_args.kwargs["duration"] == 181
+    assert message.answer_audio.await_args.kwargs["audio"] == "cached-audio-id"
+    assert "thumbnail" not in message.answer_audio.await_args.kwargs
+    assert message.answer_audio.await_args.kwargs["performer"] == "@maxloadbot"
+    assert message.answer_audio.await_args.kwargs["duration"] == 181
 
 
 @pytest.mark.asyncio
@@ -248,7 +248,7 @@ async def test_download_music_handles_missing_youtube_metadata(monkeypatch):
         business_connection_id=None,
         chat=SimpleNamespace(id=99, type="private"),
         answer=AsyncMock(return_value=SimpleNamespace(delete=AsyncMock())),
-        reply_audio=AsyncMock(),
+        answer_audio=AsyncMock(),
         reply=AsyncMock(),
     )
 
@@ -263,7 +263,7 @@ async def test_download_music_handles_missing_youtube_metadata(monkeypatch):
 
     await youtube.download_music(message)
 
-    message.reply.assert_awaited_once_with(youtube.bm.nothing_found())
+    message.answer.assert_any_await(youtube.bm.nothing_found())
 
 
 @pytest.mark.asyncio
@@ -283,7 +283,7 @@ async def test_download_music_falls_back_to_ytdlp_without_direct_audio_stream(mo
         business_connection_id=None,
         chat=SimpleNamespace(id=99, type="private"),
         answer=AsyncMock(return_value=SimpleNamespace(delete=AsyncMock())),
-        reply_audio=AsyncMock(return_value=SimpleNamespace(audio=SimpleNamespace(file_id="telegram-audio-id"))),
+        answer_audio=AsyncMock(return_value=SimpleNamespace(audio=SimpleNamespace(file_id="telegram-audio-id"))),
         reply=AsyncMock(),
     )
     yt = {
@@ -320,11 +320,11 @@ async def test_download_music_falls_back_to_ytdlp_without_direct_audio_stream(mo
 
     youtube.download_mp3_with_ytdlp_metrics.assert_awaited_once()
     youtube.download_stream.assert_not_awaited()
-    message.reply_audio.assert_awaited_once()
-    assert message.reply_audio.await_args.kwargs["title"] == "Fallback Audio"
-    assert message.reply_audio.await_args.kwargs["performer"] == "@maxloadbot"
-    assert message.reply_audio.await_args.kwargs["audio"].filename == "Fallback Audio.mp3"
-    assert message.reply_audio.await_args.kwargs["duration"] == 204
+    message.answer_audio.assert_awaited_once()
+    assert message.answer_audio.await_args.kwargs["title"] == "Fallback Audio"
+    assert message.answer_audio.await_args.kwargs["performer"] == "@maxloadbot"
+    assert message.answer_audio.await_args.kwargs["audio"].filename == "Fallback Audio.mp3"
+    assert message.answer_audio.await_args.kwargs["duration"] == 204
     youtube.db.add_file.assert_awaited_once()
     prepared_metadata.cleanup.assert_called_once_with()
 
@@ -338,7 +338,7 @@ def _make_mp3_callback(status_message):
             business_connection_id=None,
             chat=SimpleNamespace(id=99, type="private"),
             answer=AsyncMock(return_value=status_message),
-            reply_audio=AsyncMock(),
+            answer_audio=AsyncMock(),
             reply=AsyncMock(),
         ),
     )
