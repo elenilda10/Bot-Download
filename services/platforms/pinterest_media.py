@@ -487,6 +487,20 @@ class PinterestMediaService(CobaltMediaService):
         )
 
     async def fetch_post(self, url: str) -> Optional[PinterestPost]:
+        # Public Pinterest photos and HLS videos already work through local
+        # extractors on the VPS. Prefer those over the Cobalt instance, which
+        # may reject Pinterest payloads with error.api.invalid_body.
+        if _public_pin_url(url):
+            video = await _fetch_public_pin_yt_dlp(url)
+            if video and video.media_list:
+                return video
+
+            photos = await _fetch_public_pin_gallery(url)
+            if photos and photos.media_list:
+                return photos
+
+        # Keep Cobalt as a last-resort fallback for unsupported link forms
+        # and when public extractors return no usable direct media.
         payload = {
             "url": url,
             "downloadMode": "auto",
@@ -498,22 +512,20 @@ class PinterestMediaService(CobaltMediaService):
             data = await self._fetch_cobalt_json(payload)
             post = parse_pinterest_post(data) if data else None
         except Exception as exc:
-            logging.warning("Pinterest Cobalt extraction failed, trying anonymous fallback: %s", type(exc).__name__)
-            post = None
-        if post and post.media_list:
-            # An HLS manifest is not a video file and must not be uploaded as MP4.
-            if not any(
-                item.type == "video"
-                and urlsplit(item.url).path.lower().endswith((".m3u8", ".mpd"))
-                for item in post.media_list
-            ):
-                return post
-        # Pinterest videos frequently use HLS. yt-dlp handles both segmented
-        # tracks and ffmpeg muxing; gallery-dl remains responsible for photos.
-        video = await _fetch_public_pin_yt_dlp(url)
-        if video:
-            return video
-        return await _fetch_public_pin_gallery(url)
+            logging.warning(
+                "Pinterest Cobalt fallback failed: %s", type(exc).__name__
+            )
+            return None
+        if not post or not post.media_list:
+            return None
+        # A manifest is not an MP4 and must not be uploaded as a normal video.
+        if any(
+            item.type == "video"
+            and urlsplit(item.url).path.lower().endswith((".m3u8", ".mpd"))
+            for item in post.media_list
+        ):
+            return None
+        return post
 
     async def download_media(
         self,
