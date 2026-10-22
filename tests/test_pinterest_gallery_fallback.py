@@ -199,6 +199,45 @@ def test_gallery_uses_one_original_caption_for_complete_carousel():
     assert [m.type for m in post.media_list] == ["photo", "photo", "video"]
 
 
+def test_story_pin_recovers_paragraph_caption_when_description_is_empty():
+    records = [
+        [1, "", {
+            "description": "",
+            "story_pin_data": {"pages": [
+                {"blocks": [
+                    {"type": "story_pin_image_block"},
+                    {"type": "story_pin_paragraph_block", "text": "Texto do primeiro slide"},
+                ]},
+                {"blocks": [
+                    {"type": "story_pin_paragraph_block", "text": "Texto do segundo slide"},
+                ]},
+            ]},
+        }],
+        _media_record("https://i.pinimg.com/one.jpg", "jpg"),
+        _media_record("https://i.pinimg.com/two.jpg", "jpg"),
+    ]
+    post = pm.parse_pinterest_gallery_dump(
+        json.dumps(records), "https://www.pinterest.com/pin/987654321/"
+    )
+    assert post is not None
+    assert post.description == "Texto do primeiro slide\nTexto do segundo slide"
+    assert len(post.media_list) == 2
+
+
+def test_story_pin_text_record_is_used_when_missing_other_text_fields():
+    post = pm.parse_pinterest_gallery_dump(
+        json.dumps([
+            [1, "", {}],
+            [2, "text:Legenda do álbum 🌱", {"extension": "txt"}],
+            _media_record("https://i.pinimg.com/one.jpg", "jpg"),
+        ]),
+        "https://www.pinterest.com/pin/987654321/",
+    )
+    assert post is not None
+    assert post.description == "Legenda do álbum 🌱"
+    assert len(post.media_list) == 1
+
+
 def test_gallery_caption_falls_back_to_file_metadata_or_title():
     raw = json.dumps([
         [1, "", {"description": " "}],
