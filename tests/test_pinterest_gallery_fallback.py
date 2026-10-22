@@ -162,6 +162,157 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
     assert args[-1] == "https://www.pinterest.com/pin/555/"
 
 
+def test_gallery_uses_directory_caption_for_single_pin_photo():
+    """gallery-dl emits the Pinterest Pin's original text in a type-1 record."""
+    raw = json.dumps([
+        [1, "", {
+            "description": "Legenda original da imagem #Pinterest",
+            "title": "Um título menor",
+            "id": "1234567890123",
+        }],
+        _media_record("https://i.pinimg.com/originals/photo.jpg", "jpg"),
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/1234567890123/"
+    )
+    assert post is not None
+    assert post.description == "Legenda original da imagem #Pinterest"
+    assert [m.type for m in post.media_list] == ["photo"]
+
+
+def test_gallery_uses_one_original_caption_for_complete_carousel():
+    """Story/carousel metadata precedes all downloaded image and video entries."""
+    raw = json.dumps([
+        [1, "", {
+            "title": "Álbum de viagem",
+            "closeup_unified_description": "Legenda completa do álbum 🌴",
+        }],
+        _media_record("https://i.pinimg.com/a.jpg", "jpg"),
+        _media_record("https://i.pinimg.com/b.png", "png"),
+        _media_record("https://v1.pinimg.com/c.mp4", "mp4"),
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/1122334455667/"
+    )
+    assert post is not None
+    assert post.description == "Legenda completa do álbum 🌴"
+    assert [m.type for m in post.media_list] == ["photo", "photo", "video"]
+
+
+def test_gallery_caption_falls_back_to_file_metadata_or_title():
+    raw = json.dumps([
+        [1, "", {"description": " "}],
+        _media_record(
+            "https://i.pinimg.com/picture.jpg", "jpg", title="Foto com título"
+        ),
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/1122334455667/"
+    )
+    assert post is not None
+    assert post.description == "Foto com título"
+
+
+def test_gallery_redirect_to_canonical_pin_strips_tracking_and_rejects_other_sites():
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/987654321/sent/?invite_code=PRIVATE&sender=18", {}]
+    ])
+    assert pm._canonical_pin_from_gallery_output(redirect) == (
+        "https://www.pinterest.com/pin/987654321/"
+    )
+    assert pm._canonical_pin_from_gallery_output(json.dumps([
+        [6, "https://www.pinterest.com.evil.test/pin/987654321/", {}]
+    ])) is None
+    assert pm._canonical_pin_from_gallery_output(json.dumps([
+        [6, "http://www.pinterest.com/pin/987654321/", {}]
+    ])) is None
+    assert pm._canonical_pin_from_gallery_output(json.dumps([
+        [6, "https://www.pinterest.com/user/board/", {}]
+    ])) is None
+
+
+@pytest.mark.asyncio
+async def test_pin_it_redirect_recovers_original_photo_caption_and_media(monkeypatch):
+    """A short link first yields a redirect; canonical -J yields caption + file."""
+    def proc(data):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/987654321/sent/?invite_code=secret&sender=123", {}],
+    ]).encode()
+    detail = json.dumps([
+        [1, "", {"description": "Legenda original do Pin"}],
+        _media_record("https://i.pinimg.com/originals/pin.jpg", "jpg"),
+    ]).encode()
+    spawn = AsyncMock(side_effect=[proc(redirect), proc(detail)])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+
+    result = await pm._fetch_public_pin_gallery("https://pin.it/5Qs3W9mxR")
+    assert result is not None
+    assert result.id == "987654321"
+    assert result.description == "Legenda original do Pin"
+    assert result.media_list[0].url == "https://i.pinimg.com/originals/pin.jpg"
+    assert spawn.await_count == 2
+    assert spawn.await_args_list[1].args[-1] == (
+        "https://www.pinterest.com/pin/987654321/"
+    )
+    assert "-G" not in spawn.await_args_list[1].args
+
+
+@pytest.mark.asyncio
+async def test_pin_it_album_captions_recovered_from_canonical_gallery(monkeypatch):
+    def proc(data):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+
+    redirect = json.dumps([
+        [6, "https://br.pinterest.com/pin/987654321/sent/?code=short", {}],
+    ]).encode()
+    detail = json.dumps([
+        [1, "", {"description": "Todas as imagens deste álbum"}],
+        _media_record("https://i.pinimg.com/a.jpg", "jpg"),
+        _media_record("https://i.pinimg.com/b.jpg", "jpg"),
+    ]).encode()
+    spawn = AsyncMock(side_effect=[proc(redirect), proc(detail)])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    post = await pm._fetch_public_pin_gallery("https://pin.it/5Qs3W9mxR")
+    assert post is not None
+    assert post.id == "987654321"
+    assert post.description == "Todas as imagens deste álbum"
+    assert len(post.media_list) == 2
+    assert all(m.type == "photo" for m in post.media_list)
+
+
+@pytest.mark.asyncio
+async def test_shortlink_falls_back_to_media_urls_when_canonical_metadata_unavailable(monkeypatch):
+    """A missing Pinterest caption must never prevent a successful download."""
+    def proc(data):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/987654321/sent/?sfo=1", {}],
+    ]).encode()
+    spawn = AsyncMock(side_effect=[
+        proc(redirect), proc(b""), proc(b"https://i.pinimg.com/originals/foto.jpg\n"),
+    ])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+
+    post = await pm._fetch_public_pin_gallery("https://pin.it/5Qs3W9mxR")
+    assert post is not None
+    assert post.media_list[0].type == "photo"
+    assert post.description == ""
+    assert spawn.await_count == 3
+    assert "-G" in spawn.await_args_list[2].args
+
+
 def test_gallery_url_mode_accepts_only_direct_pinimg_media():
     post = pm.parse_pinterest_gallery_urls(
         "\n".join([
@@ -197,13 +348,16 @@ async def test_pin_it_json_redirect_recovers_jpg_via_resolved_urls(monkeypatch):
         )
 
     redirect = json.dumps([
-        [6, "https://www.pinterest.com/pin/123/sent/?code=sample", {}],
+        [6, "https://www.pinterest.com/pin/987654321/sent/?code=sample", {}],
     ]).encode("utf-8")
     metadata = fake_process(redirect)
     resolved = fake_process(
         b"https://i.pinimg.com/originals/photo.jpg\n"
     )
-    spawn = AsyncMock(side_effect=[metadata, resolved])
+    # The canonical metadata attempt can fail independently from URL
+    # resolution, in which case we still recover the actual picture via -G.
+    canonical_failed = fake_process(b"", 1)
+    spawn = AsyncMock(side_effect=[metadata, canonical_failed, resolved])
     monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
 
     post = await pm._fetch_public_pin_gallery(
@@ -214,9 +368,11 @@ async def test_pin_it_json_redirect_recovers_jpg_via_resolved_urls(monkeypatch):
     assert post.media_list[0].type == "photo"
     assert post.media_list[0].url == "https://i.pinimg.com/originals/photo.jpg"
     args = [call.args for call in spawn.await_args_list]
-    assert len(args) == 2
+    assert len(args) == 3
     assert "-J" in args[0]
-    assert "-G" in args[1]
+    assert "-J" in args[1]
+    assert args[1][-1] == "https://www.pinterest.com/pin/987654321/"
+    assert "-G" in args[2]
     assert all("--no-input" in a for a in args)
     assert all("--cookies" not in a for a in args)
 
