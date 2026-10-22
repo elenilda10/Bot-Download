@@ -27,6 +27,15 @@ async def main() -> None:
     if not url.startswith("https://pin.it/") and not url.startswith("https://www.pinterest.com/pin/"):
         raise ValueError("Teste somente Pin público do Pinterest")
 
+    # The probe lives in /tmp, but the bot's Python packages are under
+    # /root/Bot-Download. Running python /tmp/probe.py otherwise makes
+    # imports like "from services.logger import ..." fail.
+    project_root = Path("/root/Bot-Download")
+    if not (project_root / "services" / "logger.py").is_file():
+        raise RuntimeError(f"Diretório do bot não encontrado: {project_root}")
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
     module_name = "pinterest_caption_candidate_probe"
     spec = importlib.util.spec_from_file_location(module_name, source)
     if spec is None or spec.loader is None:
