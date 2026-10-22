@@ -1,0 +1,46 @@
+name: Pinterest fallback tests
+
+on:
+  pull_request:
+    paths:
+      - "services/platforms/pinterest_media.py"
+      - "tests/test_pinterest_gallery_fallback.py"
+      - ".github/workflows/pinterest-fallback.yml"
+  push:
+    branches: [main]
+    paths:
+      - "services/platforms/pinterest_media.py"
+      - "tests/test_pinterest_gallery_fallback.py"
+      - ".github/workflows/pinterest-fallback.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pinterest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BOT_TOKEN: "123456:TESTTOKEN"
+      ADMIN_ID: "1"
+      CUSTOM_API_URL: "https://api.example.com"
+      CHANNEL_ID: "-1001234567890"
+      PYTHONPATH: ${{ github.workspace }}
+      LOG_DISABLE_SINKS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install minimum test dependencies (no shazamio)
+        run: |
+          python -m pip install --disable-pip-version-check \
+            pytest pytest-asyncio \
+            "aiogram==3.31.0" "SQLAlchemy[asyncio]==2.0.51" \
+            "httpx==0.28.1" "colorlog==6.12.0" "python-dotenv==1.2.2"
+      - name: Check source compilation
+        run: |
+          python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py
+      - name: Run Pinterest fallback tests
+        run: |
+          pytest -q tests/test_pinterest_gallery_fallback.py
