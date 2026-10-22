@@ -33,12 +33,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install minimum test dependencies (no shazamio)
+      - name: Install bot dependencies excluding optional Shazam and gallery-dl
         run: |
+          sed -e '/^shazamio$/d' -e '/^gallery-dl$/d' requirements.txt > /tmp/requirements-pinterest.txt
           python -m pip install --disable-pip-version-check \
-            pytest pytest-asyncio \
-            "aiogram==3.31.0" "SQLAlchemy[asyncio]==2.0.51" \
-            "httpx==0.28.1" "colorlog==6.12.0" "python-dotenv==1.2.2"
+            -r /tmp/requirements-pinterest.txt pytest pytest-asyncio
       - name: Check source compilation
         run: |
           python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py
