@@ -477,8 +477,18 @@ async def send_cached_media_entries(
         send_kwargs["disable_content_type_detection"] = True
         sent_message = await message.answer_document(document=media_ref, **send_kwargs)
     elif media_kind == "video":
-        send_kwargs.update(await build_video_send_kwargs(str(last_entry.get(path_key)) if last_entry.get(path_key) else None))
-        sent_message = await message.answer_video(video=media_ref, **send_kwargs)
+        video_kwargs, thumbnail_path = await build_video_send_kwargs(
+            str(last_entry.get(path_key)) if last_entry.get(path_key) else None
+        )
+        send_kwargs.update(video_kwargs)
+        try:
+            sent_message = await message.answer_video(video=media_ref, **send_kwargs)
+        finally:
+            if thumbnail_path:
+                try:
+                    Path(thumbnail_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
     else:
         sent_message = await message.answer_photo(photo=media_ref, **send_kwargs)
 
