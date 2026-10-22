@@ -6,9 +6,12 @@ import re
 import sys
 import tempfile
 import time
+from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from dataclasses import dataclass
+
+import httpx
 from typing import Awaitable, Callable, Optional
 
 from services.logger import logger as logging
@@ -112,7 +115,8 @@ def _pinterest_caption_from_metadata(metadata: object) -> str:
         return ""
     for key in (
         "description", "closeup_unified_description",
-        "closeup_description", "title", "seo_description", "alt_text",
+        "closeup_description", "title", "seo_title", "seo_description",
+        "alt_text", "seo_alt_text", "auto_alt_text",
     ):
         value = metadata.get(key)
         if isinstance(value, dict):
@@ -320,6 +324,175 @@ def parse_pinterest_gallery_urls(raw_output: str, source_url: str) -> Optional["
     return parse_pinterest_gallery_dump(json.dumps(records), source_url)
 
 
+_PINTEREST_SEO_MAX_BYTES = 1_200_000
+_PINTEREST_SEO_TIMEOUT = 9
+
+
+def _usable_pinterest_page_caption(text: object) -> str:
+    if not isinstance(text, str):
+        return ""
+    value = re.sub(r"\s+", " ", text).strip()
+    if value.endswith(" | Pinterest"):
+        value = value[:-len(" | Pinterest")].strip()
+    if value.lower() in {
+        "", "pinterest", "pinterest - login", "log in to pinterest",
+        "pinterest - brasil", "login | pinterest",
+    }:
+        return ""
+    if (
+        "discover recipes, home ideas, style inspiration" in value.lower()
+        or "find your next idea" in value.lower()
+        or "discover and save" in value.lower()
+    ):
+        return ""
+    return value[:1000]
+
+
+class _PinterestPublicMetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags: dict[str, str] = {}
+        self.in_title = False
+        self.page_title = ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+        if tag == "title":
+            self.in_title = True
+        if tag != "meta":
+            return
+        fields = {k.lower(): v for k, v in attrs if v is not None}
+        key = (fields.get("property") or fields.get("name") or "").lower()
+        if key in {
+            "og:title", "twitter:title", "og:description",
+            "twitter:description", "description",
+        } and fields.get("content"):
+            self.tags.setdefault(key, fields["content"])
+
+    def handle_endtag(self, tag: str):
+        if tag == "title":
+            self.in_title = False
+
+    def handle_data(self, data: str):
+        if self.in_title and len(self.page_title) < 2000:
+            self.page_title += data
+
+
+def _pinterest_caption_from_html(html: str) -> str:
+    parser = _PinterestPublicMetaParser()
+    try:
+        parser.feed(html)
+    except (ValueError, TypeError):
+        return ""
+    for key in (
+        "og:title", "twitter:title", "description",
+        "og:description", "twitter:description",
+    ):
+        caption = _usable_pinterest_page_caption(parser.tags.get(key))
+        if caption:
+            return caption
+    return _usable_pinterest_page_caption(parser.page_title)
+
+
+def _pinterest_caption_from_resource(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    resource = payload.get("resource_response")
+    if isinstance(resource, dict):
+        data = resource.get("data")
+    else:
+        data = payload.get("data")
+    if not isinstance(data, dict):
+        return ""
+    for key in (
+        "description", "seo_description", "seo_title", "title",
+        "closeup_description", "closeup_unified_description", "alt_text",
+    ):
+        caption = _usable_pinterest_page_caption(data.get(key))
+        if caption:
+            return caption
+    return ""
+
+
+async def _fetch_pinterest_public_caption(canonical_url: str) -> str:
+    """Best-effort SEO metadata from a *numeric* Pinterest Pin URL.
+
+    This is never run against user-supplied arbitrary URLs. Does not send
+    account cookies or follow redirects and limits response bytes/time.
+    """
+    safe = _canonical_pin_from_gallery_output(canonical_url)
+    if not safe or safe != canonical_url:
+        return ""
+    match = re.fullmatch(r"https://www\.pinterest\.com/pin/(\d{5,30})/", safe)
+    if not match:
+        return ""
+    pin_id = match.group(1)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/json;q=0.9",
+        "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+    }
+    try:
+        async with httpx.AsyncClient(
+            timeout=_PINTEREST_SEO_TIMEOUT,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            async with client.stream("GET", safe, headers=headers) as response:
+                if (
+                    response.status_code == 200
+                    and "text/html" in response.headers.get("content-type", "")
+                ):
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > _PINTEREST_SEO_MAX_BYTES:
+                            break
+                    caption = _pinterest_caption_from_html(
+                        bytes(body).decode("utf-8", "replace")
+                    )
+                    if caption:
+                        return caption
+
+            # Pinterest also publishes anonymous SEO text in PinResource.
+            # Optional: access controls and rate limits may suppress it.
+            options = json.dumps(
+                {
+                    "options": {"id": pin_id, "field_set_key": "detailed"},
+                    "context": {},
+                },
+                separators=(",", ":"),
+            )
+            request_url = (
+                "https://www.pinterest.com/resource/PinResource/get/?"
+                + urlencode({
+                    "source_url": f"/pin/{pin_id}/", "data": options
+                })
+            )
+            async with client.stream(
+                "GET", request_url,
+                headers={**headers, "Accept": "application/json"},
+            ) as response:
+                if response.status_code != 200:
+                    return ""
+                if "json" not in response.headers.get("content-type", ""):
+                    return ""
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > _PINTEREST_SEO_MAX_BYTES:
+                        return ""
+                try:
+                    data = json.loads(body)
+                except (ValueError, UnicodeDecodeError):
+                    return ""
+                return _pinterest_caption_from_resource(data)
+    except (httpx.HTTPError, ValueError, OSError):
+        return ""
+
+
 async def _run_public_pin_gallery(
     executable: str, url: str, output_mode: str
 ) -> tuple[int, bytes] | None:
@@ -446,6 +619,12 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
     if result:
         if not result.description and caption_hint:
             result.description = caption_hint
+        if not result.description:
+            # Public Pin HTML and PinResource may expose seo_title while
+            # gallery-dl returns no textual metadata for this short link.
+            canonical = canonical_attempted or _canonical_pin_from_gallery_output(url)
+            if canonical:
+                result.description = await _fetch_pinterest_public_caption(canonical)
         logging.info(
             "Pinterest gallery-dl resolved %d item(s) as direct media (caption=%s)",
             len(result.media_list),
