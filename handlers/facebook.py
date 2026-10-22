@@ -206,8 +206,14 @@ def _auth_profile(user_id: int | None, chat_type: str, business_id=None) -> str 
 
 
 def _facebook_gallery_first_enabled() -> bool:
-    """Enabled by default; FB_GALLERY_FIRST=0 rolls back without changing files."""
-    return os.getenv("FB_GALLERY_FIRST", "1").strip().lower() not in {"0", "off", "false", "no"}
+    """Never enable unverified Facebook media in normal user/callback flows.
+
+    FB_GALLERY_FIRST was previously on by default and could deliver photos
+    from unrelated posts. Even FB_GALLERY_FIRST=1 must not override this
+    safety requirement. Only explicit private-admin /fbteste can bypass the
+    post identity check, and its output is visibly marked unverified.
+    """
+    return False
 
 
 def _progress_update(key: str, downloaded: int, total: int | None, speed: float | None):
@@ -539,7 +545,9 @@ async def process_facebook_link(
             return
         scope = fc.scope_for(profile, user_id)
         cache_kind = "document" if settings.get("as_document") == "on" else "media"
-        use_gallery_first = facebook_gallery_first_test or _facebook_gallery_first_enabled()
+        # Bypass is only reachable via the explicit admin/private /fbteste.
+        # Never deliver unverified media to ordinary users.
+        use_gallery_first = facebook_gallery_first_test
         token = (
             None if facebook_gallery_first_test else
             await _create_callback_token(target, scope, user_id, chat_id)
