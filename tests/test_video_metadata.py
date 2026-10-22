@@ -36,6 +36,33 @@ async def test_build_video_send_kwargs_falls_back_to_supports_streaming_when_pro
         AsyncMock(return_value=video_metadata.TelegramVideoAttrs()),
     )
 
-    kwargs = await video_metadata.build_video_send_kwargs("downloads/test.mp4")
+    kwargs, thumbnail_path = await video_metadata.build_video_send_kwargs("downloads/test.mp4")
 
     assert kwargs == {"supports_streaming": True}
+    assert thumbnail_path is None
+
+
+@pytest.mark.asyncio
+async def test_build_video_send_kwargs_returns_mapping_and_thumbnail_path(monkeypatch, tmp_path):
+    thumbnail = tmp_path / "video_thumb.jpg"
+    thumbnail.write_bytes(b"JPEG thumbnail")
+    monkeypatch.setattr(
+        video_metadata,
+        "probe_telegram_video_attrs",
+        AsyncMock(return_value=video_metadata.TelegramVideoAttrs(
+            width=1080,
+            height=1920,
+            duration=15,
+            thumbnail_path=str(thumbnail),
+            supports_streaming=True,
+        )),
+    )
+    kwargs, thumbnail_path = await video_metadata.build_video_send_kwargs("video.mp4")
+
+    assert isinstance(kwargs, dict)
+    assert kwargs["supports_streaming"] is True
+    assert kwargs["width"] == 1080
+    assert kwargs["height"] == 1920
+    assert kwargs["duration"] == 15
+    assert kwargs["thumbnail"].path == str(thumbnail)
+    assert thumbnail_path == str(thumbnail)

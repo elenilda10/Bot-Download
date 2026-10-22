@@ -235,14 +235,24 @@ async def process_pinterest_single_media(
 
     async def _send_downloaded(path: str):
         if media_kind == "video":
-            return await message.answer_video(
-                video=FSInputFile(path),
-                allow_sending_without_reply=True,
-                caption=bm.captions(user_settings["captions"], post.description, bot_url),
-                reply_markup=_reply_markup(),
-                parse_mode="HTML",
-                **(await build_video_send_kwargs(path)),
-            )
+            # build_video_send_kwargs returns (Telegram kwargs, thumbnail_path),
+            # NOT just the kwargs dict. Expanding the tuple with ** crashes
+            # after the download finishes, leaving the video unsent.
+            video_kwargs, thumbnail_path = await build_video_send_kwargs(path)
+            try:
+                return await message.answer_video(
+                    video=FSInputFile(path),
+                    allow_sending_without_reply=True,
+                    caption=bm.captions(user_settings["captions"], post.description, bot_url),
+                    reply_markup=_reply_markup(),
+                    parse_mode="HTML",
+                    **video_kwargs,
+                )
+            finally:
+                # The thumbnail is generated alongside the downloaded video.
+                # Clean it up after the Telegram upload (including failures).
+                if thumbnail_path:
+                    await remove_file(thumbnail_path)
         return await message.answer_photo(
             photo=FSInputFile(path),
             allow_sending_without_reply=True,
