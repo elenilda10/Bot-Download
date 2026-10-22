@@ -268,6 +268,81 @@ def _facebook_login_prompt(metadata: dict) -> bool:
     )
 
 
+def _facebook_profile_post_json(data: object, url: str) -> dict | None:
+    """Validate gallery-dl's *media* messages against a specific profile post.
+
+    gallery-dl emits [2, metadata] AND [3, url, metadata] for every photo.
+    Counting both duplicates IDs. On albums, 'post_photo' and 'first_photo_id'
+    reference the FIRST photo for every item, not each item's own ID.
+    """
+    post_id = _facebook_profile_post_id(url)
+    if not post_id or not isinstance(data, list):
+        return None
+
+    photos = []
+    for entry in data:
+        if not isinstance(entry, (list, tuple)) or not entry:
+            return None
+        if entry[0] == -1:  # JSON output can contain errors despite exit code 0.
+            return None
+        if entry[0] != 3:
+            continue
+        if len(entry) < 3 or not isinstance(entry[2], dict):
+            return None
+        photos.append(entry[2])
+
+    if not 1 <= len(photos) <= 10:
+        return None
+
+    ids = tuple(str(photo.get("id") or "") for photo in photos)
+    if any(not photo_id.isdigit() for photo_id in ids):
+        return None
+    if len(set(ids)) != len(ids):
+        return None
+
+    first_id = ids[0]
+    expected_set = f"pcb.{post_id}"
+    texts = set()
+
+    for index, photo in enumerate(photos):
+        if _facebook_login_prompt(photo):
+            return None
+        if _facebook_profile_photo_link_id(photo.get("post_photo")) != first_id:
+            return None
+        first_photo_id = str(photo.get("first_photo_id") or "")
+        if first_photo_id and first_photo_id != first_id:
+            return None
+
+        set_id = str(photo.get("set_id") or "")
+        if (len(photos) > 1 or set_id) and set_id != expected_set:
+            return None
+
+        num = photo.get("num")
+        if num is not None and str(num) != str(index + 1):
+            return None
+
+        next_id = str(photo.get("next_photo_id") or "")
+        if index + 1 < len(photos):
+            if next_id and next_id != ids[index + 1]:
+                return None
+        elif next_id and next_id not in {first_id, ids[-1]}:
+            # A different next photo means gallery-dl stopped mid-album.
+            return None
+
+        text = photo.get("post_text")
+        if isinstance(text, str) and text.strip():
+            texts.add(text.strip())
+
+    if len(texts) > 1:
+        return None  # Conflicting text within the same post is not trustworthy.
+
+    # An album's photo-specific 'caption' is not automatically the post text.
+    description = next(iter(texts), "")
+    if not description and len(photos) == 1:
+        description = facebook_caption(photos[0])
+    return {"ids": ids, "description": description}
+
+
 async def _facebook_profile_post_metadata(
     url: str, browser_profile: Optional[str] = None,
 ) -> dict | None:
@@ -310,37 +385,10 @@ async def _facebook_profile_post_metadata(
             proc.kill()
             await proc.communicate()
 
-    # gallery-dl emits a JSON array of directory/media entries; only the
-    # media entries with the post_photo link establish IDs.
-    records = []
-    def walk(value):
-        if isinstance(value, dict):
-            if "post_photo" in value and "id" in value:
-                records.append(value)
-            for inner in value.values():
-                walk(inner)
-        elif isinstance(value, list):
-            for inner in value:
-                walk(inner)
-    walk(data)
-    if not 1 <= len(records) <= 10:
-        logging.warning("Facebook profile preflight had no bounded media set")
-        return None
-    expected = []
-    for metadata in records:
-        media_id = str(metadata["id"])
-        link_id = _facebook_profile_photo_link_id(metadata.get("post_photo"))
-        if not media_id.isdigit() or link_id != media_id or _facebook_login_prompt(metadata):
-            logging.warning("Facebook profile preflight identity/login check failed")
-            return None
-        expected.append(media_id)
-    if len(set(expected)) != len(expected):
-        return None
-    # The author's shared-post text must come from the publication's own
-    # preflight, never from a separately downloaded photo page.
-    description = facebook_caption(records[0])
-    return {"ids": tuple(expected), "description": description}
-
+    record = _facebook_profile_post_json(data, url)
+    if record is None:
+        logging.warning("Facebook profile preflight post/media identity check failed")
+    return record
 
 async def _facebook_profile_post_expected_photo_ids(
     url: str, browser_profile: Optional[str] = None,
@@ -463,9 +511,18 @@ async def _download_facebook_profile_post_photos(
         if not result or len(result.media_list) != len(ids):
             return None
 
-    # The photo's own caption may be different from what the sharing account
-    # wrote. Prefer the verified source post text when available.
-    if record["description"]:
+    # The photo's own caption can differ from the sharing post's text.
+    # For albums, compare the independent preflight and download-side metadata:
+    # do not display a potentially unrelated caption when the reads disagree.
+    if len(ids) > 1:
+        expected_text = record["description"].strip()
+        actual_text = result.description.strip() if isinstance(result.description, str) else ""
+        if actual_text != expected_text:
+            logging.warning("Facebook album caption mismatched independent extraction")
+            result.description = ""
+        else:
+            result.description = expected_text
+    elif record["description"]:
         result.description = record["description"]
     logging.info("Facebook profile post photos verified by preflight IDs")
     return result
