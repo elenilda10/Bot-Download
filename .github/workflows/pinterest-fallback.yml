@@ -5,6 +5,7 @@ on:
     paths:
       - "services/platforms/pinterest_media.py"
       - "tests/test_pinterest_gallery_fallback.py"
+      - "scripts/apply_pinterest_local_first.py"
       - "tests/test_pinterest_ytdlp_fallback.py"
       - ".github/workflows/pinterest-fallback.yml"
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "services/platforms/pinterest_media.py"
       - "tests/test_pinterest_gallery_fallback.py"
+      - "scripts/apply_pinterest_local_first.py"
       - "tests/test_pinterest_ytdlp_fallback.py"
       - ".github/workflows/pinterest-fallback.yml"
 
@@ -42,7 +44,7 @@ jobs:
             -r /tmp/requirements-pinterest.txt pytest pytest-asyncio
       - name: Check source compilation
         run: |
-          python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py
+          python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py scripts/apply_pinterest_local_first.py
       - name: Run Pinterest fallback tests
         run: |
           pytest -q tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py
