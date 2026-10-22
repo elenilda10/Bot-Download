@@ -162,6 +162,100 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
     assert args[-1] == "https://www.pinterest.com/pin/555/"
 
 
+def test_actual_gallery_dl_directory_record_recovers_neymar_pin_caption():
+    """gallery-dl -J emits [1, metadata], never needs an empty URL placeholder."""
+    raw = json.dumps([
+        [1, {
+            "id": "123456789012345",
+            "title": "Neymar o colecionador de troféus",
+            "description": "Neymar o colecionador de troféus",
+        }],
+        [2, "https://i.pinimg.com/originals/neymar.jpg", {"extension": "jpg"}],
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/123456789012345/"
+    )
+    assert post is not None
+    assert len(post.media_list) == 1
+    assert post.description == "Neymar o colecionador de troféus"
+
+
+def test_actual_gallery_dl_single_directory_record_preserves_caption_hint():
+    raw = json.dumps([1, {"description": "Legenda recuperável sem mídia"}])
+    assert pm._gallery_caption_hint(raw) == "Legenda recuperável sem mídia"
+    assert pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/123456789/"
+    ) is None
+
+
+def test_actual_gallery_dl_album_uses_directory_caption_for_all_images():
+    raw = json.dumps([
+        [1, {"description": "Álbum de Neymar", "id": "987654321"}],
+        [2, "https://i.pinimg.com/one.jpg", {"extension": "jpg"}],
+        [2, "https://i.pinimg.com/two.jpg", {"extension": "jpg"}],
+        [2, "https://i.pinimg.com/three.jpg", {"extension": "jpg"}],
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/987654321/"
+    )
+    assert post is not None
+    assert post.description == "Álbum de Neymar"
+    assert len(post.media_list) == 3
+
+
+@pytest.mark.asyncio
+async def test_real_pin_it_redirect_fetches_true_directory_record_metadata(monkeypatch):
+    def proc(data):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/123456789012345/sent/?token=ignored", {}]
+    ]).encode()
+    canonical_dump = json.dumps([
+        [1, {"description": "Neymar o colecionador de troféus"}],
+        [2, "https://i.pinimg.com/originals/neymar.jpg", {"extension": "jpg"}],
+    ]).encode()
+    spawn = AsyncMock(side_effect=[proc(redirect), proc(canonical_dump)])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    post = await pm._fetch_public_pin_gallery("https://pin.it/gLqzFSUZO")
+    assert post is not None
+    assert post.id == "123456789012345"
+    assert post.description == "Neymar o colecionador de troféus"
+    assert len(post.media_list) == 1
+    assert spawn.await_args_list[1].args[-1] == (
+        "https://www.pinterest.com/pin/123456789012345/"
+    )
+
+
+@pytest.mark.asyncio
+async def test_caption_hint_is_kept_even_if_canonical_json_has_no_media(monkeypatch):
+    def proc(data):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/123456789012345/", {}]
+    ]).encode()
+    metadata_without_media = json.dumps([
+        [1, {"description": "Legenda original do álbum"}]
+    ]).encode()
+    gallery_urls = b"https://i.pinimg.com/a.jpg\nhttps://i.pinimg.com/b.jpg\n"
+    spawn = AsyncMock(side_effect=[
+        proc(redirect), proc(metadata_without_media), proc(gallery_urls),
+    ])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    post = await pm._fetch_public_pin_gallery("https://pin.it/gLqzFSUZO")
+    assert post is not None
+    assert post.description == "Legenda original do álbum"
+    assert [m.type for m in post.media_list] == ["photo", "photo"]
+    assert "-G" in spawn.await_args_list[2].args
+
+
 def test_gallery_uses_directory_caption_for_single_pin_photo():
     """gallery-dl emits the Pinterest Pin's original text in a type-1 record."""
     raw = json.dumps([
