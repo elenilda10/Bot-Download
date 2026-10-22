@@ -437,6 +437,7 @@ async def test_shortlink_falls_back_to_media_urls_when_canonical_metadata_unavai
         proc(redirect), proc(b""), proc(b"https://i.pinimg.com/originals/foto.jpg\n"),
     ])
     monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(pm, "_fetch_pinterest_public_caption", AsyncMock(return_value=""))
 
     post = await pm._fetch_public_pin_gallery("https://pin.it/5Qs3W9mxR")
     assert post is not None
@@ -492,6 +493,7 @@ async def test_pin_it_json_redirect_recovers_jpg_via_resolved_urls(monkeypatch):
     canonical_failed = fake_process(b"", 1)
     spawn = AsyncMock(side_effect=[metadata, canonical_failed, resolved])
     monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(pm, "_fetch_pinterest_public_caption", AsyncMock(return_value=""))
 
     post = await pm._fetch_public_pin_gallery(
         "https://pin.it/5Qs3W9mxR"
