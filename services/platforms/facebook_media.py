@@ -325,7 +325,7 @@ def _facebook_profile_post_json(data: object, url: str) -> dict | None:
         if index + 1 < len(photos):
             if next_id and next_id != ids[index + 1]:
                 return None
-        elif next_id and next_id not in {first_id, ids[-1]}:
+        elif len(photos) > 1 and next_id and next_id not in {first_id, ids[-1]}:
             # A different next photo means gallery-dl stopped mid-album.
             return None
 
