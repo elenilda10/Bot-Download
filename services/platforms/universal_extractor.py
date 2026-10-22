@@ -21,6 +21,7 @@ from services.platforms.facebook_media import (
     _verified_facebook_profile_photos,
     download_facebook_media,
     facebook_caption,
+    facebook_photo_caption,
     facebook_gallery_arguments,
     facebook_ytdlp_arguments,
     facebook_video_caption,
@@ -523,6 +524,28 @@ async def _download_with_gallery_dl(
             chosen_caption.strip() if isinstance(chosen_caption, str) and chosen_caption.strip()
             else f"Post ({len(media_list)} items)"
         )
+        if (
+            _is_facebook_url(url) and len(media_list) == 1
+            and media_list[0].type == "photo"
+        ):
+            # The post-page 'post_text' is scraped from an unscoped text node,
+            # so even when the photo is correct it may describe an unrelated
+            # post. Use only the matched photo's own JSON sidecar 'caption'.
+            # In the absence of one, send the image without invented text.
+            final_description = ""
+            photo_path = media_list[0].url
+            photo_id = os.path.splitext(os.path.basename(photo_path))[0]
+            try:
+                with open(photo_path + ".json", "r", encoding="utf-8") as jf:
+                    photo_meta = json.load(jf)
+                if (
+                    isinstance(photo_meta, dict)
+                    and photo_id.isdigit()
+                    and str(photo_meta.get("id")) == photo_id
+                ):
+                    final_description = facebook_photo_caption(photo_meta)
+            except (OSError, ValueError):
+                pass
 
         return UniversalMediaResult(
             id=post_id,
