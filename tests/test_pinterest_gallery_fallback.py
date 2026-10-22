@@ -48,6 +48,56 @@ def test_fallback_rejects_unrelated_or_unsafe_urls(url):
     assert not pm._public_pin_url(url)
 
 
+def test_gallery_get_urls_parses_real_cli_style_output_for_public_photo():
+    post = pm.parse_pinterest_gallery_urls(
+        "https://i.pinimg.com/originals/254682070494_1947237367.jpg\n",
+        "https://pin.it/5Qs3W9mxR",
+    )
+    assert post is not None
+    assert post.media_list[0].type == "photo"
+    assert post.media_list[0].url.endswith(".jpg")
+
+
+def test_gallery_get_urls_keeps_mixed_media_order_and_deduplicates():
+    raw = "\n".join([
+        "https://i.pinimg.com/originals/a.jpg",
+        "https://v1.pinimg.com/videos/b.mp4",
+        "https://i.pinimg.com/originals/a.jpg",
+        "https://i.pinimg.com/c.png?token=abc",
+    ])
+    post = pm.parse_pinterest_gallery_urls(
+        raw, "https://www.pinterest.com/pin/987654321/"
+    )
+    assert post is not None
+    assert post.id == "987654321"
+    assert [m.type for m in post.media_list] == [
+        "photo", "video", "photo"
+    ]
+    assert len(post.media_list) == 3
+
+
+def test_gallery_get_urls_rejects_untrusted_and_unsupported_media():
+    raw = "\n".join([
+        "https://evil.invalid/file.jpg",
+        "http://i.pinimg.com/a.jpg",
+        "https://i.pinimg.com.evil.invalid/image.jpg",
+        "https://i.pinimg.com/animated.gif",
+        "https://v1.pinimg.com/video.m3u8",
+    ])
+    assert pm.parse_pinterest_gallery_urls(
+        raw, "https://pin.it/5Qs3W9mxR"
+    ) is None
+
+
+def test_gallery_get_urls_enforces_limit():
+    raw = "\n".join(
+        f"https://i.pinimg.com/{i}.jpg" for i in range(30)
+    )
+    post = pm.parse_pinterest_gallery_urls(raw, "https://pin.it/5Qs3W9mxR")
+    assert post is not None
+    assert len(post.media_list) == pm._GALLERY_MAX_ITEMS
+
+
 def test_gallery_parses_pictures_videos_and_deduplicates_in_order():
     raw = "\n".join(
         json.dumps(record)
@@ -139,9 +189,7 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
     process = SimpleNamespace(
         returncode=0,
         communicate=AsyncMock(
-            return_value=(json.dumps(
-                _media_record("https://i.pinimg.com/pin.jpg", "jpg")
-            ).encode(), b"")
+            return_value=(b"https://i.pinimg.com/pin.jpg\n", b"")
         ),
     )
     spawn = AsyncMock(return_value=process)
@@ -154,7 +202,8 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
     args = spawn.await_args.args
     assert "--config-ignore" in args
     assert "--no-input" in args
-    assert "-J" in args
+    assert "--get-urls" in args
+    assert "-J" not in args
     assert "--range" in args
     assert "1-20" in args
     assert "--cookies" not in args
@@ -215,7 +264,7 @@ async def test_gallery_returns_none_if_binary_is_unavailable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cobalt_remains_primary_and_gallery_is_not_used_when_cobalt_works(monkeypatch, tmp_path):
+async def test_cobalt_is_retained_when_public_extractors_return_no_media(monkeypatch, tmp_path):
     async def _fetch(*args, **kwargs):
         return {
             "status": "tunnel", "url": "https://cdn.example.com/video.mp4",
@@ -231,13 +280,17 @@ async def test_cobalt_remains_primary_and_gallery_is_not_used_when_cobalt_works(
         fetch_cobalt_data_func=_fetch,
         retry_async_operation_func=_retry,
     )
-    backup = AsyncMock()
-    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", backup)
+    video = AsyncMock(return_value=None)
+    gallery = AsyncMock(return_value=None)
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", video)
+    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", gallery)
 
-    result = await service.fetch_post("https://www.pinterest.com/pin/555/")
+    url = "https://www.pinterest.com/pin/555/"
+    result = await service.fetch_post(url)
     assert result is not None
     assert result.media_list[0].url == "https://cdn.example.com/video.mp4"
-    backup.assert_not_awaited()
+    video.assert_awaited_once_with(url)
+    gallery.assert_awaited_once_with(url)
 
 
 @pytest.mark.asyncio
