@@ -12,6 +12,8 @@ on:
       - "tests/test_pinterest_vps_patcher.py"
       - "scripts/apply_pinterest_video_send.py"
       - "tests/test_pinterest_gallery_fallback.py"
+      - "tests/test_pinterest_caption_delivery.py"
+      - "scripts/apply_pinterest_captions.py"
       - "scripts/apply_pinterest_local_first.py"
       - "tests/test_pinterest_ytdlp_fallback.py"
       - ".github/workflows/pinterest-fallback.yml"
@@ -27,6 +29,8 @@ on:
       - "tests/test_pinterest_vps_patcher.py"
       - "scripts/apply_pinterest_video_send.py"
       - "tests/test_pinterest_gallery_fallback.py"
+      - "tests/test_pinterest_caption_delivery.py"
+      - "scripts/apply_pinterest_captions.py"
       - "scripts/apply_pinterest_local_first.py"
       - "tests/test_pinterest_ytdlp_fallback.py"
       - ".github/workflows/pinterest-fallback.yml"
@@ -58,7 +62,7 @@ jobs:
             -r /tmp/requirements-pinterest.txt pytest pytest-asyncio
       - name: Check source compilation
         run: |
-          python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py scripts/apply_pinterest_local_first.py handlers/pinterest.py services/inline/send_flow.py services/media/video_metadata.py tests/test_pinterest_telegram_video_send.py tests/test_video_metadata.py scripts/apply_pinterest_video_send.py tests/test_pinterest_vps_patcher.py
+          python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py scripts/apply_pinterest_local_first.py tests/test_pinterest_caption_delivery.py scripts/apply_pinterest_captions.py handlers/pinterest.py services/inline/send_flow.py services/media/video_metadata.py tests/test_pinterest_telegram_video_send.py tests/test_video_metadata.py scripts/apply_pinterest_video_send.py tests/test_pinterest_vps_patcher.py
       - name: Run Pinterest fallback tests
         run: |
-          pytest -q tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py tests/test_pinterest_telegram_video_send.py tests/test_video_metadata.py tests/test_pinterest_vps_patcher.py
+          pytest -q tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py tests/test_pinterest_caption_delivery.py tests/test_pinterest_telegram_video_send.py tests/test_video_metadata.py tests/test_pinterest_vps_patcher.py
