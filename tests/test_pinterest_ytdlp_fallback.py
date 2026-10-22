@@ -125,11 +125,44 @@ async def test_hls_manifest_from_cobalt_is_not_downloaded_as_mp4(monkeypatch, tm
         "url": "https://v1.pinimg.com/playlist.m3u8",
         "filename": "video.m3u8",
     })
-    yt = AsyncMock(return_value=pm.PinterestPost(
-        "123", "HLS", [pm.PinterestMedia(URL_VIDEO, "video")]
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", AsyncMock(return_value=None))
+    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", AsyncMock(return_value=None))
+    assert await service.fetch_post(URL_VIDEO) is None
+
+
+@pytest.mark.asyncio
+async def test_local_public_photo_does_not_call_cobalt_invalid_body(monkeypatch, tmp_path):
+    service = _service(tmp_path)
+    cobalt = AsyncMock(side_effect=RuntimeError("error.api.invalid_body"))
+    service._fetch_cobalt_json = cobalt
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", AsyncMock(return_value=None))
+    gallery = AsyncMock(return_value=pm.PinterestPost(
+        "photo", "", [pm.PinterestMedia("https://i.pinimg.com/working.jpg", "photo")]
     ))
-    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", yt)
-    assert (await service.fetch_post(URL_VIDEO)).media_list[0].url == URL_VIDEO
+    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", gallery)
+    result = await service.fetch_post(URL_IMAGE)
+    assert result is not None
+    assert result.media_list[0].type == "photo"
+    cobalt.assert_not_awaited()
+    gallery.assert_awaited_once_with(URL_IMAGE)
+
+
+@pytest.mark.asyncio
+async def test_local_public_video_does_not_call_cobalt_invalid_body(monkeypatch, tmp_path):
+    service = _service(tmp_path)
+    cobalt = AsyncMock(side_effect=RuntimeError("error.api.invalid_body"))
+    service._fetch_cobalt_json = cobalt
+    video = AsyncMock(return_value=pm.PinterestPost(
+        "video", "", [pm.PinterestMedia(URL_VIDEO, "video")]
+    ))
+    gallery = AsyncMock()
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", video)
+    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", gallery)
+    result = await service.fetch_post(URL_VIDEO)
+    assert result is not None
+    assert result.media_list[0].type == "video"
+    cobalt.assert_not_awaited()
+    gallery.assert_not_awaited()
 
 
 @pytest.mark.asyncio
