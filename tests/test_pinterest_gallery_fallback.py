@@ -48,6 +48,119 @@ def test_fallback_rejects_unrelated_or_unsafe_urls(url):
     assert not pm._public_pin_url(url)
 
 
+def test_actual_gallery_dl_message_numbers_for_pin_media_and_metadata():
+    """The real gallery-dl protocol is Directory=2, Url=3, Queue=6."""
+    from services.platforms.pinterest_media import (
+        _gallery_directory_metadata,
+        _parse_gallery_record,
+    )
+
+    directory = [
+        2, {
+            "id": "606930487330666182",
+            "title": "Legenda da imagem no Pinterest",
+            "description": "",
+            "pinner": {"username": "public_creator"},
+            "images": {"orig": {"url": "https://i.pinimg.com/originals/pin.jpg"}},
+        },
+    ]
+    url = [
+        3, "https://i.pinimg.com/originals/pin.jpg",
+        {"extension": "jpg", "id": "606930487330666182"},
+    ]
+    assert _gallery_directory_metadata(directory)["title"] == (
+        "Legenda da imagem no Pinterest"
+    )
+    assert _parse_gallery_record(directory) is None
+    assert _gallery_directory_metadata(url) is None
+    assert _parse_gallery_record(url) == (url[1], url[2])
+
+
+def test_actual_gallery_dl_resolved_pin_json_photo_caption_and_id():
+    """Matches record types 2 and 3 from the real VPS output of -J."""
+    raw = json.dumps([
+        [2, {
+            "id": "606930487330666182",
+            "description": "Fotos do álbum original",
+            "title": "Pin público",
+            "aggregated_pin_data": {"aggregated_stats": {"saves": 18}},
+            "pinner": {"username": "autor"},
+        }],
+        [3, "https://i.pinimg.com/originals/01/pin.jpg", {
+            "extension": "jpg", "num": 1,
+        }],
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://pin.it/PJ9wr5JXg"
+    )
+    assert post is not None
+    assert post.id == "606930487330666182"
+    assert post.description == "Fotos do álbum original"
+    assert len(post.media_list) == 1
+    assert post.media_list[0].type == "photo"
+    assert post.media_list[0].url == "https://i.pinimg.com/originals/01/pin.jpg"
+    assert pm._gallery_caption_hint(raw) == "Fotos do álbum original"
+
+
+def test_actual_gallery_dl_title_used_when_description_is_empty():
+    raw = json.dumps([
+        [2, {"id": "606930487330666182", "title": "Neymar o colecionador de troféus", "description": None}],
+        [3, "https://i.pinimg.com/njr.jpg", {"extension": "jpg"}],
+    ])
+    post = pm.parse_pinterest_gallery_dump(raw, "https://pin.it/gLqzFSUZO")
+    assert post is not None
+    assert post.description == "Neymar o colecionador de troféus"
+
+
+def test_actual_gallery_dl_multi_photo_album_keeps_one_caption():
+    raw = json.dumps([
+        [2, {"id": "606930487330666182", "title": "Álbum de imagens", "description": "Legenda completa"}],
+        [3, "https://i.pinimg.com/a.jpg", {"extension": "jpg"}],
+        [3, "https://i.pinimg.com/b.jpg", {"extension": "jpg"}],
+        [3, "https://i.pinimg.com/c.png", {"extension": "png"}],
+    ])
+    post = pm.parse_pinterest_gallery_dump(
+        raw, "https://www.pinterest.com/pin/606930487330666182/"
+    )
+    assert post is not None
+    assert post.id == "606930487330666182"
+    assert post.description == "Legenda completa"
+    assert [item.type for item in post.media_list] == ["photo", "photo", "photo"]
+
+
+def test_actual_gallery_dl_single_file_or_directory_records():
+    raw = json.dumps([3, "https://i.pinimg.com/alone.jpg", {"extension": "jpg"}])
+    post = pm.parse_pinterest_gallery_dump(raw, "https://pin.it/PJ9wr5JXg")
+    assert post is not None
+    assert post.media_list[0].url == "https://i.pinimg.com/alone.jpg"
+
+    raw = json.dumps([2, {"title": "Somente metadados"}])
+    assert pm._gallery_caption_hint(raw) == "Somente metadados"
+    assert pm.parse_pinterest_gallery_dump(raw, "https://pin.it/PJ9wr5JXg") is None
+
+
+@pytest.mark.asyncio
+async def test_actual_gallery_dl_directory_and_media_skip_url_only_retry(monkeypatch):
+    """A successful -J must not need a second -G extraction that loses text."""
+    output = json.dumps([
+        [2, {"id": "606930487330666182", "description": "Legenda real do Pin"}],
+        [3, "https://i.pinimg.com/photo.jpg", {"extension": "jpg"}],
+    ]).encode("utf-8")
+    proc = SimpleNamespace(
+        returncode=0,
+        communicate=AsyncMock(return_value=(output, b"")),
+    )
+    spawn = AsyncMock(return_value=proc)
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    post = await pm._fetch_public_pin_gallery("https://pin.it/PJ9wr5JXg")
+    assert post is not None
+    assert post.description == "Legenda real do Pin"
+    assert len(post.media_list) == 1
+    assert spawn.await_count == 1
+    assert "-J" in spawn.await_args.args
+    assert "-G" not in spawn.await_args.args
+
+
 def test_gallery_parses_pictures_videos_and_deduplicates_in_order():
     raw = "\n".join(
         json.dumps(record)
