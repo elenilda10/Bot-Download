@@ -171,6 +171,38 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
     return PinterestPost(id=identifier, description=description, media_list=media)
 
 
+def parse_pinterest_gallery_urls(raw_output: str, source_url: str) -> Optional["PinterestPost"]:
+    """Parse gallery-dl -g output: one direct media URL per line.
+
+    The -g format is intentionally simpler than -j/-J metadata and has no
+    dependency on a specific gallery-dl JSON output structure.
+    """
+    media: list[PinterestMedia] = []
+    seen: set[str] = set()
+    for line in raw_output.splitlines():
+        media_url = line.strip()
+        if not _pinterest_cdn_url(media_url) or media_url in seen:
+            continue
+        ext = urlsplit(media_url).path.rsplit(".", 1)[-1].lower()
+        if ext in _PHOTO_EXTENSIONS:
+            media_type = "photo"
+        elif ext in _VIDEO_EXTENSIONS:
+            media_type = "video"
+        else:
+            continue
+        seen.add(media_url)
+        media.append(PinterestMedia(url=media_url, type=media_type))
+        if len(media) >= _GALLERY_MAX_ITEMS:
+            break
+    if not media:
+        return None
+    match = re.search(r"/pin/(\d+)", source_url)
+    post_id = match.group(1) if match else hashlib.blake2s(
+        source_url.encode("utf-8"), digest_size=8
+    ).hexdigest()
+    return PinterestPost(id=post_id, description="", media_list=media)
+
+
 async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
     if not _public_pin_url(url):
         return None
@@ -185,7 +217,7 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
             "--config-ignore", "--no-input", "--no-colors",
             "--http-timeout", "10", "--retries", "1",
             "--range", f"1-{_GALLERY_MAX_ITEMS}",
-            "-J", url,
+            "--get-urls", url,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -215,7 +247,7 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
         logging.info("Pinterest gallery-dl did not resolve public pin, status=%s", proc.returncode)
         return None
     try:
-        result = parse_pinterest_gallery_dump(stdout.decode("utf-8"), url)
+        result = parse_pinterest_gallery_urls(stdout.decode("utf-8"), url)
     except (UnicodeDecodeError, ValueError):
         return None
     if result:
@@ -430,6 +462,19 @@ class PinterestMediaService(CobaltMediaService):
         )
 
     async def fetch_post(self, url: str) -> Optional[PinterestPost]:
+        # The public Pinterest links were confirmed to work directly with
+        # yt-dlp (HLS video) and gallery-dl (JPG photo) on the VPS. Prefer
+        # these paths instead of issuing Cobalt requests which can return
+        # error.api.invalid_body for this service.
+        if _public_pin_url(url):
+            video = await _fetch_public_pin_yt_dlp(url)
+            if video and video.media_list:
+                return video
+            gallery = await _fetch_public_pin_gallery(url)
+            if gallery and gallery.media_list:
+                return gallery
+
+        # Preserve existing Cobalt behavior as a last-resort fallback.
         payload = {
             "url": url,
             "downloadMode": "auto",
@@ -441,22 +486,20 @@ class PinterestMediaService(CobaltMediaService):
             data = await self._fetch_cobalt_json(payload)
             post = parse_pinterest_post(data) if data else None
         except Exception as exc:
-            logging.warning("Pinterest Cobalt extraction failed, trying anonymous fallback: %s", type(exc).__name__)
-            post = None
-        if post and post.media_list:
-            # An HLS manifest is not a video file and must not be uploaded as MP4.
-            if not any(
-                item.type == "video"
-                and urlsplit(item.url).path.lower().endswith((".m3u8", ".mpd"))
-                for item in post.media_list
-            ):
-                return post
-        # Pinterest videos frequently use HLS. yt-dlp handles both segmented
-        # tracks and ffmpeg muxing; gallery-dl remains responsible for photos.
-        video = await _fetch_public_pin_yt_dlp(url)
-        if video:
-            return video
-        return await _fetch_public_pin_gallery(url)
+            logging.warning(
+                "Pinterest Cobalt fallback failed: %s", type(exc).__name__
+            )
+            return None
+        if not post or not post.media_list:
+            return None
+        # A manifest is not an MP4. Never try to upload HLS/MPD as a video.
+        if any(
+            item.type == "video"
+            and urlsplit(item.url).path.lower().endswith((".m3u8", ".mpd"))
+            for item in post.media_list
+        ):
+            return None
+        return post
 
     async def download_media(
         self,
