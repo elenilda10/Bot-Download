@@ -99,7 +99,13 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
     records: list[object] = []
     try:
         value = json.loads(raw_output)
-        records = value if isinstance(value, list) else [value]
+        # A single media record is itself a JSON list: [2, url, metadata].
+        # Treat it as one entry, not as three independent records.
+        records = (
+            [value] if _parse_gallery_record(value) is not None
+            else value if isinstance(value, list)
+            else [value]
+        )
     except (ValueError, TypeError):
         for line in raw_output.splitlines():
             try:
