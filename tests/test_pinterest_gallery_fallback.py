@@ -20,6 +20,7 @@ def _media_record(url: str, ext: str, **metadata: str) -> list:
         "https://www.pinterest.com/pin/123456789/",
         "https://pinterest.com/pin/123456789",
         "https://m.pinterest.com/pin/123456789/",
+        "https://br.pinterest.com/pin/123456789/",
         "https://www.pinterest.com.br/pin/123456789/",
         "https://pin.it/aB1234c",
     ],
