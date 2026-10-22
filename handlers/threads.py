@@ -228,14 +228,20 @@ async def process_threads_single_media(
 
     async def _send_downloaded(path: str):
         if media_kind == "video":
-            return await message.answer_video(
-                video=FSInputFile(path),
-                allow_sending_without_reply=True,
-                caption=bm.captions(user_settings["captions"], post.description, bot_url),
-                reply_markup=_threads_reply_markup(source_url, user_settings),
-                parse_mode="HTML",
-                **(await build_video_send_kwargs(path)),
-            )
+            # The metadata helper returns (kwargs, thumbnail_path), not a dict.
+            video_kwargs, thumbnail_path = await build_video_send_kwargs(path)
+            try:
+                return await message.answer_video(
+                    video=FSInputFile(path),
+                    allow_sending_without_reply=True,
+                    caption=bm.captions(user_settings["captions"], post.description, bot_url),
+                    reply_markup=_threads_reply_markup(source_url, user_settings),
+                    parse_mode="HTML",
+                    **video_kwargs,
+                )
+            finally:
+                if thumbnail_path:
+                    await remove_file(thumbnail_path)
         return await message.answer_photo(
             photo=FSInputFile(path),
             allow_sending_without_reply=True,
