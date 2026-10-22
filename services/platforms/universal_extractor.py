@@ -15,6 +15,7 @@ from services.platforms.facebook_media import (
     _facebook_gallery_first_conflicts_with_post,
     _facebook_group_post_id,
     _facebook_profile_post_id,
+    _order_facebook_photo_paths,
     _is_facebook_url,
     _verified_facebook_group_photos,
     _verified_facebook_profile_photos,
@@ -469,6 +470,8 @@ async def _download_with_gallery_dl(
             return int(match.group(1)) if match else 0
 
         downloaded.sort(key=_sort_key)
+        if _is_facebook_url(url) and facebook_expected_photo_ids:
+            downloaded = _order_facebook_photo_paths(downloaded, facebook_expected_photo_ids)
         if _is_facebook_url(url):
             # Only a single Facebook post/gallery, never an entire profile.
             downloaded = downloaded[:10]
