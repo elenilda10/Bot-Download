@@ -14,12 +14,12 @@ from services.platforms.pinterest_media import parse_pinterest_gallery_dump
 
 def _pinterest_post(*, two_images: bool):
     records = [
-        [1, {"description": "Legenda original <&> do Pinterest"}],
-        [2, "https://i.pinimg.com/a.jpg", {"extension": "jpg"}],
+        [2, {"id": "123456789", "description": "Legenda original <&> do Pinterest"}],
+        [3, "https://i.pinimg.com/a.jpg", {"extension": "jpg"}],
     ]
     if two_images:
         records.append(
-            [2, "https://i.pinimg.com/b.jpg", {"extension": "jpg"}]
+            [3, "https://i.pinimg.com/b.jpg", {"extension": "jpg"}]
         )
     post = parse_pinterest_gallery_dump(
         json.dumps(records), "https://www.pinterest.com/pin/123456789/"
