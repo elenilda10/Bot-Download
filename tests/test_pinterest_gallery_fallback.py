@@ -259,6 +259,7 @@ async def test_gallery_fallback_when_cobalt_returns_no_media(monkeypatch, tmp_pa
         "555", "Recovered", [pm.PinterestMedia("https://i.pinimg.com/a.jpg", "photo")]
     )
     fallback = AsyncMock(return_value=expected)
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", AsyncMock(return_value=None))
     monkeypatch.setattr(pm, "_fetch_public_pin_gallery", fallback)
 
     result = await service.fetch_post("https://www.pinterest.com/pin/555/")
@@ -284,5 +285,6 @@ async def test_gallery_fallback_on_cobalt_exception(monkeypatch, tmp_path):
         "555", "Recovered", [pm.PinterestMedia("https://i.pinimg.com/a.jpg", "photo")]
     )
     fallback = AsyncMock(return_value=expected)
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", AsyncMock(return_value=None))
     monkeypatch.setattr(pm, "_fetch_public_pin_gallery", fallback)
     assert await service.fetch_post("https://www.pinterest.com/pin/555/") is expected
