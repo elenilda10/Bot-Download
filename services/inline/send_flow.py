@@ -290,14 +290,11 @@ async def deliver_inline_video(
         # Otimiza o container de vídeo para streaming instantâneo
         _optimize_video_for_streaming(metrics.path)
 
-        raw_kwargs = build_video_send_kwargs(metrics.path)
-        if asyncio.iscoroutine(raw_kwargs):
-            video_kwargs = await raw_kwargs
-        else:
-            video_kwargs = raw_kwargs
-
-        if not isinstance(video_kwargs, dict):
-            video_kwargs = {}
+        # The metadata helper returns (Telegram kwargs, generated thumbnail).
+        # Register the thumbnail for cleanup even when upload fails.
+        video_kwargs, thumbnail_path = await build_video_send_kwargs(metrics.path)
+        if thumbnail_path:
+            state.register_download_path(thumbnail_path)
 
         video_kwargs["supports_streaming"] = True
         video_meta = {
