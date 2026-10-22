@@ -85,6 +85,13 @@ def test_album_rejects_wrong_publication_url():
     ) is None
 
 
+def test_album_paths_follow_preflight_order_not_filesystem_order():
+    paths = [f"/tmp/gallery/{photo_id}.png" for photo_id in reversed(IDS)]
+    assert facebook_media._order_facebook_photo_paths(paths, IDS) == [
+        f"/tmp/gallery/{photo_id}.png" for photo_id in IDS
+    ]
+
+
 def test_single_photo_keeps_post_caption_without_album_set():
     single = "1577004777801677"
     src = {
