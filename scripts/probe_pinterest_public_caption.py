@@ -37,8 +37,13 @@ async def main() -> None:
 
     print("URL:", url)
     print("Consultando metadados, sem baixar mídias nem reiniciar o bot...")
+    import os
+    sibling = Path(sys.executable).with_name("gallery-dl")
+    executable = os.getenv("PINTEREST_GALLERY_DL_BIN", "").strip() or (
+        str(sibling) if sibling.is_file() else "gallery-dl"
+    )
     dumped = await module._run_public_pin_gallery(
-        module._gallery_cli_executable(), url, "-J"
+        executable, url, "-J"
     )
     canonical = None
     if dumped and dumped[1]:
