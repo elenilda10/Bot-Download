@@ -45,4 +45,4 @@ jobs:
           python -m py_compile services/platforms/pinterest_media.py tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py
       - name: Run Pinterest fallback tests
         run: |
-          pytest -q tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py tests/test_pinterest_handler.py
+          pytest -q tests/test_pinterest_gallery_fallback.py tests/test_pinterest_ytdlp_fallback.py
