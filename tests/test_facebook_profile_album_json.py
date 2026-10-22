@@ -94,6 +94,7 @@ def test_single_photo_keeps_post_caption_without_album_set():
         "post_text": "Legenda original do Flamengo",
         "caption": "Legenda da foto",
         "num": 1,
+        "next_photo_id": "999999999999",  # Navigation to other photos is not an album.
     }
     url = "https://www.facebook.com/100064765086437/posts/1577004794468342/"
     assert facebook_media._facebook_profile_post_json(
