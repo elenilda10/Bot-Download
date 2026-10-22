@@ -163,6 +163,39 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
 
 
 @pytest.mark.asyncio
+async def test_gallery_uses_executable_next_to_venv_python(monkeypatch, tmp_path):
+    gallery_bin = tmp_path / "gallery-dl"
+    gallery_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.delenv("PINTEREST_GALLERY_DL_BIN", raising=False)
+    monkeypatch.setattr(pm.sys, "executable", str(tmp_path / "python3"))
+    process = SimpleNamespace(
+        returncode=1,
+        communicate=AsyncMock(return_value=(b"", b"")),
+    )
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    assert await pm._fetch_public_pin_gallery(
+        "https://www.pinterest.com/pin/555/"
+    ) is None
+    assert spawn.await_args.args[0] == str(gallery_bin)
+
+
+@pytest.mark.asyncio
+async def test_gallery_honors_explicit_binary_override(monkeypatch):
+    monkeypatch.setenv("PINTEREST_GALLERY_DL_BIN", "/opt/gallery/bin/gallery-dl")
+    process = SimpleNamespace(
+        returncode=1,
+        communicate=AsyncMock(return_value=(b"", b"")),
+    )
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    assert await pm._fetch_public_pin_gallery(
+        "https://www.pinterest.com/pin/555/"
+    ) is None
+    assert spawn.await_args.args[0] == "/opt/gallery/bin/gallery-dl"
+
+
+@pytest.mark.asyncio
 async def test_gallery_never_spawns_process_for_boards_or_unrelated_websites(monkeypatch):
     spawn = AsyncMock()
     monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
