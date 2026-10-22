@@ -60,7 +60,7 @@ def _public_pin_url(url: str) -> bool:
         return False
     if host in {"pin.it", "www.pin.it"}:
         return bool(re.fullmatch(r"/[A-Za-z0-9_-]{3,80}/?", parsed.path))
-    if not any(host == domain or host == "www." + domain or host == "m." + domain for domain in _PUBLIC_PIN_HOSTS):
+    if not any(host == domain or host.endswith("." + domain) for domain in _PUBLIC_PIN_HOSTS):
         return False
     return bool(re.fullmatch(r"/pin/(?:[A-Za-z0-9_-]+--)?[0-9]+/?", parsed.path))
 
