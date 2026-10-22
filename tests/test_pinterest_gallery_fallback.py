@@ -162,6 +162,111 @@ async def test_gallery_subprocess_is_anonymous_and_uses_bounded_selection(monkey
     assert args[-1] == "https://www.pinterest.com/pin/555/"
 
 
+def test_gallery_url_mode_accepts_only_direct_pinimg_media():
+    post = pm.parse_pinterest_gallery_urls(
+        "\n".join([
+            "https://www.pinterest.com/pin/123/sent/?code=secret",
+            "https://i.pinimg.com/originals/photo.jpg?token=test",
+            "https://v1.pinimg.com/videos/video.mp4",
+            "https://i.pinimg.com/originals/photo.jpg?token=test",
+            "https://evil.pinimg.com.example.com/originals/attack.jpg",
+            "https://i.pinimg.com/originals/animation.gif",
+            "| https://untrusted.example/fallback.jpg",
+        ]),
+        "https://pin.it/5Qs3W9mxR",
+    )
+    assert post is not None
+    assert [m.type for m in post.media_list] == ["photo", "video"]
+    assert len(post.media_list) == 2
+
+
+def test_gallery_url_mode_rejects_only_shortlink_redirect():
+    assert pm.parse_pinterest_gallery_urls(
+        "https://www.pinterest.com/pin/123/sent/?code=abc",
+        "https://pin.it/5Qs3W9mxR",
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_pin_it_json_redirect_recovers_jpg_via_resolved_urls(monkeypatch):
+    """Regression: direct gallery-dl downloads JPG but JSON has only type 6."""
+    def fake_process(data: bytes, status: int = 0, stderr: bytes = b""):
+        return SimpleNamespace(
+            returncode=status,
+            communicate=AsyncMock(return_value=(data, stderr)),
+        )
+
+    redirect = json.dumps([
+        [6, "https://www.pinterest.com/pin/123/sent/?code=sample", {}],
+    ]).encode("utf-8")
+    metadata = fake_process(redirect)
+    resolved = fake_process(
+        b"https://i.pinimg.com/originals/photo.jpg\n"
+    )
+    spawn = AsyncMock(side_effect=[metadata, resolved])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+
+    post = await pm._fetch_public_pin_gallery(
+        "https://pin.it/5Qs3W9mxR"
+    )
+    assert post is not None
+    assert len(post.media_list) == 1
+    assert post.media_list[0].type == "photo"
+    assert post.media_list[0].url == "https://i.pinimg.com/originals/photo.jpg"
+    args = [call.args for call in spawn.await_args_list]
+    assert len(args) == 2
+    assert "-J" in args[0]
+    assert "-G" in args[1]
+    assert all("--no-input" in a for a in args)
+    assert all("--cookies" not in a for a in args)
+
+
+@pytest.mark.asyncio
+async def test_gallery_supports_older_config_flag(monkeypatch):
+    def fake_process(data: bytes, status: int = 0, stderr: bytes = b""):
+        return SimpleNamespace(
+            returncode=status,
+            communicate=AsyncMock(return_value=(data, stderr)),
+        )
+
+    spawn = AsyncMock(side_effect=[
+        fake_process(b"", 2, b"error: unrecognized arguments: --config-ignore"),
+        fake_process(
+            json.dumps(_media_record(
+                "https://i.pinimg.com/originals/photo.jpg", "jpg"
+            )).encode()
+        ),
+    ])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    result = await pm._fetch_public_pin_gallery(
+        "https://pin.it/5Qs3W9mxR"
+    )
+    assert result is not None
+    assert result.media_list[0].type == "photo"
+    assert "--config-ignore" in spawn.await_args_list[0].args
+    assert "--ignore-config" in spawn.await_args_list[1].args
+
+
+@pytest.mark.asyncio
+async def test_gallery_redirect_resolution_never_returns_untrusted_webpage(monkeypatch):
+    def fake_process(data: bytes):
+        return SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(data, b"")),
+        )
+    spawn = AsyncMock(side_effect=[
+        fake_process(json.dumps([
+            [6, "https://pinterest.com/pin/123", {}]
+        ]).encode()),
+        fake_process(b"https://pinterest.com/pin/123\nhttps://169.254.169.254/image.jpg\n"),
+    ])
+    monkeypatch.setattr(pm.asyncio, "create_subprocess_exec", spawn)
+    result = await pm._fetch_public_pin_gallery(
+        "https://pin.it/5Qs3W9mxR"
+    )
+    assert result is None
+
+
 @pytest.mark.asyncio
 async def test_gallery_uses_executable_next_to_venv_python(monkeypatch, tmp_path):
     gallery_bin = tmp_path / "gallery-dl"
