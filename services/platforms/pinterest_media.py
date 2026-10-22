@@ -193,27 +193,68 @@ def _canonical_pin_from_gallery_output(raw_output: str) -> Optional[str]:
     return None
 
 
-def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["PinterestPost"]:
-    """Parse anonymous gallery-dl metadata, never returning external-site URLs."""
-    records: list[object] = []
+def _gallery_directory_metadata(record: object) -> dict | None:
+    """Actual gallery-dl JSON Directory record is [1, metadata]."""
+    if not isinstance(record, list) or not record or record[0] != 1:
+        return None
+    if len(record) >= 2 and isinstance(record[1], dict):
+        return record[1]
+    if len(record) >= 3 and isinstance(record[2], dict):
+        return record[2]
+    return None
+
+
+def _gallery_dump_records(raw_output: str) -> list[object]:
     try:
-        value = json.loads(raw_output)
-        # A single media record is itself a JSON list: [2, url, metadata].
-        # Treat it as one entry, not as three independent records.
-        records = (
-            [value] if _parse_gallery_record(value) is not None
-            else value if isinstance(value, list)
-            else [value]
-        )
+        decoded = json.loads(raw_output)
     except (ValueError, TypeError):
+        records = []
         for line in raw_output.splitlines():
             try:
                 records.append(json.loads(line))
             except ValueError:
                 continue
+    else:
+        if (
+            isinstance(decoded, list) and decoded
+            and isinstance(decoded[0], int) and decoded[0] in (1, 2, 6)
+        ):
+            records = [decoded]
+        elif isinstance(decoded, list):
+            records = decoded
+        else:
+            records = [decoded]
 
-    if len(records) == 1 and isinstance(records[0], list) and records[0] and isinstance(records[0][0], list):
+    if (
+        len(records) == 1 and isinstance(records[0], list)
+        and records[0] and isinstance(records[0][0], list)
+    ):
         records = records[0]
+    return records
+
+
+def _gallery_caption_hint(raw_output: str) -> str:
+    """Find real Pin text even if JSON contains no downloadable file entry."""
+    for record in _gallery_dump_records(raw_output):
+        directory = _gallery_directory_metadata(record)
+        if directory is not None:
+            caption = _pinterest_caption_from_metadata(directory)
+            if caption:
+                return caption
+        entry = _parse_gallery_record(record)
+        if entry:
+            url, metadata = entry
+            if url.startswith("text:") and metadata.get("extension") == "txt":
+                return url[5:].strip()[:1000]
+            caption = _pinterest_caption_from_metadata(metadata)
+            if caption:
+                return caption
+    return ""
+
+
+def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["PinterestPost"]:
+    """Parse anonymous gallery-dl metadata, never returning external-site URLs."""
+    records = _gallery_dump_records(raw_output)
 
     media: list[PinterestMedia] = []
     seen: set[str] = set()
@@ -221,13 +262,10 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
     pin_id = re.search(r"/pin/(\d+)", source_url)
 
     for record in records:
-        if (
-            isinstance(record, list) and len(record) >= 3
-            and record[0] == 1 and isinstance(record[2], dict)
-        ):
-            # gallery-dl -J provides post metadata in the Directory record,
-            # including for carousel and Story Pins. It precedes file records.
-            description = description or _pinterest_caption_from_metadata(record[2])
+        directory = _gallery_directory_metadata(record)
+        if directory is not None:
+            # Actual gallery-dl output puts the description in [1, metadata].
+            description = description or _pinterest_caption_from_metadata(directory)
             continue
 
         entry = _parse_gallery_record(record)
@@ -348,9 +386,11 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
     dumped = await _run_public_pin_gallery(executable, url, "-J")
     result = None
     canonical_attempted = None
+    caption_hint = ""
     if dumped and dumped[1]:
         try:
             raw = dumped[1].decode("utf-8")
+            caption_hint = _gallery_caption_hint(raw)
             result = parse_pinterest_gallery_dump(raw, url)
             if result is None:
                 # A short-link -J response can be just a redirect record.
@@ -363,8 +403,10 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
                         executable, canonical, "-J"
                     )
                     if detailed and detailed[1]:
+                        detailed_raw = detailed[1].decode("utf-8")
+                        caption_hint = _gallery_caption_hint(detailed_raw) or caption_hint
                         result = parse_pinterest_gallery_dump(
-                            detailed[1].decode("utf-8"), canonical
+                            detailed_raw, canonical
                         )
         except (UnicodeDecodeError, ValueError):
             pass
@@ -378,6 +420,8 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
             try:
                 resolved_text = resolved[1].decode("utf-8")
                 result = parse_pinterest_gallery_urls(resolved_text, url)
+                if result and caption_hint:
+                    result.description = caption_hint
                 # -G has media URLs but no captions. If it exposes a trusted
                 # canonical URL we have not queried, try -J once for metadata.
                 canonical = _canonical_pin_from_gallery_output(resolved_text)
@@ -389,15 +433,23 @@ async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
                         enriched = parse_pinterest_gallery_dump(
                             detailed[1].decode("utf-8"), canonical
                         )
-                        if enriched:
+                        if enriched and enriched.description:
                             result.description = enriched.description
+                        elif result:
+                            result.description = (
+                                _gallery_caption_hint(detailed[1].decode("utf-8"))
+                                or result.description
+                            )
             except (UnicodeDecodeError, ValueError):
                 pass
 
     if result:
+        if not result.description and caption_hint:
+            result.description = caption_hint
         logging.info(
-            "Pinterest gallery-dl resolved %d item(s) as direct media",
+            "Pinterest gallery-dl resolved %d item(s) as direct media (caption=%s)",
             len(result.media_list),
+            "available" if result.description else "unavailable",
         )
     else:
         logging.warning("Pinterest gallery-dl did not yield supported direct media")
