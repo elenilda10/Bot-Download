@@ -171,55 +171,112 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
     return PinterestPost(id=identifier, description=description, media_list=media)
 
 
+def parse_pinterest_gallery_urls(raw_output: str, source_url: str) -> Optional["PinterestPost"]:
+    """Parse gallery-dl -G output when -J only returned short-link redirects."""
+    records: list[list] = []
+    for line in raw_output.splitlines():
+        media_url = line.strip()
+        if _pinterest_cdn_url(media_url):
+            records.append([2, media_url, {}])
+        if len(records) >= _GALLERY_MAX_ITEMS:
+            break
+    return parse_pinterest_gallery_dump(json.dumps(records), source_url)
+
+
+async def _run_public_pin_gallery(
+    executable: str, url: str, output_mode: str
+) -> tuple[int, bytes] | None:
+    """Bounded anonymous gallery-dl run, with support for older CLI options."""
+    async def _invoke(config_switch: str) -> tuple[int, bytes, bytes] | None:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                executable,
+                config_switch, "--no-input", "--no-colors",
+                "--http-timeout", "10", "--retries", "1",
+                "--range", f"1-{_GALLERY_MAX_ITEMS}",
+                output_mode, url,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except (OSError, ValueError):
+            logging.warning("Pinterest gallery-dl executable could not be started")
+            return None
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=_GALLERY_TIMEOUT_SECONDS
+            )
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
+            raise
+        except asyncio.TimeoutError:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
+            logging.warning("Pinterest gallery-dl %s timed out", output_mode)
+            return None
+        if len(stdout) > _GALLERY_MAX_OUTPUT_BYTES:
+            logging.warning("Pinterest gallery-dl %s output exceeded limit", output_mode)
+            return None
+        return proc.returncode, stdout, stderr
+
+    result = await _invoke("--config-ignore")
+    if result and result[0] != 0:
+        stderr = result[2].lower()
+        # gallery-dl renamed --ignore-config to --config-ignore.
+        if b"unrecognized arguments" in stderr or b"no such option" in stderr:
+            result = await _invoke("--ignore-config")
+
+    if result is None:
+        return None
+    status, stdout, _stderr = result
+    if status != 0 and not stdout:
+        logging.info("Pinterest gallery-dl %s returned status=%s", output_mode, status)
+    return status, stdout
+
+
 async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
     if not _public_pin_url(url):
         return None
+
     executable = os.getenv("PINTEREST_GALLERY_DL_BIN", "").strip()
     if not executable:
-        # systemd may execute venv/bin/python while not adding venv/bin to PATH.
+        # systemd can have a PATH different from the bot's virtualenv.
         sibling = Path(sys.executable).with_name("gallery-dl")
         executable = str(sibling) if sibling.is_file() else "gallery-dl"
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            executable,
-            "--config-ignore", "--no-input", "--no-colors",
-            "--http-timeout", "10", "--retries", "1",
-            "--range", f"1-{_GALLERY_MAX_ITEMS}",
-            "-J", url,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except (OSError, ValueError):
-        logging.info("Pinterest anonymous gallery-dl fallback not available")
-        return None
-    try:
-        try:
-            stdout, _stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_GALLERY_TIMEOUT_SECONDS
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            logging.warning("Pinterest gallery-dl timed out")
-            return None
-    except asyncio.CancelledError:
-        if proc.returncode is None:
-            proc.kill()
-            await proc.communicate()
-        raise
 
-    if len(stdout) > _GALLERY_MAX_OUTPUT_BYTES:
-        logging.warning("Pinterest gallery-dl metadata exceeds size limit")
-        return None
-    if proc.returncode != 0 and not stdout:
-        logging.info("Pinterest gallery-dl did not resolve public pin, status=%s", proc.returncode)
-        return None
-    try:
-        result = parse_pinterest_gallery_dump(stdout.decode("utf-8"), url)
-    except (UnicodeDecodeError, ValueError):
-        return None
+    dumped = await _run_public_pin_gallery(executable, url, "-J")
+    result = None
+    if dumped and dumped[1]:
+        try:
+            result = parse_pinterest_gallery_dump(
+                dumped[1].decode("utf-8"), url
+            )
+        except (UnicodeDecodeError, ValueError):
+            pass
+
+    if result is None:
+        # Some pin.it redirects contain only a [6, destination, {}] record
+        # in JSON mode. -G resolves intermediary URLs and prints final media
+        # URLs, even when the normal gallery-dl download succeeds already.
+        logging.info("Pinterest JSON metadata had no downloadable media; resolving URLs")
+        resolved = await _run_public_pin_gallery(executable, url, "-G")
+        if resolved and resolved[1]:
+            try:
+                result = parse_pinterest_gallery_urls(
+                    resolved[1].decode("utf-8"), url
+                )
+            except (UnicodeDecodeError, ValueError):
+                pass
+
     if result:
-        logging.info("Pinterest gallery-dl fallback resolved %s media item(s)", len(result.media_list))
+        logging.info(
+            "Pinterest gallery-dl resolved %d item(s) as direct media",
+            len(result.media_list),
+        )
+    else:
+        logging.warning("Pinterest gallery-dl did not yield supported direct media")
     return result
 
 
