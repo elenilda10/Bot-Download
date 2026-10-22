@@ -115,8 +115,33 @@ def _pinterest_caption_from_metadata(metadata: object) -> str:
         "closeup_description", "title", "seo_description", "alt_text",
     ):
         value = metadata.get(key)
+        if isinstance(value, dict):
+            value = value.get("text")
         if isinstance(value, str) and value.strip():
             return value.strip()[:1000]
+
+    # Story/album Pins may contain the author's text as paragraph blocks
+    # rather than in the main description field.
+    story = metadata.get("story_pin_data")
+    pages = story.get("pages") if isinstance(story, dict) else None
+    if isinstance(pages, list):
+        paragraphs: list[str] = []
+        for page in pages[:_GALLERY_MAX_ITEMS]:
+            blocks = page.get("blocks") if isinstance(page, dict) else None
+            if not isinstance(blocks, list):
+                continue
+            for block in blocks[:20]:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "story_pin_paragraph_block"
+                ):
+                    value = block.get("text")
+                    if isinstance(value, str) and value.strip():
+                        paragraphs.append(value.strip())
+            if len(paragraphs) >= 8:
+                break
+        if paragraphs:
+            return "\n".join(paragraphs)[:1000]
     return ""
 
 
@@ -209,6 +234,13 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
         if entry is None:
             continue
         media_url, metadata = entry
+        # gallery-dl represents some Story Pin paragraphs as text: URLs.
+        # They are not downloadable media, but they can contain the album
+        # caption when Pinterest's main description is empty.
+        if media_url.startswith("text:"):
+            if not description and metadata.get("extension") == "txt":
+                description = media_url[5:].strip()[:1000]
+            continue
         if not _pinterest_cdn_url(media_url) or media_url in seen:
             continue
         ext = str(metadata.get("extension") or "").lower().lstrip(".")
