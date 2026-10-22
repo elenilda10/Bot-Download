@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 import re
+import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
@@ -162,7 +164,11 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
 async def _fetch_public_pin_gallery(url: str) -> Optional["PinterestPost"]:
     if not _public_pin_url(url):
         return None
-    executable = os.getenv("PINTEREST_GALLERY_DL_BIN", "").strip() or "gallery-dl"
+    executable = os.getenv("PINTEREST_GALLERY_DL_BIN", "").strip()
+    if not executable:
+        # systemd may execute venv/bin/python while not adding venv/bin to PATH.
+        sibling = Path(sys.executable).with_name("gallery-dl")
+        executable = str(sibling) if sibling.is_file() else "gallery-dl"
     try:
         proc = await asyncio.create_subprocess_exec(
             executable,
