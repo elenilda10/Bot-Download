@@ -320,7 +320,7 @@ async def test_gallery_returns_none_if_binary_is_unavailable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cobalt_remains_primary_and_gallery_is_not_used_when_cobalt_works(monkeypatch, tmp_path):
+async def test_cobalt_remains_fallback_after_local_extractors_fail(monkeypatch, tmp_path):
     async def _fetch(*args, **kwargs):
         return {
             "status": "tunnel", "url": "https://cdn.example.com/video.mp4",
@@ -336,13 +336,17 @@ async def test_cobalt_remains_primary_and_gallery_is_not_used_when_cobalt_works(
         fetch_cobalt_data_func=_fetch,
         retry_async_operation_func=_retry,
     )
-    backup = AsyncMock()
-    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", backup)
+    gallery = AsyncMock(return_value=None)
+    video = AsyncMock(return_value=None)
+    monkeypatch.setattr(pm, "_fetch_public_pin_gallery", gallery)
+    monkeypatch.setattr(pm, "_fetch_public_pin_yt_dlp", video)
 
-    result = await service.fetch_post("https://www.pinterest.com/pin/555/")
+    url = "https://www.pinterest.com/pin/555/"
+    result = await service.fetch_post(url)
     assert result is not None
     assert result.media_list[0].url == "https://cdn.example.com/video.mp4"
-    backup.assert_not_awaited()
+    gallery.assert_awaited_once_with(url)
+    video.assert_awaited_once_with(url)
 
 
 @pytest.mark.asyncio
