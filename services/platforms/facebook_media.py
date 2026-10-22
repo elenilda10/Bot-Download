@@ -755,12 +755,15 @@ async def download_facebook_media(
         if re.fullmatch(r"/reel/\d+/?", target_path):
             target = f"https://www.facebook.com{target_path.rstrip('/')}/"
 
-        if facebook_gallery_first_test or facebook_gallery_first:
-            # Resolve share -> gallery-dl on the exact target URL for images,
-            # multi-photo posts and videos. This is the proven /fbteste flow.
-            # Login cookies may ONLY be provided by the handler's admin/private
-            # branch; ordinary users must always download anonymously.
-            if facebook_gallery_first_test and not facebook_browser_profile:
+        if facebook_gallery_first and not facebook_gallery_first_test:
+            # Legacy FB_GALLERY_FIRST callers cannot bypass photo/post identity
+            # checks. The old path sent unrelated photos from Facebook feeds.
+            logging.warning("Facebook gallery-first ignored outside explicit admin test")
+
+        if facebook_gallery_first_test:
+            # Explicit private-admin /fbteste is diagnostic ONLY; never use
+            # this unverified path for regular user downloads or callbacks.
+            if not facebook_browser_profile:
                 logging.warning("Facebook gallery-first test requires private admin authentication")
                 return None
             gallery = await _download_with_gallery_dl(
