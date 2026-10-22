@@ -398,6 +398,20 @@ async def _facebook_profile_post_expected_photo_ids(
     return record["ids"] if record else None
 
 
+def _order_facebook_photo_paths(
+    paths: list[str], expected_ids: tuple[str, ...],
+) -> list[str]:
+    """Preserve the post's photo order regardless of os.walk() ordering."""
+    position = {photo_id: index for index, photo_id in enumerate(expected_ids)}
+    return sorted(
+        paths,
+        key=lambda path: position.get(
+            os.path.splitext(os.path.basename(path))[0],
+            len(position),
+        ),
+    )
+
+
 def _verified_facebook_profile_photos(
     url: str, paths: list[str], expected_ids: tuple[str, ...] | None = None,
 ) -> bool:
