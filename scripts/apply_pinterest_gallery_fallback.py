@@ -20,7 +20,7 @@ import tempfile
 ROOT = Path("/root/Bot-Download")
 TARGET = ROOT / "services/platforms/pinterest_media.py"
 EXPECTED_OLD = "eab748adc02389b641681ea96dc56a2908775f59"
-EXPECTED_NEW = "c6d2cce754e6f5bfc8df4349dd865b693ef06d37"
+EXPECTED_NEW = "d2688b66faf7184820b0e5b92549b0e60bd6eefb"
 
 
 def git_blob_sha(contents: bytes) -> str:
