@@ -336,10 +336,14 @@ def _facebook_profile_post_json(data: object, url: str) -> dict | None:
     if len(texts) > 1:
         return None  # Conflicting text within the same post is not trustworthy.
 
-    # An album's photo-specific 'caption' is not automatically the post text.
-    description = next(iter(texts), "")
-    if not description and len(photos) == 1:
-        description = facebook_caption(photos[0])
+    # For a single photo, 'post_text' is extracted from the first generic
+    # text element on the Facebook post page and can belong to another post.
+    # The photo-page caption is tied to the identified photo; if absent, do
+    # not show an unverified fallback. Albums retain their post-level text.
+    description = (
+        facebook_photo_caption(photos[0]) if len(photos) == 1
+        else next(iter(texts), "")
+    )
     return {"ids": ids, "description": description}
 
 
@@ -654,6 +658,18 @@ def facebook_ytdlp_arguments(
     if browser_profile:
         args.extend(["--cookies-from-browser", f"firefox:{browser_profile}"])
     return args
+
+
+def facebook_photo_caption(metadata: dict) -> str:
+    """Caption explicitly extracted from a photo page, not a generic post HTML text.
+
+    A Facebook photo's 'post_text' can be an unrelated recommendation. Never
+    use it to populate a missing caption for a single-photo delivery.
+    """
+    if not isinstance(metadata, dict):
+        return ""
+    caption = metadata.get("caption")
+    return caption.strip() if isinstance(caption, str) else ""
 
 
 def facebook_caption(metadata: dict) -> str:

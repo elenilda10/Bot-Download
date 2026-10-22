@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services.platforms import facebook_media
+from services.platforms import facebook_media, universal_extractor
 
 
 POST_ID = "1726664292157547"
@@ -92,21 +92,78 @@ def test_album_paths_follow_preflight_order_not_filesystem_order():
     ]
 
 
-def test_single_photo_keeps_post_caption_without_album_set():
+def test_single_photo_ignores_unrelated_post_text_and_keeps_photo_caption():
     single = "1577004777801677"
     src = {
         "id": single,
         "set_id": "",
         "post_photo": f"https://www.facebook.com/photo/?fbid={single}",
-        "post_text": "Legenda original do Flamengo",
-        "caption": "Legenda da foto",
+        "post_text": "Mr. Worldwide back in the 305 — Pitbull",
+        "caption": "Do lixo à organização! Transforme a embalagem em um cestinho.",
         "num": 1,
         "next_photo_id": "999999999999",  # Navigation to other photos is not an album.
     }
     url = "https://www.facebook.com/100064765086437/posts/1577004794468342/"
     assert facebook_media._facebook_profile_post_json(
         [[2, dict(src)], [3, "https://example.invalid/photo.png", src]], url
-    ) == {"ids": (single,), "description": "Legenda original do Flamengo"}
+    ) == {
+        "ids": (single,),
+        "description": "Do lixo à organização! Transforme a embalagem em um cestinho.",
+    }
+
+
+def test_single_photo_with_no_photo_caption_drops_untrusted_post_text():
+    single = "1577004777801677"
+    src = {
+        "id": single,
+        "set_id": "",
+        "post_photo": f"https://www.facebook.com/photo/?fbid={single}",
+        "post_text": "Mr. Worldwide back in the 305 — Pitbull",
+        "caption": "",
+    }
+    url = "https://www.facebook.com/100064765086437/posts/1577004794468342/"
+    assert facebook_media._facebook_profile_post_json(
+        [[2, dict(src)], [3, "https://example.invalid/photo.png", src]], url,
+    ) == {"ids": (single,), "description": ""}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("caption, expected", [
+    ("Do lixo à organização! Transforme uma embalagem em um cestinho!",
+     "Do lixo à organização! Transforme uma embalagem em um cestinho!"),
+    ("", ""),
+])
+async def test_gallery_first_single_photo_never_uses_unrelated_post_text(
+    monkeypatch, tmp_path, caption, expected,
+):
+    photo_id = "1577004777801677"
+    media_dir = tmp_path / "gdl_test"
+    media_dir.mkdir()
+    photo_path = media_dir / f"{photo_id}.jpg"
+    photo_path.write_bytes(b"fake photo")
+    (media_dir / f"{photo_id}.jpg.json").write_text(json.dumps({
+        "id": photo_id,
+        "post_photo": f"https://www.facebook.com/photo/?fbid={photo_id}",
+        "set_id": "",
+        "caption": caption,
+        "post_text": "Mr. Worldwide back in the 305 — Pitbull",
+        "title": "Photos from some Facebook post",
+    }))
+    proc = SimpleNamespace(
+        returncode=0,
+        communicate=AsyncMock(return_value=(b"", b"")),
+    )
+    monkeypatch.setattr(
+        universal_extractor.asyncio, "create_subprocess_exec",
+        AsyncMock(return_value=proc),
+    )
+    url = "https://www.facebook.com/100064765086437/posts/1577004794468342/"
+    result = await universal_extractor._download_with_gallery_dl(
+        url, str(tmp_path), "test", facebook_gallery_public_unverified=True,
+    )
+    assert result is not None
+    assert len(result.media_list) == 1
+    assert result.description == expected
 
 
 @pytest.mark.asyncio
