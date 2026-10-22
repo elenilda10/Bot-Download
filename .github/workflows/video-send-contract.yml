@@ -1,0 +1,62 @@
+name: Video send contract
+
+on:
+  pull_request:
+    paths:
+      - "handlers/pinterest.py"
+      - "handlers/threads.py"
+      - "services/inline/send_flow.py"
+      - "services/media/delivery.py"
+      - "services/media/video_metadata.py"
+      - "tests/test_video_metadata.py"
+      - "tests/test_video_send_tuple_regression.py"
+      - "scripts/apply_pinterest_video_send_fix.py"
+      - ".github/workflows/video-send-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "handlers/pinterest.py"
+      - "handlers/threads.py"
+      - "services/inline/send_flow.py"
+      - "services/media/delivery.py"
+      - "services/media/video_metadata.py"
+      - "tests/test_video_metadata.py"
+      - "tests/test_video_send_tuple_regression.py"
+      - "scripts/apply_pinterest_video_send_fix.py"
+      - ".github/workflows/video-send-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  video-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BOT_TOKEN: "123456:TESTTOKEN"
+      ADMIN_ID: "1"
+      CUSTOM_API_URL: "https://api.example.com"
+      DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/video_send_test"
+      CHANNEL_ID: "-1001234567890"
+      PYTHONPATH: ${{ github.workspace }}
+      LOG_DISABLE_SINKS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install bot dependencies without optional Shazam and gallery-dl
+        run: |
+          sed -e '/^shazamio$/d' -e '/^gallery-dl$/d' requirements.txt > /tmp/requirements-video-send.txt
+          python -m pip install --disable-pip-version-check \
+            -r /tmp/requirements-video-send.txt pytest pytest-asyncio
+      - name: Check compilation of changed source
+        run: |
+          python -m py_compile \
+            handlers/pinterest.py handlers/threads.py \
+            services/inline/send_flow.py services/media/delivery.py \
+            services/media/video_metadata.py scripts/apply_pinterest_video_send_fix.py \
+            tests/test_video_send_tuple_regression.py tests/test_video_metadata.py
+      - name: Test video metadata contract and upload cleanup
+        run: |
+          pytest -q tests/test_video_send_tuple_regression.py tests/test_video_metadata.py
