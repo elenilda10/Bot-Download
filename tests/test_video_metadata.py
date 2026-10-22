@@ -36,6 +36,7 @@ async def test_build_video_send_kwargs_falls_back_to_supports_streaming_when_pro
         AsyncMock(return_value=video_metadata.TelegramVideoAttrs()),
     )
 
-    kwargs = await video_metadata.build_video_send_kwargs("downloads/test.mp4")
+    kwargs, thumbnail_path = await video_metadata.build_video_send_kwargs("downloads/test.mp4")
 
     assert kwargs == {"supports_streaming": True}
+    assert thumbnail_path is None
