@@ -96,10 +96,16 @@ def _pinterest_cdn_url(url: str) -> bool:
 
 
 def _parse_gallery_record(record: object) -> tuple[str, dict] | None:
-    """gallery-dl -J emits [2, media_url, metadata] file records."""
+    """Read gallery-dl URL records: [3, media_url, metadata].
+
+    For compatibility with previously stored/test fixtures, accept the old
+    shape [2, media_url, metadata] *only* when field 2 is an URL string.
+    Real Directory records [2, metadata_dict] cannot be mistaken for media.
+    """
     if (
         not isinstance(record, list) or len(record) < 3
-        or record[0] != 2 or not isinstance(record[1], str)
+        or record[0] not in (2, 3)
+        or not isinstance(record[1], str)
         or not isinstance(record[2], dict)
     ):
         return None
@@ -112,7 +118,8 @@ def _pinterest_caption_from_metadata(metadata: object) -> str:
         return ""
     for key in (
         "description", "closeup_unified_description",
-        "closeup_description", "title", "seo_description", "alt_text",
+        "closeup_description", "title", "seo_title", "seo_description",
+        "alt_text",
     ):
         value = metadata.get(key)
         if isinstance(value, dict):
@@ -194,12 +201,18 @@ def _canonical_pin_from_gallery_output(raw_output: str) -> Optional[str]:
 
 
 def _gallery_directory_metadata(record: object) -> dict | None:
-    """Actual gallery-dl JSON Directory record is [1, metadata]."""
-    if not isinstance(record, list) or not record or record[0] != 1:
+    """Read gallery-dl Directory records: [2, metadata_dict].
+
+    Older fixtures used a legacy [1, metadata] or [1, "", metadata] layout;
+    these are recognized separately without conflating directory and URL.
+    """
+    if not isinstance(record, list) or not record:
+        return None
+    if record[0] not in (1, 2):
         return None
     if len(record) >= 2 and isinstance(record[1], dict):
         return record[1]
-    if len(record) >= 3 and isinstance(record[2], dict):
+    if record[0] == 1 and len(record) >= 3 and isinstance(record[2], dict):
         return record[2]
     return None
 
@@ -217,7 +230,7 @@ def _gallery_dump_records(raw_output: str) -> list[object]:
     else:
         if (
             isinstance(decoded, list) and decoded
-            and isinstance(decoded[0], int) and decoded[0] in (1, 2, 6)
+            and isinstance(decoded[0], int) and decoded[0] in (1, 2, 3, 6)
         ):
             records = [decoded]
         elif isinstance(decoded, list):
@@ -260,12 +273,17 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
     seen: set[str] = set()
     description = ""
     pin_id = re.search(r"/pin/(\d+)", source_url)
+    metadata_pin_id = ""
 
     for record in records:
         directory = _gallery_directory_metadata(record)
         if directory is not None:
-            # Actual gallery-dl output puts the description in [1, metadata].
+            # Actual gallery-dl -J uses [2, metadata], including title.
             description = description or _pinterest_caption_from_metadata(directory)
+            if not metadata_pin_id:
+                candidate_id = str(directory.get("id") or "")
+                if re.fullmatch(r"\d{5,30}", candidate_id):
+                    metadata_pin_id = candidate_id
             continue
 
         entry = _parse_gallery_record(record)
@@ -303,6 +321,7 @@ def parse_pinterest_gallery_dump(raw_output: str, source_url: str) -> Optional["
         return None
     identifier = (
         pin_id.group(1) if pin_id else
+        metadata_pin_id or
         hashlib.blake2s(source_url.encode("utf-8"), digest_size=8).hexdigest()
     )
     return PinterestPost(id=identifier, description=description, media_list=media)
@@ -314,7 +333,7 @@ def parse_pinterest_gallery_urls(raw_output: str, source_url: str) -> Optional["
     for line in raw_output.splitlines():
         media_url = line.strip()
         if _pinterest_cdn_url(media_url):
-            records.append([2, media_url, {}])
+            records.append([3, media_url, {}])
         if len(records) >= _GALLERY_MAX_ITEMS:
             break
     return parse_pinterest_gallery_dump(json.dumps(records), source_url)
