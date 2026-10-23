@@ -12,7 +12,7 @@ import re
 import secrets
 import time
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 _CALLBACK_RE = re.compile(r"^[a-f0-9]{24}$")
 _MAX_AGE = 7 * 24 * 3600
 
@@ -33,13 +33,13 @@ def key_for(url: str, scope: str, kind: str) -> str:
     if kind not in {"media", "document", "audio"}:
         raise ValueError("Unknown media type")
     identity = hashlib.sha256(url.encode("utf-8")).hexdigest()
-    return f"facebook:v1:{scope}:{kind}:{identity}"
+    return f"facebook:v2:{scope}:{kind}:{identity}"
 
 
 def callback_key(token: str) -> str:
     if not _CALLBACK_RE.fullmatch(token):
         raise ValueError("Invalid Facebook callback token")
-    return f"facebook:v1:callback:{token}"
+    return f"facebook:v2:callback:{token}"
 
 
 def new_token() -> str:

@@ -12,6 +12,8 @@ import hashlib
 import json
 import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 from html import unescape
@@ -350,49 +352,51 @@ def _facebook_profile_post_json(data: object, url: str) -> dict | None:
 async def _facebook_profile_post_metadata(
     url: str, browser_profile: Optional[str] = None,
 ) -> dict | None:
-    """Get post-bound media IDs independently before the actual download.
+    """Read the requested post object, never gallery-dl's unscoped metadata.
 
-    A downloaded gallery sidecar can consistently reference its own photo
-    even if the Facebook session was redirected to an unrelated post or login
-    screen. Requiring a separate read of the *requested post* to identify the
-    same photo prevents accepting that sort of mismatch. Failure is denial.
+    gallery-dl supplies its HTTP/cookie transport and writes the initial page.
+    Its selected photo and JSON output are intentionally ignored. Private HTML
+    is confined to a temporary directory removed even on failure/cancellation.
     """
-    if not _facebook_profile_post_id(url):
+    source_id = _facebook_profile_post_id(url)
+    if not source_id:
         return None
+    from services.platforms.facebook_post_identity import extract_post_identity, MAX_HTML
     from services.platforms.universal_extractor import GDL_BIN, _DEFAULT_UA
-    binary = GDL_BIN if os.path.isfile(GDL_BIN) else "gallery-dl"
-    command = [
-        binary, "--dump-json", "--range", "1-10",
-        "--user-agent", _DEFAULT_UA,
-        "-o", "extractor.facebook.videos=ytdl",
-        *(
-            ["--cookies-from-browser", f"firefox:{browser_profile}"]
-            if browser_profile else []
-        ),
-        url,
-    ]
-    proc = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *command, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=75)
-        if proc.returncode != 0 or len(stdout) > 2_000_000:
+    binary = os.path.abspath(GDL_BIN) if os.path.isfile(GDL_BIN) else "gallery-dl"
+    with tempfile.TemporaryDirectory(prefix="fb-post-identity-") as work:
+        command = [
+            binary, "--config-ignore", "--write-pages", "--dump-json",
+            "--range", "1-1", "--retries", "0", "--http-timeout", "20",
+            "--user-agent", _DEFAULT_UA,
+            *(["--cookies-from-browser", f"firefox:{browser_profile}"]
+              if browser_profile else []),
+            url,
+        ]
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command, cwd=work, stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=75)
+            # gallery-dl 1.32.14 numbers response dumps starting at 01.
+            # Never inspect later photo/set pages selected by its flawed parser.
+            pages = list(Path(work).glob("01_*.txt"))
+            if len(pages) != 1 or pages[0].stat().st_size > MAX_HTML:
+                return None
+            html = pages[0].read_text(encoding="utf-8", errors="replace")
+            record = extract_post_identity(html, source_id)
+            if record is None:
+                logging.warning("Facebook requested post object was not verified")
+            return record
+        except (OSError, ValueError, asyncio.TimeoutError):
+            logging.warning("Facebook post-bound HTML preflight failed")
             return None
-        data = json.loads(stdout)
-    except (OSError, ValueError, asyncio.TimeoutError):
-        logging.warning("Facebook profile post preflight failed")
-        return None
-    finally:
-        if proc is not None and proc.returncode is None:
-            proc.kill()
-            await proc.communicate()
-
-    record = _facebook_profile_post_json(data, url)
-    if record is None:
-        logging.warning("Facebook profile preflight post/media identity check failed")
-    return record
+        finally:
+            if proc is not None and proc.returncode is None:
+                proc.kill()
+                await proc.communicate()
 
 async def _facebook_profile_post_expected_photo_ids(
     url: str, browser_profile: Optional[str] = None,
@@ -470,80 +474,52 @@ async def _download_facebook_profile_post_photos(
     url: str, output_dir: str, post_id: str,
     *, browser_profile: Optional[str], gallery_downloader,
 ):
-    """Download a validated post's photo by *exact* Facebook photo ID.
-
-    gallery-dl may select a different photo when given a profile post URL.
-    For one photo, first resolve its numeric fbid from the post page, then
-    fetch the photo URL directly and require the local file and JSON sidecar
-    to have that exact id. Multi-photo posts use the stricter post album path
-    until each individual item can be tied to the album.
-    """
+    """Download only the ordered photo IDs bound to the requested post object."""
     record = await _facebook_profile_post_metadata(url, browser_profile)
-    if not record:
-        logging.warning("Facebook profile post lacked valid preflight metadata")
+    if not record or record.get("source_post_id") != _facebook_profile_post_id(url):
+        logging.warning("Facebook profile post lacked post-bound metadata")
         return None
-
     ids = record["ids"]
-    if len(ids) == 1:
-        photo_id = ids[0]
-        # Photo ID comes exclusively from the validated post metadata, not
-        # from a user-controlled URL, and is strictly numerical.
+    if not 1 <= len(ids) <= 10 or len(set(ids)) != len(ids):
+        return None
+    combined = None
+    items = []
+    for photo_id in ids:
+        if not str(photo_id).isdigit():
+            return None
+        # Separate directories avoid accumulating earlier photos on album reads.
+        photo_dir = os.path.join(output_dir, f"post-photo-{photo_id}")
+        os.makedirs(photo_dir, exist_ok=True)
         direct_url = f"https://www.facebook.com/photo/?fbid={photo_id}&set="
         result = await gallery_downloader(
-            direct_url, output_dir, post_id,
+            direct_url, photo_dir, post_id,
             facebook_browser_profile=browser_profile,
         )
         if not result or len(result.media_list) != 1:
-            logging.warning("Facebook profile post direct photo extraction failed")
             return None
         item = result.media_list[0]
-        photo_path = item.url
-        if (
-            item.type != "photo"
-            or os.path.splitext(os.path.basename(photo_path))[0] != photo_id
-            or not os.path.isfile(photo_path)
-        ):
-            logging.warning("Facebook direct photo ID mismatch")
+        if (item.type != "photo" or not os.path.isfile(item.url)
+                or os.path.splitext(os.path.basename(item.url))[0] != photo_id):
             return None
         try:
-            with open(photo_path + ".json", "r", encoding="utf-8") as stream:
+            with open(item.url + ".json", encoding="utf-8") as stream:
                 metadata = json.load(stream)
         except (OSError, ValueError):
-            logging.warning("Facebook direct photo metadata missing")
             return None
-        if (
-            not isinstance(metadata, dict)
-            or str(metadata.get("id")) != photo_id
-            or _facebook_login_prompt(metadata)
-        ):
-            logging.warning("Facebook direct photo metadata ID mismatch")
+        if (not isinstance(metadata, dict) or str(metadata.get("id")) != photo_id
+                or _facebook_login_prompt(metadata)):
             return None
-    else:
-        # For albums, never accept a self-consistent but unrelated gallery;
-        # check the complete ID set against the independently parsed post.
-        result = await gallery_downloader(
-            url, output_dir, post_id,
-            facebook_browser_profile=browser_profile,
-            facebook_expected_photo_ids=ids,
-        )
-        if not result or len(result.media_list) != len(ids):
-            return None
-
-    # The photo's own caption can differ from the sharing post's text.
-    # For albums, compare the independent preflight and download-side metadata:
-    # do not display a potentially unrelated caption when the reads disagree.
-    if len(ids) > 1:
-        expected_text = record["description"].strip()
-        actual_text = result.description.strip() if isinstance(result.description, str) else ""
-        if actual_text != expected_text:
-            logging.warning("Facebook album caption mismatched independent extraction")
-            result.description = ""
-        else:
-            result.description = expected_text
-    elif record["description"]:
-        result.description = record["description"]
-    logging.info("Facebook profile post photos verified by preflight IDs")
-    return result
+        items.append(item)
+        if combined is None:
+            combined = result
+    combined.media_list = items
+    for index, item in enumerate(items):
+        item.index = index
+    # Blank is deliberate when no post-bound message was found. Do not fall
+    # back to a different photo owner's caption or a generic page text node.
+    combined.description = record["description"]
+    logging.info("Facebook photos verified against requested post object")
+    return combined
 
 
 def _verified_facebook_group_photos(url: str, paths: list[str]) -> bool:
@@ -747,7 +723,7 @@ async def download_facebook_media(
         # The generic Universal redirect client cannot reliably resolve /share/r/.
         resolved = await _resolve_facebook_short_link(url) if _needs_redirect(url) else url
         if resolved and _is_facebook_media_link(resolved):
-            target = resolved
+            target = _canonical_fb_media_url(resolved) or resolved
         else:
             logging.warning("Facebook short link did not resolve to a media post")
             return None
