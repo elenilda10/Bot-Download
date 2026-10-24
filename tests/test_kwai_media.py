@@ -159,3 +159,91 @@ async def test_retries_canonical_post_when_short_share_is_empty(monkeypatch):
     assert result
     assert result["media_url"] == media
     assert requested_urls == [short, canonical]
+
+
+@pytest.mark.asyncio
+async def test_chrome_fallback_recovers_media_from_video_free_html(monkeypatch):
+    short = "https://k.kwai.com/p/CMtEC74X"
+    canonical = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    tracked_url = canonical + "?share_uid=123"
+    wanted = "https://aws-br-cdn.kwai.net/upic/chrome-video.mp4?sign=abc&exp=123"
+    requested = []
+    chrome_urls = []
+
+    class FakeResponse:
+        status = 200
+        url = tracked_url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return "<html>app shell without MP4</html>"
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, url, **_kwargs):
+            requested.append(url)
+            return FakeResponse()
+
+    def chrome_fetch(url):
+        chrome_urls.append(url)
+        return canonical, f'<meta property="og:video" content="{wanted.replace("&", "&amp;")}">'
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_kwargs: FakeSession())
+    monkeypatch.setattr(kwai_media, "_fetch_kwai_chrome_page", chrome_fetch)
+
+    result = await kwai_media.extract_kwai_video_page(short)
+    assert result is not None
+    assert result["media_url"] == wanted
+    assert result["page_url"] == canonical
+    assert result["author"] == "gabyvalence"
+    assert requested == [short, canonical]
+    assert chrome_urls == [canonical]
+
+
+@pytest.mark.asyncio
+async def test_chrome_fallback_rejects_untrusted_media_and_fails_closed(monkeypatch):
+    short = "https://k.kwai.com/p/CMtEC74X"
+    canonical = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+
+    class FakeResponse:
+        status = 200
+        url = canonical
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return "Kwai app shell"
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, url, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_kwargs: FakeSession())
+    monkeypatch.setattr(
+        kwai_media, "_fetch_kwai_chrome_page",
+        lambda *_args: (
+            canonical,
+            '<meta property="og:video" content="http://127.0.0.1/internal.mp4">',
+        ),
+    )
+    assert await kwai_media.extract_kwai_video_page(short) is None
