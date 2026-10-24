@@ -100,6 +100,35 @@ _KWAI_SHARE_DESCRIPTION = re.compile(
 )
 
 
+
+_GENERIC_KWAI_TITLES = frozenset({
+    "make everyone shine",
+    "kwai - make everyone shine",
+    "kwai",
+    "kwai video",
+    "kwai - video & drama",
+    "get kwai app",
+    "vídeo do kwai",
+    "video do kwai",
+})
+_GENERIC_KWAI_DESCRIPTIONS = (
+    "kwai is a social network for short videos",
+    "discover funny short videos",
+    "contribute to the virtual community",
+    "download the app to share your life",
+)
+
+
+def _is_generic_kwai_text(value: str | None) -> bool:
+    """Detect site-wide marketing text, never the creator's post caption."""
+    cleaned = " ".join(html.unescape(value or "").strip().casefold().split())
+    return (
+        not cleaned
+        or cleaned.rstrip(".!") in _GENERIC_KWAI_TITLES
+        or any(cleaned.startswith(prefix) for prefix in _GENERIC_KWAI_DESCRIPTIONS)
+    )
+
+
 def _parse_kwai_post_description(raw: str) -> tuple[str, str | None]:
     """Recover the creator's actual caption from Kwai's share-preview text.
 
@@ -126,7 +155,7 @@ def _parse_kwai_post_description(raw: str) -> tuple[str, str | None]:
     }:
         text = text[1:-1].strip()
 
-    if text.casefold() in {"kwai", "kwai video", "vídeo do kwai", "video do kwai"}:
+    if _is_generic_kwai_text(text):
         text = ""
 
     return text, creator
@@ -135,7 +164,7 @@ def _parse_kwai_post_description(raw: str) -> tuple[str, str | None]:
 def format_kwai_post_caption(description: str | None, author: str | None) -> str:
     """Plain-text Telegram body; bm.captions() escapes HTML and adds footer."""
     description = (description or "").strip()
-    if description.casefold() in {"vídeo do kwai", "video do kwai"}:
+    if _is_generic_kwai_text(description):
         description = ""
 
     creator = (author or "").strip()
@@ -322,7 +351,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
         text, candidate_author = _parse_kwai_post_description(raw)
         if candidate_author:
             creator = candidate_author
-        if text:
+        if text and not _is_generic_kwai_text(text):
             title = text
             break
     if creator:
