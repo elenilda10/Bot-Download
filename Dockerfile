@@ -24,6 +24,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       build-essential \
       libffi-dev \
       libssl-dev \
+      libasound2-dev \
+      pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m venv "$VIRTUAL_ENV"
