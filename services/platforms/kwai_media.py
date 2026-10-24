@@ -88,6 +88,71 @@ def _extract_meta(text: str, key: str) -> str:
     return ""
 
 
+
+_ENGAGEMENT_PREFIX = re.compile(
+    r"^\s*[\d.,\s]+Like(?:\(s\)|s)?\s*,\s*"
+    r"[\d.,\s]+Comment(?:\(s\)|s)?\.\s*",
+    flags=re.IGNORECASE,
+)
+_KWAI_SHARE_DESCRIPTION = re.compile(
+    r"^Kwai\s+video\s+from\s+(?P<creator>.+?)\s*:\s*(?P<caption>.*)$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _parse_kwai_post_description(raw: str) -> tuple[str, str | None]:
+    """Recover the creator's actual caption from Kwai's share-preview text.
+
+    Example: '13571 Like(s), 100 Comment(s). Kwai video from
+    SPORTS(@TL.ESPORTE): "#ufc #mma"' -> ('#ufc #mma', 'SPORTS (@TL.ESPORTE)').
+    Likes and comments are ephemeral and do not belong in the Telegram caption.
+    """
+    text = html.unescape(raw or "").strip()
+    text = _ENGAGEMENT_PREFIX.sub("", text)
+    creator = None
+
+    match = _KWAI_SHARE_DESCRIPTION.match(text)
+    if match:
+        creator = re.sub(
+            r"\s*\(\s*(@[^)]+)\s*\)", r" (\1)", match.group("creator").strip()
+        )
+        text = match.group("caption").strip()
+    elif re.match(r"^Kwai\s+video\s+from\b", text, flags=re.IGNORECASE):
+        # A generic Kwai share heading without the actual caption.
+        return "", None
+
+    if len(text) >= 2 and (text[0], text[-1]) in {
+        ('"', '"'), ("'", "'"), ("“", "”"), ("«", "»")
+    }:
+        text = text[1:-1].strip()
+
+    if text.casefold() in {"kwai", "kwai video", "vídeo do kwai", "video do kwai"}:
+        text = ""
+
+    return text, creator
+
+
+def format_kwai_post_caption(description: str | None, author: str | None) -> str:
+    """Plain-text Telegram body; bm.captions() escapes HTML and adds footer."""
+    description = (description or "").strip()
+    if description.casefold() in {"vídeo do kwai", "video do kwai"}:
+        description = ""
+
+    creator = (author or "").strip()
+    if creator.casefold() == "kwai":
+        creator = ""
+    elif re.fullmatch(r"[\w.-]+", creator, flags=re.UNICODE):
+        creator = "@" + creator.lstrip("@")
+
+    parts = []
+    if creator:
+        parts.append("👤 " + creator)
+    if description:
+        parts.append(description)
+    return "\n\n".join(parts)
+
+
+
 def _extract_media_url(page: str) -> str | None:
     """Find a playable MP4 from Kwai's public page, preferring post metadata.
 
@@ -241,17 +306,28 @@ async def extract_kwai_video_page(url: str) -> dict | None:
         )
         return None
 
-    title = (
-        _extract_meta(page, "og:description")
-        or _extract_meta(page, "og:title")
-        or "Vídeo do Kwai"
-    )
-
     author = "Kwai"
-
     match = re.search(r"/@([^/]+)/video/", final_url)
     if match:
         author = match.group(1)
+
+    # OG descriptions may wrap the user's real text with dynamic counters
+    # and "Kwai video from ..." boilerplate. Keep only the original caption.
+    title = ""
+    creator = None
+    for key in ("og:description", "twitter:description", "description", "og:title"):
+        raw = _extract_meta(page, key)
+        if not raw:
+            continue
+        text, candidate_author = _parse_kwai_post_description(raw)
+        if candidate_author:
+            creator = candidate_author
+        if text:
+            title = text
+            break
+    if creator:
+        author = creator
+    title = title or "Vídeo do Kwai"
 
     return {
         "page_url": final_url,
