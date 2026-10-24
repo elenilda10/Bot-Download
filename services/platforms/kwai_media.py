@@ -56,6 +56,8 @@ def _normalize_page(text: str) -> str:
         ("\\u002f", "/"),
         ("\\u0026", "&"),
         ("\\u003D", "="),
+        ("\\u003A", ":"),
+        ("\\u003a", ":"),
         ("\\u003d", "="),
         ("\\/", "/"),
     )
@@ -80,6 +82,48 @@ def _extract_meta(text: str, key: str) -> str:
             return html.unescape(match.group(1)).strip()
 
     return ""
+
+
+def _extract_media_url(page: str) -> str | None:
+    """Find a playable MP4 from Kwai's public page, preferring post metadata.
+
+    Signed CDN URLs must retain their entire query string. Do not accept
+    arbitrary hosts: public pages may contain links unrelated to the media.
+    """
+    normalized = _normalize_page(page)
+    candidates: list[str] = []
+
+    # Page metadata is post-specific; a generic MP4 in the HTML may belong
+    # to a recommendation rather than the video requested by the user.
+    for key in ("og:video", "og:video:url", "twitter:player:stream"):
+        value = _extract_meta(page, key)
+        if value:
+            candidates.append(_normalize_page(value))
+
+    # Kwai pages also embed video properties inside JSON/JS state. These
+    # properties are commonly escaped as https:\/\/ or https:\u002F\u002F.
+    keyed_pattern = (
+        r"""["'](?:playUrl|videoUrl|video_url|photoUrl|contentUrl|content_url)["']"""
+        r"""\s*:\s*["'](?P<url>https?://[^"'<>\\\s]+)"""
+    )
+    candidates.extend(
+        match.group("url")
+        for match in re.finditer(keyed_pattern, normalized, re.IGNORECASE)
+    )
+
+    # Backward-compatible fallback for HTML that exposes an MP4 without
+    # naming the property containing it.
+    candidates.extend(re.findall(
+        r"""https?://[^"'<>\\\s]+?\.mp4(?:\?[^"'<>\\\s]*)?""",
+        normalized,
+        re.IGNORECASE,
+    ))
+
+    for value in candidates:
+        value = value.rstrip(";,)}")
+        if _is_allowed_media_url(value) and urlparse(value).path.lower().endswith(".mp4"):
+            return value
+    return None
 
 
 async def extract_kwai_video_page(url: str) -> dict | None:
@@ -118,22 +162,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
     except Exception:
         return None
 
-    page = _normalize_page(page)
-
-    candidates = re.findall(
-        r'https?://[^"\'<>\s\\]+?\.mp4(?:\?[^"\'<>\s\\]*)?',
-        page,
-        re.IGNORECASE,
-    )
-
-    media_url = None
-
-    for candidate in candidates:
-        candidate = candidate.rstrip("\\")
-        if _is_allowed_media_url(candidate):
-            media_url = candidate
-            break
-
+    media_url = _extract_media_url(page)
     if not media_url:
         return None
 
