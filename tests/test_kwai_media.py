@@ -447,3 +447,55 @@ async def test_generic_og_title_without_post_caption_falls_back_safely(monkeypat
     assert kwai_media.format_kwai_post_caption(result["title"], result["author"]) == (
         "👤 @matematicacoml"
     )
+
+
+def test_nuxt_site_title_is_not_video_caption():
+    for value in (
+        "kwai-nuxt-pwa-pc",
+        "kwai-nuxt-pwa-pc-online",
+        "Make Everyone Shine",
+    ):
+        assert kwai_media._is_generic_kwai_text(value)
+        assert kwai_media._parse_kwai_post_description(value)[0] == ""
+
+
+@pytest.mark.asyncio
+async def test_nuxt_site_title_alone_does_not_become_caption(monkeypatch):
+    final = "https://www.kwai.com/@matematicacoml/video/5188578357266245817"
+    media = "https://aws-br-cdn.kwai.net/upic/video.mp4"
+    page = (
+        '<meta name="description" content="Kwai is a social network for short videos">'
+        '<meta property="og:title" content="kwai-nuxt-pwa-pc">'
+        f'<meta property="og:video" content="{media}">'
+    )
+
+    class Response:
+        url = final
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def text(self, **_):
+            return page
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_: Session())
+    result = await kwai_media.extract_kwai_video_page(final)
+    assert result is not None
+    assert result["title"] == "Vídeo do Kwai"
+    assert kwai_media.format_kwai_post_caption(
+        result["title"], result["author"]
+    ) == "👤 @matematicacoml"
