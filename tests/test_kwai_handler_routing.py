@@ -61,7 +61,7 @@ def test_handler_extracts_short_and_canonical_links():
     short = "https://k.kwai.com/p/CMtEC74X"
     full = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
     assert extract(f"Veja este link: {short}") == short
-    assert extract(f"({_full})".replace("_full", full)) == full
+    assert extract("(" + full + ")") == full
     assert extract("https://s.kw.ai/p/ABCD") == "https://s.kw.ai/p/ABCD"
     assert extract("https://evil.example/video/123") is None
     assert extract("https://kwai.com.evil.example/video/123") is None
@@ -123,8 +123,8 @@ def test_dedicated_telegram_handlers_and_callbacks_registered():
     }
     assert {"process_kwai_link", "send_kwai_document", "send_kwai_mp3"} <= funcs.keys()
     msg_handler = funcs["process_kwai_link"]
-    deco = ast.unparse(msg_handler.decorator_list)
+    deco = "\n".join(ast.unparse(node) for node in msg_handler.decorator_list)
     assert ".message(" in deco
     assert ".business_message(" in deco
-    assert "doc:kwai:" in ast.unparse(funcs["send_kwai_document"].decorator_list)
-    assert "audio:kwai:" in ast.unparse(funcs["send_kwai_mp3"].decorator_list)
+    assert "doc:kwai:" in "\n".join(ast.unparse(node) for node in funcs["send_kwai_document"].decorator_list)
+    assert "audio:kwai:" in "\n".join(ast.unparse(node) for node in funcs["send_kwai_mp3"].decorator_list)
