@@ -1,8 +1,8 @@
 """Dedicated Kwai Telegram handler.
 
 Owns message/business routing, file_id caching and MP3/document actions.
-Reuses the verified public Kwai downloader, ffprobe and thumbnail utilities
-from the existing media pipeline without restarting or spawning another bot.
+Uses its own public Kwai downloader, ffprobe and thumbnail service,
+independent of the universal extractor and other platform handlers.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from aiogram.types import FSInputFile, InlineKeyboardButton
 import keyboards as kb
 import messages as bm
 from app_context import bot, db, send_analytics
-from config import MAX_FILE_SIZE, OUTPUT_DIR
+from config import ADMIN_ID, MAX_FILE_SIZE, OUTPUT_DIR
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
@@ -43,8 +43,8 @@ from handlers.utils import (
 )
 from services.logger import logger as logging, summarize_url_for_log
 from services.media.delivery import send_audio_with_thumbnail
-from services.platforms.kwai_media import is_kwai_url
-from services.platforms.universal_extractor import download_universal_media
+from services.platforms.kwai_media import format_kwai_post_caption, is_kwai_url
+from services.platforms.kwai_service import download_kwai_media
 from utils.media_cache import build_media_cache_key
 
 router = Router(name="kwai_handler")
@@ -68,8 +68,23 @@ def _url_hash(url: str) -> str:
     return hashlib.blake2s(url.encode("utf-8"), digest_size=8).hexdigest()
 
 
-def _cache_key(url_hash: str, kind: str) -> str:
-    return build_media_cache_key("kwai", variant=f"v1:{kind}:{url_hash}")
+def _cache_key(url_hash: str, kind: str, scope: str = "public") -> str:
+    # v7 invalidates files cached before exact photo_id_str verification.
+    return build_media_cache_key("kwai", variant=f"v7:{scope}:{kind}:{url_hash}")
+
+
+def _profile_for_request(user_id, chat, business_id=None) -> str | None:
+    chat_type = getattr(chat, "type", "")
+    chat_type = getattr(chat_type, "value", chat_type)
+    if (business_id is None and str(user_id) == str(ADMIN_ID)
+            and chat_type == "private"
+            and str(getattr(chat, "id", "")) == str(user_id)):
+        return os.getenv("KWAI_FIREFOX_PROFILE", "").strip() or None
+    return None
+
+
+def _cache_scope(profile: str | None, user_id) -> str:
+    return f"owner:{user_id}" if profile else "public"
 
 
 def _kwai_keyboard(url: str, url_hash: str, settings: dict, lang: str | None):
@@ -135,9 +150,13 @@ def _temp_file_id() -> str:
     return "kwai_" + uuid.uuid4().hex[:16]
 
 
-async def _download(url: str):
-    return await download_universal_media(
-        url, output_dir=OUTPUT_DIR, post_id=_temp_file_id()
+async def _download(url: str, firefox_profile: str | None = None):
+    return await download_kwai_media(
+        url,
+        output_dir=OUTPUT_DIR,
+        post_id=_temp_file_id(),
+        max_file_size=MAX_FILE_SIZE,
+        firefox_profile=firefox_profile,
     )
 
 
@@ -157,15 +176,17 @@ async def _try_cache(
     settings: dict,
     lang: str | None,
     bot_url: str,
+    scope: str = "public",
 ) -> bool:
     as_document = settings.get("as_document") == "on"
     kind = "document" if as_document else "video"
-    file_id = await db.get_file_id(_cache_key(token, kind))
+    file_id = await db.get_file_id(_cache_key(token, kind, scope))
     if not file_id:
         return False
 
     markup = _kwai_keyboard(url, token, settings, lang)
-    caption = bm.captions(settings.get("captions", "on"), None, bot_url)
+    original_caption = await db.get_file_id(_cache_key(token, "caption", scope))
+    caption = bm.captions(settings.get("captions", "on"), original_caption, bot_url)
     try:
         if as_document:
             sent = await message.answer_document(
@@ -226,6 +247,8 @@ async def process_kwai_link(
         return
 
     business_id = getattr(message, "business_connection_id", None)
+    profile = _profile_for_request(user_id, message.chat, business_id)
+    scope = _cache_scope(profile, user_id)
     status_message = None
     result = None
     try:
@@ -241,7 +264,7 @@ async def process_kwai_link(
         lang = settings.get("language") or await db.get_language(user_id)
         bot_url = await get_bot_url(bot)
 
-        if await _try_cache(message, url, token, settings, lang, bot_url):
+        if await _try_cache(message, url, token, settings, lang, bot_url, scope):
             lease.mark_success()
             await maybe_delete_user_message(message, settings.get("delete_message"))
             return
@@ -251,7 +274,7 @@ async def process_kwai_link(
                 bm.downloading_video_status(lang=lang)
             )
 
-        result = await _download(url)
+        result = await _download(url, profile)
         path, thumb = _file_path(result)
         if not path:
             await handle_download_error(message, business_id=business_id, lang=lang)
@@ -264,7 +287,8 @@ async def process_kwai_link(
         await safe_edit_text(status_message, bm.uploading_status(lang=lang))
         item = result.media_list[0]
         markup = _kwai_keyboard(url, token, settings, lang)
-        caption = bm.captions(settings.get("captions", "on"), result.description, bot_url)
+        original_caption = format_kwai_post_caption(result.description, result.author)
+        caption = bm.captions(settings.get("captions", "on"), original_caption, bot_url)
 
         if settings.get("as_document") == "on":
             sent = await message.answer_document(
@@ -277,8 +301,12 @@ async def process_kwai_link(
             )
             if sent and sent.document:
                 await db.add_file(
-                    _cache_key(token, "document"), sent.document.file_id, "document"
+                    _cache_key(token, "document", scope), sent.document.file_id, "document"
                 )
+                if original_caption:
+                    await db.add_file(
+                        _cache_key(token, "caption", scope), original_caption[:1800], "caption"
+                    )
                 lease.mark_success()
         else:
             preview = thumb if thumb and os.path.isfile(thumb) else None
@@ -299,8 +327,12 @@ async def process_kwai_link(
             )
             if sent and sent.video:
                 await db.add_file(
-                    _cache_key(token, "video"), sent.video.file_id, "video"
+                    _cache_key(token, "video", scope), sent.video.file_id, "video"
                 )
+                if original_caption:
+                    await db.add_file(
+                        _cache_key(token, "caption", scope), original_caption[:1800], "caption"
+                    )
                 lease.mark_success()
 
         if sent:
@@ -329,9 +361,16 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
         return
 
     await call.answer()
+    if await cmd_mod.is_banned(call.from_user.id, call.message.chat.id):
+        return
+    profile = _profile_for_request(
+        call.from_user.id, call.message.chat,
+        getattr(call.message, "business_connection_id", None),
+    )
+    scope = _cache_scope(profile, call.from_user.id)
     lang = await db.get_language(call.from_user.id)
     source = _callback_url(call.message, token)
-    cached_id = await db.get_file_id(_cache_key(token, kind))
+    cached_id = await db.get_file_id(_cache_key(token, kind, scope))
     if not source and not cached_id:
         await call.message.answer(
             "Envie o link do Kwai novamente para baixar."
@@ -386,7 +425,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             )
             return
 
-        result = await _download(source)
+        result = await _download(source, profile)
         path, _ = _file_path(result)
         if not path:
             await handle_download_error(call.message, lang=lang)
@@ -403,7 +442,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             )
             if sent and sent.document:
                 await db.add_file(
-                    _cache_key(token, "document"), sent.document.file_id, "document"
+                    _cache_key(token, "document", scope), sent.document.file_id, "document"
                 )
             return
 
@@ -445,7 +484,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
         )
         if sent and sent.audio:
             await db.add_file(
-                _cache_key(token, "audio"), sent.audio.file_id, "audio"
+                _cache_key(token, "audio", scope), sent.audio.file_id, "audio"
             )
     except Exception as exc:
         logging.exception("Kwai %s callback failed: %s", kind, type(exc).__name__)
