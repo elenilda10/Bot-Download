@@ -159,7 +159,7 @@ async def download_kwai_media(
             },
             timeout=timeout,
         ) as session:
-            async with session.get(media_url, allow_redirects=True) as response:
+            async with session.get(media_url, allow_redirects=False) as response:
                 if response.status != 200:
                     logger.warning("Kwai CDN returned status=%s", response.status)
                     return None
