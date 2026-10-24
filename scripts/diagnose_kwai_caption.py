@@ -106,6 +106,26 @@ async def main(url: str):
         ))
         embedded = kwai._extract_embedded_post_caption(page, final)
         print("LEGENDA ASSOCIADA AO ID:", embedded[:400] if embedded else "[não encontrada]")
+        # Media identity diagnostic: never disclose signed CDN URLs.
+        parsed = kwai._KwaiPageText()
+        parsed.feed(page)
+        primary_entries = []
+        for script in parsed.scripts:
+            for entry in kwai._HYDRATION_ENTRY.finditer(script):
+                if entry.group(1) != "0":
+                    continue
+                block = kwai._javascript_object_at(script, entry.end() - 1)
+                if block is not None:
+                    primary_entries.append(block)
+        print("MP4s NA PÁGINA:", len(kwai._scoped_mp4_urls(page)))
+        print("REGISTROS PRINCIPAIS E[0]:", len(primary_entries))
+        print("MP4s POR REGISTRO E[0]:", [
+            len(kwai._scoped_mp4_urls(record)) for record in primary_entries[:8]
+        ])
+        print("VÍDEO VINCULADO À PUBLICAÇÃO:", bool(
+            kwai._extract_verified_media_url(page, final)
+        ))
+
         hydrated = kwai._extract_visible_hydrated_caption(page)
         print("LEGENDA VISÍVEL + JAVASCRIPT:", hydrated[:400] if hydrated else "[não encontrada]")
     else:
