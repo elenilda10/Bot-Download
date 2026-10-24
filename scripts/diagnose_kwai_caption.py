@@ -26,7 +26,8 @@ async def main(url: str):
         return
 
     print("DOMÍNIO:", urlparse(url).hostname)
-    print("ID SOLICITADO:", (re.search(r"/video/(\d+)", url) or [None])[1])
+    id_match = re.search(r"/video/(\d+)", url)
+    print("ID SOLICITADO:", id_match.group(1) if id_match else "[não informado]")
     chrome = await asyncio.to_thread(kwai._fetch_kwai_chrome_page, url)
     if chrome:
         final, page = chrome
