@@ -98,6 +98,7 @@ async def main(url: str):
         print("ID NOS DADOS DO VÍDEO:", target_id in kwai._POST_ID_FIELD.findall(page))
         print("OBJETOS photoId:", len(kwai._POST_ID_FIELD.findall(page)))
         print("CAMPOS caption:", len(kwai._EMBEDDED_CAPTION_FIELD.findall(page)))
+        print("CAMPOS JS caption:", len(kwai._HYDRATED_CAPTION_FIELD.findall(page)))
         print("TEXTO 'Por que funciona' NA PÁGINA:", "por que funciona" in page.casefold())
         _inspect_caption_context(page)
         print("OG TITLE GENÉRICO:", kwai._is_generic_kwai_text(
