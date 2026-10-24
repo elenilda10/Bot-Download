@@ -37,7 +37,7 @@ jobs:
       - name: Lint dedicated Kwai handler and tests
         run: python -m ruff check --select=E,F,W --ignore=E501 handlers/kwai.py services/platforms/kwai_service.py tests/test_kwai_handler_routing.py tests/test_kwai_service.py
       - name: Validate Kwai diagnostic script
-        run: python -m py_compile scripts/diagnose_kwai_page.py
+        run: python -m py_compile scripts/diagnose_kwai_page.py scripts/install_kwai_vps.py
 
   lint:
     runs-on: ubuntu-latest
