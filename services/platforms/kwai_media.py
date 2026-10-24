@@ -166,23 +166,13 @@ def _parse_kwai_post_description(raw: str) -> tuple[str, str | None]:
 
 
 def format_kwai_post_caption(description: str | None, author: str | None) -> str:
-    """Plain-text Telegram body; bm.captions() escapes HTML and adds footer."""
+    """Keep only the author's actual post text; never append a profile handle.
+
+    The signature retains author for compatibility with existing callers.
+    bm.captions() handles HTML escaping and the bot's footer.
+    """
     description = (description or "").strip()
-    if _is_generic_kwai_text(description):
-        description = ""
-
-    creator = (author or "").strip()
-    if creator.casefold() == "kwai":
-        creator = ""
-    elif re.fullmatch(r"[\w.-]+", creator, flags=re.UNICODE):
-        creator = "@" + creator.lstrip("@")
-
-    parts = []
-    if creator:
-        parts.append("👤 " + creator)
-    if description:
-        parts.append(description)
-    return "\n\n".join(parts)
+    return "" if _is_generic_kwai_text(description) else description
 
 
 
