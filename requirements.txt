@@ -1,5 +1,6 @@
 aiogram==3.31.0
 aiohttp==3.14.3
+curl_cffi>=0.15.0,<0.16.0
 SQLAlchemy[asyncio]==2.0.51
 alembic==1.18.5
 asyncpg==0.31.0

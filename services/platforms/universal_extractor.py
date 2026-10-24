@@ -9,7 +9,7 @@ from typing import Optional, Any, Callable
 import aiohttp
 
 from services.logger import logger as logging
-from services.platforms.kwai_media import extract_kwai_video_page, is_kwai_url
+from services.platforms.kwai_media import _DEFAULT_UA as _KWAI_UA, extract_kwai_video_page, is_kwai_url
 from services.platforms.facebook_media import (
     _facebook_failure_reason,
     _facebook_gallery_first_conflicts_with_post,
@@ -257,7 +257,9 @@ async def _download_kwai(
     )
 
     headers = {
-        "User-Agent": _DEFAULT_UA,
+        # Use the same mobile browser profile that successfully extracts
+        # Kwai's public page and that was verified against its CDN.
+        "User-Agent": _KWAI_UA,
         "Referer": "https://www.kwai.com/",
         "Accept": "*/*",
     }
@@ -805,14 +807,14 @@ async def download_universal_media(
         )
 
     if is_kwai_url(url):
-        res_kwai = await _download_kwai(
+        # gallery-dl and yt-dlp do not handle public Kwai share links.
+        # Do not cascade to unrelated extractors when Kwai has no media.
+        return await _download_kwai(
             url,
             output_dir,
             post_id,
             on_progress=on_progress,
         )
-        if res_kwai:
-            return res_kwai
 
     res_direct = await _download_direct_image(url, output_dir, post_id=post_id)
     if res_direct:
