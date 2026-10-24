@@ -75,7 +75,8 @@ async def test_short_share_redirect_uses_target_post_metadata(monkeypatch):
     wanted = "https://aws-br-cdn.kwai.net/upic/wanted.mp4?tag=signed"
     page = (
         '<meta property="og:description" content="Video de teste">'
-        f'<script>{{"videoUrl":"{wanted}"}}</script>'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:video" content="{wanted}">'
     )
 
     class FakeResponse:
@@ -149,7 +150,11 @@ async def test_retries_canonical_post_when_short_share_is_empty(monkeypatch):
             if url == short:
                 return FakeResponse(with_tracking, "<html>Loading...</html>")
             assert url == canonical
-            return FakeResponse(canonical, f'<meta property="og:video" content="{media}">')
+            return FakeResponse(
+                canonical,
+                f'<meta property="og:url" content="{canonical}">'
+                f'<meta property="og:video" content="{media}">',
+            )
 
     monkeypatch.setattr(
         kwai_media.aiohttp, "ClientSession", lambda **_kwargs: FakeSession()
@@ -196,7 +201,11 @@ async def test_chrome_fallback_recovers_media_from_video_free_html(monkeypatch):
 
     def chrome_fetch(url):
         chrome_urls.append(url)
-        return canonical, f'<meta property="og:video" content="{wanted.replace("&", "&amp;")}">'
+        return (
+            canonical,
+            f'<meta property="og:url" content="{canonical}">'
+            f'<meta property="og:video" content="{wanted.replace("&", "&amp;")}>'
+        )
 
     monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_kwargs: FakeSession())
     monkeypatch.setattr(kwai_media, "_fetch_kwai_chrome_page", chrome_fetch)
@@ -290,6 +299,13 @@ async def test_realistic_share_metadata_extracts_caption_and_creator(monkeypatch
     )
     page = (
         f'<meta property="og:description" content="{description}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
+        f'<meta property="og:url" content="{final}">'
         f'<meta property="og:video" content="{media}">'
     )
 
