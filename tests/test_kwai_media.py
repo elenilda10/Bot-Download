@@ -52,9 +52,11 @@ def test_reads_escaped_video_url_with_signed_query():
     assert kwai_media._extract_media_url(page) == wanted
 
 
-def test_reads_unlabelled_mp4_as_fallback():
-    wanted = "https://aws-br-cdn.kwai.net/upic/clip.mp4?tag=abc"
-    assert kwai_media._extract_media_url(f"<script>const video = '{wanted}';</script>") == wanted
+def test_refuses_unlabelled_mp4_from_page_recommendations():
+    unrelated = "https://aws-br-cdn.kwai.net/upic/clip.mp4?tag=abc"
+    assert kwai_media._extract_media_url(
+        f"<script>const video = '{unrelated}';</script>"
+    ) is None
 
 
 def test_rejects_external_hosts_and_images():
@@ -612,3 +614,71 @@ def test_kwai_caption_never_includes_profile_handle():
     assert kwai_media.format_kwai_post_caption(caption, "matematicacoml") == caption
     assert kwai_media.format_kwai_post_caption(caption, "@matematicacoml") == caption
     assert kwai_media.format_kwai_post_caption("", "matematicacoml") == ""
+
+
+def test_verified_kwai_refuses_recommended_mp4_even_when_first_on_page():
+    expected_page = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    unrelated_mp4s = "".join(
+        f'<script>const recommended_{i}="https://aws-br-cdn.kwai.net/upic/recommended_{i}.mp4";</script>'
+        for i in range(14)
+    )
+    page = (
+        '<span>Capa de urso para colchão 🐻</span>'
+        '<script>E[0]={caption:"Capa de urso para colchão 🐻"};</script>'
+        + unrelated_mp4s
+    )
+    assert kwai_media._extract_verified_media_url(page, expected_page) is None
+    assert kwai_media._extract_media_url(page) is None
+
+
+def test_verified_kwai_uses_mp4_scoped_to_main_post_not_recommended():
+    expected_page = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    wanted = "https://aws-br-cdn.kwai.net/upic/correct-bedding.mp4?signature=a"
+    unrelated = "https://aws-br-cdn.kwai.net/upic/chandler-47sec.mp4"
+    page = (
+        f'<script>const ad="{unrelated}";</script>'
+        '<span>Roupa de cama 🐻</span>'
+        '<script>E[0]={caption:"Roupa de cama 🐻",'
+        f'video:{{url:"{wanted}"}}'
+        '};'
+        f'E[1]={{caption:"Vídeo recomendado",url:"{unrelated}"}};'
+        '</script>'
+    )
+    assert kwai_media._extract_verified_media_url(page, expected_page) == wanted
+
+
+def test_verified_kwai_rejects_ambiguous_mp4_inside_main_record():
+    url = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    first = "https://aws-br-cdn.kwai.net/upic/video_one.mp4"
+    second = "https://aws-br-cdn.kwai.net/upic/video_two.mp4"
+    page = (
+        '<span>Post principal 🐻</span>'
+        '<script>E[0]={caption:"Post principal 🐻",'
+        f'variants:["{first}","{second}"]'
+        '};</script>'
+    )
+    assert kwai_media._extract_verified_media_url(page, url) is None
+
+
+def test_verified_kwai_og_video_must_match_requested_post():
+    link = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    other_post = "https://www.kwai.com/@other/video/5200118832330956027"
+    unrelated = "https://aws-br-cdn.kwai.net/upic/chandler.mp4"
+    page = (
+        f'<meta property="og:url" content="{other_post}">'
+        f'<meta property="og:video" content="{unrelated}">'
+    )
+    assert kwai_media._extract_verified_media_url(page, link) is None
+    assert kwai_media._extract_verified_media_url(
+        f'<meta property="og:video" content="{unrelated}">', link
+    ) is None
+
+
+def test_verified_kwai_accepts_post_scoped_og_video():
+    link = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    wanted = "https://aws-br-cdn.kwai.net/upic/bedding.mp4?sign=abc"
+    page = (
+        f'<meta property="og:url" content="{link}">'
+        f'<meta property="og:video" content="{wanted.replace("&", "&amp;")}">'
+    )
+    assert kwai_media._extract_verified_media_url(page, link) == wanted
