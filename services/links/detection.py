@@ -14,9 +14,9 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "kwai",
         re.compile(
-            r"(https?://(?:[\\w-]+\\.)?kwai\\.com/\\S+|"
-            r"https?://(?:[\\w-]+\\.)?kwai-video\\.com/\\S+|"
-            r"https?://(?:[\\w-]+\\.)?kw\\.ai/\\S+)",
+            r"(https?://(?:[\w-]+\.)?kwai\.com/\S+|"
+            r"https?://(?:[\w-]+\.)?kwai-video\.com/\S+|"
+            r"https?://(?:[\w-]+\.)?kw\.ai/\S+)",
             re.IGNORECASE,
         ),
     ),
