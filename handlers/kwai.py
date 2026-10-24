@@ -1,8 +1,8 @@
 """Dedicated Kwai Telegram handler.
 
 Owns message/business routing, file_id caching and MP3/document actions.
-Reuses the verified public Kwai downloader, ffprobe and thumbnail utilities
-from the existing media pipeline without restarting or spawning another bot.
+Uses its own public Kwai downloader, ffprobe and thumbnail service,
+independent of the universal extractor and other platform handlers.
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ from handlers.utils import (
 from services.logger import logger as logging, summarize_url_for_log
 from services.media.delivery import send_audio_with_thumbnail
 from services.platforms.kwai_media import is_kwai_url
-from services.platforms.universal_extractor import download_universal_media
+from services.platforms.kwai_service import download_kwai_media
 from utils.media_cache import build_media_cache_key
 
 router = Router(name="kwai_handler")
@@ -136,8 +136,11 @@ def _temp_file_id() -> str:
 
 
 async def _download(url: str):
-    return await download_universal_media(
-        url, output_dir=OUTPUT_DIR, post_id=_temp_file_id()
+    return await download_kwai_media(
+        url,
+        output_dir=OUTPUT_DIR,
+        post_id=_temp_file_id(),
+        max_file_size=MAX_FILE_SIZE,
     )
 
 
