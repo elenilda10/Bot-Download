@@ -638,7 +638,7 @@ def test_verified_kwai_uses_mp4_scoped_to_main_post_not_recommended():
     page = (
         f'<script>const ad="{unrelated}";</script>'
         '<span>Roupa de cama 🐻</span>'
-        '<script>E[0]={caption:"Roupa de cama 🐻",'
+        '<script>E[0]={photoId:"5200118832330956026",caption:"Roupa de cama 🐻",'
         f'video:{{url:"{wanted}"}}'
         '};'
         f'E[1]={{caption:"Vídeo recomendado",url:"{unrelated}"}};'
@@ -722,3 +722,34 @@ async def test_kwai_extractor_refuses_foreign_video_from_recommendations(monkeyp
     monkeypatch.setattr(kwai_media, "_fetch_kwai_chrome_page", lambda *_: None)
 
     assert await kwai_media.extract_kwai_video_page(requested) is None
+
+
+def test_kwai_rejects_e0_with_wrong_post_id_even_single_mp4():
+    requested = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    unrelated = "https://aws-br-cdn.kwai.net/upic/adriana-video.mp4?signature=abc"
+    body = (
+        '<span>Look elegante da Adriana</span>'
+        '<script>E[0]={photoId:"5199999999999999999",'
+        'caption:"Look elegante da Adriana",'
+        f'video:{{url:"{unrelated}"}}'
+        '};</script>'
+    )
+    assert kwai_media._extract_verified_media_url(body, requested) is None
+
+
+def test_kwai_rejects_e0_without_post_id_even_single_mp4():
+    requested = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    unrelated = "https://aws-br-cdn.kwai.net/upic/chandler-video.mp4"
+    body = (
+        '<span>Vídeo engraçado recomendado</span>'
+        '<script>E[0]={caption:"Vídeo engraçado recomendado",'
+        f'video:{{url:"{unrelated}"}}'
+        '};</script>'
+    )
+    assert kwai_media._extract_verified_media_url(body, requested) is None
+
+
+def test_kwai_photo_alias_has_same_identity_as_video_url():
+    url_video = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    url_photo = "https://www.kwai.com/@gabyvalence/photo/5200118832330956026"
+    assert kwai_media._video_id_from_url(url_video) == kwai_media._video_id_from_url(url_photo)
