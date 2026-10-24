@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import re
@@ -129,6 +130,41 @@ def _extract_media_url(page: str) -> str | None:
     return None
 
 
+def _fetch_kwai_chrome_page(url: str) -> tuple[str, str] | None:
+    """Fetch public page with Chrome TLS impersonation; no browser cookies.
+
+    Kwai may serve a video-free app shell to aiohttp while returning the
+    public MP4 metadata when accessed with curl_cffi's Chrome impersonation.
+    Run this blocking request with asyncio.to_thread from the async caller.
+    """
+    try:
+        from curl_cffi import requests as curl_requests
+
+        response = curl_requests.get(
+            url,
+            impersonate="chrome",
+            timeout=25,
+            allow_redirects=True,
+            headers={
+                "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+                "Referer": "https://www.kwai.com/",
+            },
+        )
+        final_url = str(response.url)
+        if not is_kwai_url(final_url):
+            logger.warning("Kwai Chrome request redirected off Kwai")
+            return None
+        if response.status_code != 200:
+            logger.warning("Kwai Chrome page returned status=%s", response.status_code)
+            return None
+
+        return final_url, response.text
+    except Exception as exc:
+        # Do not log full signed URLs, request headers or response bodies.
+        logger.warning("Kwai Chrome request failed: %s", type(exc).__name__)
+        return None
+
+
 async def extract_kwai_video_page(url: str) -> dict | None:
     if not is_kwai_url(url):
         return None
@@ -149,46 +185,57 @@ async def extract_kwai_video_page(url: str) -> dict | None:
     media_url = None
     last_status = None
 
-    # Some shared links return a transient PWA shell without video data.
-    # Once the short URL has resolved, retry its canonical post URL without
-    # tracking/query parameters before declaring the public video unavailable.
-    candidates = [url]
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
-            for attempt in range(3):
-                current_url = candidates[-1]
+            # The short link redirects to a canonical URL. Try both, since
+            # the HTML can differ even when both return HTTP 200.
+            async with session.get(
+                url, allow_redirects=True, timeout=timeout
+            ) as response:
+                final_url = str(response.url)
+                last_status = response.status
+                if not is_kwai_url(final_url):
+                    logger.warning("Kwai share redirected off Kwai")
+                    return None
+                if response.status == 200:
+                    page = await response.text(errors="ignore")
+                    media_url = _extract_media_url(page)
+
+            canonical = final_url.split("?", 1)[0].split("#", 1)[0]
+            if not media_url and canonical != url and is_kwai_url(canonical):
                 async with session.get(
-                    current_url,
-                    allow_redirects=True,
-                    timeout=timeout,
+                    canonical, allow_redirects=True, timeout=timeout
                 ) as response:
                     final_url = str(response.url)
                     last_status = response.status
                     if not is_kwai_url(final_url):
-                        logger.warning("Kwai share redirected to an unexpected domain")
+                        logger.warning("Kwai canonical URL redirected off Kwai")
                         return None
-                    if response.status != 200:
-                        if attempt == 2:
-                            return None
-                    else:
+                    if response.status == 200:
                         page = await response.text(errors="ignore")
                         media_url = _extract_media_url(page)
-                        if media_url:
-                            break
-
-                    clean_url = final_url.split("?", 1)[0].split("#", 1)[0]
-                    if is_kwai_url(clean_url) and clean_url != current_url:
-                        candidates.append(clean_url)
-                    elif attempt < 2:
-                        candidates.append(current_url)
 
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
-        logger.warning("Kwai page request failed: %s", type(exc).__name__)
-        return None
+        logger.warning("Kwai aiohttp page request failed: %s", type(exc).__name__)
+
+    if not media_url:
+        # Confirmed on a real public Kwai URL: curl_cffi Chrome returns
+        # MP4s while aiohttp returns an HTML shell. Do not use user cookies.
+        chrome_url = final_url.split("?", 1)[0].split("#", 1)[0]
+        if not is_kwai_url(chrome_url):
+            return None
+
+        chrome_page = await asyncio.to_thread(_fetch_kwai_chrome_page, chrome_url)
+        if chrome_page:
+            chrome_final_url, chrome_html = chrome_page
+            candidate = _extract_media_url(chrome_html)
+            if candidate:
+                final_url, page, media_url = chrome_final_url, chrome_html, candidate
+                logger.info("Kwai video extracted via Chrome impersonation")
 
     if not media_url:
         logger.warning(
-            "Kwai page contains no playable MP4 after retries: status=%s html_size=%s",
+            "Kwai page contains no playable MP4: status=%s html_size=%s",
             last_status,
             len(page),
         )
