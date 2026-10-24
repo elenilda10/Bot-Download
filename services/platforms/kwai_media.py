@@ -471,6 +471,16 @@ def _extract_verified_media_url(page: str, post_url: str) -> str | None:
             block = _javascript_object_at(script, entry.end() - 1)
             if not block:
                 continue
+            # The top slot is not guaranteed to be the requested post:
+            # inaccessible videos can be replaced by a recommendation.
+            # Only accept media when the main object explicitly declares
+            # the same photoId as the requested canonical URL.
+            scoped_id = re.search(
+                r'(?:["\']?photoId["\']?|["\']?photo_id["\']?)\s*:\s*["\']?(\d{8,})',
+                block,
+            )
+            if not scoped_id or scoped_id.group(1) != requested_id:
+                continue
             found = _HYDRATED_CAPTION_FIELD.search(block)
             if not found:
                 continue
