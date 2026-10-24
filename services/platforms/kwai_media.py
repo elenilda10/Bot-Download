@@ -371,13 +371,7 @@ def _extract_media_url(page: str) -> str | None:
         for match in re.finditer(keyed_pattern, normalized, re.IGNORECASE)
     )
 
-    # Backward-compatible fallback for HTML that exposes an MP4 without
-    # naming the property containing it.
-    candidates.extend(re.findall(
-        r"""https?://[^"'<>\\\s]+?\.mp4(?:\?[^"'<>\\\s]*)?""",
-        normalized,
-        re.IGNORECASE,
-    ))
+    # Never select page-wide unlabeled MP4 links: these can be recommendations.
 
     for value in candidates:
         value = value.rstrip(";,)}")
