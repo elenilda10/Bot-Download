@@ -1,8 +1,19 @@
 """Regression tests for Kwai's public HTML video extraction (no network)."""
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
-from services.platforms import kwai_media
+# Isolate public-page extraction from the bot's mandatory runtime secrets
+# and database services, so this test runs directly on a developer machine.
+_SPEC = importlib.util.spec_from_file_location(
+    "kwai_media",
+    Path(__file__).resolve().parents[1] / "services/platforms/kwai_media.py",
+)
+assert _SPEC and _SPEC.loader
+kwai_media = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(kwai_media)
 
 
 @pytest.mark.parametrize("url", [
@@ -101,3 +112,50 @@ async def test_short_share_redirect_uses_target_post_metadata(monkeypatch):
         "title": "Video de teste",
         "author": "gabyvalence",
     }
+
+@pytest.mark.asyncio
+async def test_retries_canonical_post_when_short_share_is_empty(monkeypatch):
+    short = "https://k.kwai.com/p/CMtEC74X"
+    canonical = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    with_tracking = canonical + "?sharePage=photo&share_uid=1234"
+    media = "https://aws-br-cdn.kwai.net/upic/clip.mp4?tag=signed"
+    requested_urls = []
+
+    class FakeResponse:
+        status = 200
+
+        def __init__(self, url, body):
+            self.url = url
+            self.body = body
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return self.body
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, url, **_kwargs):
+            requested_urls.append(url)
+            if url == short:
+                return FakeResponse(with_tracking, "<html>Loading...</html>")
+            assert url == canonical
+            return FakeResponse(canonical, f'<meta property="og:video" content="{media}">')
+
+    monkeypatch.setattr(
+        kwai_media.aiohttp, "ClientSession", lambda **_kwargs: FakeSession()
+    )
+
+    result = await kwai_media.extract_kwai_video_page(short)
+    assert result
+    assert result["media_url"] == media
+    assert requested_urls == [short, canonical]
