@@ -499,3 +499,99 @@ async def test_nuxt_site_title_alone_does_not_become_caption(monkeypatch):
     assert kwai_media.format_kwai_post_caption(
         result["title"], result["author"]
     ) == "👤 @matematicacoml"
+
+
+def test_kwai_nuxt_hydration_caption_matches_visible_span():
+    expected = (
+        "Por que funciona?? . .#matematica#concurso#concursopublico"
+        "#enem#concurseiro#foco#estudar#concurseira#professor"
+    )
+    page = (
+        '<html><span>' + expected + '</span>'
+        '<script>function load(C,D,E){'
+        'E[0]={time:"2026-10-23 16:00:44",timestamp:1792742444535,'
+        'caption:"' + expected + '",other:1};'
+        'E[1]={caption:"Outro vídeo #diferente"}'
+        '}</script></html>'
+    )
+    assert kwai_media._extract_visible_hydrated_caption(page) == expected
+
+
+def test_kwai_does_not_take_unrendered_or_recommended_video_caption():
+    page = (
+        '<span>Legenda do vídeo principal</span>'
+        '<span>Outra legenda recomendada</span>'
+        '<script>E[0]={caption:"Legenda do vídeo principal"};'
+        'E[1]={caption:"Outra legenda recomendada"};</script>'
+    )
+    assert kwai_media._extract_visible_hydrated_caption(page) == (
+        "Legenda do vídeo principal"
+    )
+    assert kwai_media._extract_visible_hydrated_caption(
+        '<span>Legenda do vídeo principal</span>'
+        '<script>E[1]={caption:"Legenda do vídeo principal"};</script>'
+    ) == ""
+    assert kwai_media._extract_visible_hydrated_caption(
+        '<script>E[0]={caption:"Legenda não renderizada"};</script>'
+    ) == ""
+
+
+def test_kwai_hydrated_caption_decodes_unicode_and_nested_span():
+    expected = "Por que funciona?? ❤️ #matemática"
+    page = (
+        '<span>Por que <b>funciona??</b> ❤️ #matemática</span>'
+        '<script>E[0]={caption:"Por que funciona?? \\u2764\\ufe0f #matem\\u00e1tica"}'
+        '</script>'
+    )
+    assert kwai_media._extract_visible_hydrated_caption(page) == expected
+
+
+def test_kwai_hydration_rejects_ambiguous_unindexed_captions():
+    page = (
+        '<span>Legenda original</span><span>Legenda recomendada</span>'
+        '<script>let a={caption:"Legenda original"};'
+        'let b={caption:"Legenda recomendada"};</script>'
+    )
+    assert kwai_media._extract_visible_hydrated_caption(page) == ""
+
+
+@pytest.mark.asyncio
+async def test_kwai_extractor_returns_visible_nuxt_caption(monkeypatch):
+    url = "https://www.kwai.com/@matematicacoml/video/5188578357266245817"
+    wanted = "Por que funciona?? . .#matematica#concurso#concursopublico"
+    page = (
+        '<meta property="og:title" content="kwai-nuxt-pwa-pc">'
+        '<span>' + wanted + '</span>'
+        '<script>E[0]={time:"2026-10-23 16:00:44",timestamp:1792742444535,'
+        'caption:"' + wanted + '"};</script>'
+        '<meta property="og:video" content="https://aws-br-cdn.kwai.net/upic/test.mp4">'
+    )
+
+    class Response:
+        status = 200
+        url = url
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return page
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_kw: Session())
+    result = await kwai_media.extract_kwai_video_page(url)
+    assert result is not None
+    assert result["title"] == wanted
+    assert result["author"] == "matematicacoml"
