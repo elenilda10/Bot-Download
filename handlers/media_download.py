@@ -73,12 +73,8 @@ async def _process_supported_link(message: types.Message, service: str, url: str
         return
 
     if service == "kwai":
-        from handlers import universal
-
-        await universal.process_universal_link(
-            message,
-            direct_url=url,
-        )
+        from handlers import kwai
+        await kwai.process_kwai_link(message, direct_url=url)
         return
 
     if service == "instagram":
