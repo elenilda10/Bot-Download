@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from urllib.parse import urlparse
 
 import aiohttp
 
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_UA = (
     "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
@@ -144,6 +147,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
     final_url = url
     page = ""
     media_url = None
+    last_status = None
 
     # Some shared links return a transient PWA shell without video data.
     # Once the short URL has resolved, retry its canonical post URL without
@@ -159,7 +163,9 @@ async def extract_kwai_video_page(url: str) -> dict | None:
                     timeout=timeout,
                 ) as response:
                     final_url = str(response.url)
+                    last_status = response.status
                     if not is_kwai_url(final_url):
+                        logger.warning("Kwai share redirected to an unexpected domain")
                         return None
                     if response.status != 200:
                         if attempt == 2:
@@ -176,10 +182,16 @@ async def extract_kwai_video_page(url: str) -> dict | None:
                     elif attempt < 2:
                         candidates.append(current_url)
 
-    except (aiohttp.ClientError, TimeoutError, ValueError):
+    except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+        logger.warning("Kwai page request failed: %s", type(exc).__name__)
         return None
 
     if not media_url:
+        logger.warning(
+            "Kwai page contains no playable MP4 after retries: status=%s html_size=%s",
+            last_status,
+            len(page),
+        )
         return None
 
     title = (
