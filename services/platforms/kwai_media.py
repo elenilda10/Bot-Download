@@ -386,7 +386,7 @@ def _extract_media_url(page: str) -> str | None:
 def _video_id_from_url(url: str) -> str | None:
     if not is_kwai_url(url):
         return None
-    match = re.search(r"/video/(\d{8,})(?:[/?#]|$)", urlparse(url).path)
+    match = re.search(r"/(?:video|photo)/(\d{8,})(?:[/?#]|$)", urlparse(url).path)
     return match.group(1) if match else None
 
 
