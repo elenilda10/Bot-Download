@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib.util
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from urllib.parse import urlparse
 HANDLER = Path(__file__).resolve().parents[1] / "handlers/kwai.py"
 INIT = Path(__file__).resolve().parents[1] / "handlers/__init__.py"
 BATCH = Path(__file__).resolve().parents[1] / "handlers/media_download.py"
+DETECTION = Path(__file__).resolve().parents[1] / "services/links/detection.py"
 
 
 def _load_helpers():
@@ -128,3 +130,18 @@ def test_dedicated_telegram_handlers_and_callbacks_registered():
     assert ".business_message(" in deco
     assert "doc:kwai:" in "\n".join(ast.unparse(node) for node in funcs["send_kwai_document"].decorator_list)
     assert "audio:kwai:" in "\n".join(ast.unparse(node) for node in funcs["send_kwai_mp3"].decorator_list)
+
+
+def test_kwai_recognized_in_multiple_supported_links():
+    spec = importlib.util.spec_from_file_location("kwai_route_detection", DETECTION)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    url = "https://k.kwai.com/p/CMtEC74X"
+    result = module.extract_supported_link(f"Veja este video {url}")
+    assert result == ("kwai", url)
+    assert module.extract_supported_links(
+        "Outras plataformas https://youtu.be/ExampleXYZ e " + url
+    )[-1] == ("kwai", url)
+    assert module.extract_supported_link("https://kwai.com.evil.example/a") is None
