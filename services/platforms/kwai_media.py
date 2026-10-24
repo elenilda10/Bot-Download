@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import re
 from urllib.parse import urlparse
@@ -182,6 +183,77 @@ def format_kwai_post_caption(description: str | None, author: str | None) -> str
 
 
 
+_POST_ID_FIELD = re.compile(r'"(?:photoId|photo_id)"\s*:\s*"?(\d{8,})"?')
+_EMBEDDED_CAPTION_FIELD = re.compile(
+    r'"(?:caption|photoCaption|videoCaption)"\s*:\s*(?P<value>"(?:[^"\\]|\\.)*")'
+)
+
+
+def _extract_embedded_post_caption(page: str, post_url: str) -> str:
+    """Only take a caption associated with the requested Kwai photoId.
+
+    Public Kwai pages often ship post-specific JSON/JS state while the
+    metadata tags still contain Kwai's generic slogan. Never use the caption
+    of a recommended video found elsewhere on the same page.
+    """
+    match = re.search(r"/video/(\d{8,})(?:[/?#]|$)", post_url)
+    if not match:
+        return ""
+    requested_id = match.group(1)
+
+    for id_match in _POST_ID_FIELD.finditer(page):
+        if id_match.group(1) != requested_id:
+            continue
+
+        # Prefer decoding the exact post object. Try surrounding JSON object
+        # boundaries (the nearest may be a nested dictionary).
+        start = id_match.start()
+        prefix = page[max(0, start - 15000):start]
+        braces = [i for i, c in enumerate(prefix) if c == "{"][-60:]
+        decoder = json.JSONDecoder()
+
+        for pos in reversed(braces):
+            try:
+                parsed, _ = decoder.raw_decode(prefix[pos:] + page[start:start + 15000])
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if (
+                isinstance(parsed, dict)
+                and str(parsed.get("photoId") or parsed.get("photo_id") or "") == requested_id
+            ):
+                caption = parsed.get("caption") or parsed.get("photoCaption") or parsed.get("videoCaption")
+                if isinstance(caption, str):
+                    result, _ = _parse_kwai_post_description(caption)
+                    if result and not _is_generic_kwai_text(result):
+                        return result
+
+        # Some Kwai inline state is JavaScript rather than strict JSON.
+        # Restrict this fallback to captions next to the target's photoId;
+        # reject a different photoId if it lies between them.
+        context_start = max(0, start - 1800)
+        context_end = min(len(page), id_match.end() + 1800)
+        nearby = page[context_start:context_end]
+        candidates = list(_EMBEDDED_CAPTION_FIELD.finditer(nearby))
+        for candidate in sorted(
+            candidates, key=lambda item: abs(context_start + item.start() - start)
+        ):
+            between = page[min(start, context_start + candidate.start()):
+                           max(start, context_start + candidate.start())]
+            if _POST_ID_FIELD.search(between):
+                continue
+            try:
+                caption = json.loads(candidate.group("value"))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(caption, str):
+                continue
+            parsed_text, _ = _parse_kwai_post_description(caption)
+            if parsed_text and not _is_generic_kwai_text(parsed_text):
+                return parsed_text
+
+    return ""
+
+
 def _extract_media_url(page: str) -> str | None:
     """Find a playable MP4 from Kwai's public page, preferring post metadata.
 
@@ -342,7 +414,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
 
     # OG descriptions may wrap the user's real text with dynamic counters
     # and "Kwai video from ..." boilerplate. Keep only the original caption.
-    title = ""
+    title = _extract_embedded_post_caption(page, final_url)
     creator = None
     for key in ("og:description", "twitter:description", "description", "og:title"):
         raw = _extract_meta(page, key)
@@ -352,7 +424,8 @@ async def extract_kwai_video_page(url: str) -> dict | None:
         if candidate_author:
             creator = candidate_author
         if text and not _is_generic_kwai_text(text):
-            title = text
+            if not title:
+                title = text
             break
     if creator:
         author = creator
