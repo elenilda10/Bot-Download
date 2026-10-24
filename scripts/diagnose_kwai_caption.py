@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import re
+from html import unescape
+from html.parser import HTMLParser
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -18,6 +20,65 @@ SPEC = importlib.util.spec_from_file_location("kwai_media_caption_diagnostic", S
 assert SPEC and SPEC.loader
 kwai = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(kwai)
+
+
+
+def _safe_excerpt(text: str, limit: int = 220) -> str:
+    """Redact URLs and long tokens before displaying a short HTML context."""
+    text = re.sub(r"https?://[^\s\"'<>]+", "[URL]", text, flags=re.I)
+    text = re.sub(r"(?<!\w)[A-Za-z0-9+/_=-]{60,}(?!\w)", "[LONG_VALUE]", text)
+    text = re.sub(r"\s+", " ", unescape(text)).strip()
+    return text[:limit]
+
+
+class _CaptionTextInspector(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tags = []
+        self.matches = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in {"meta", "link", "img", "input", "br", "hr", "source"}:
+            self.tags.append(tag)
+        if tag == "meta":
+            data = dict(attrs)
+            field = data.get("property") or data.get("name") or ""
+            content = data.get("content") or ""
+            if "por que funciona" in content.casefold():
+                self.matches.append(("meta:" + field, _safe_excerpt(content)))
+
+    def handle_endtag(self, tag):
+        if tag in self.tags:
+            while self.tags:
+                removed = self.tags.pop()
+                if removed == tag:
+                    break
+
+    def handle_data(self, data):
+        lower = data.casefold()
+        needle = "por que funciona"
+        pos = lower.find(needle)
+        if pos >= 0:
+            tag = self.tags[-1] if self.tags else "[sem tag]"
+            self.matches.append(
+                (tag, _safe_excerpt(data[max(0, pos - 100):pos + 180]))
+            )
+
+
+def _inspect_caption_context(page: str) -> None:
+    inspector = _CaptionTextInspector()
+    inspector.feed(page)
+    print("CONTEXTOS HTML:", len(inspector.matches))
+    for i, (where, excerpt) in enumerate(inspector.matches[:5], 1):
+        print(f"  CONTEXTO {i} [{where}]: {excerpt}")
+    if not inspector.matches:
+        lower = page.casefold()
+        pos = lower.find("por que funciona")
+        if pos >= 0:
+            print(
+                "  CONTEXTO FONTE:",
+                _safe_excerpt(page[max(0, pos - 100):pos + 160]),
+            )
 
 
 async def main(url: str):
@@ -38,6 +99,7 @@ async def main(url: str):
         print("OBJETOS photoId:", len(kwai._POST_ID_FIELD.findall(page)))
         print("CAMPOS caption:", len(kwai._EMBEDDED_CAPTION_FIELD.findall(page)))
         print("TEXTO 'Por que funciona' NA PÁGINA:", "por que funciona" in page.casefold())
+        _inspect_caption_context(page)
         print("OG TITLE GENÉRICO:", kwai._is_generic_kwai_text(
             kwai._extract_meta(page, "og:title")
         ))
