@@ -105,6 +105,8 @@ async def main(url: str):
         ))
         embedded = kwai._extract_embedded_post_caption(page, final)
         print("LEGENDA ASSOCIADA AO ID:", embedded[:400] if embedded else "[não encontrada]")
+        hydrated = kwai._extract_visible_hydrated_caption(page)
+        print("LEGENDA VISÍVEL + JAVASCRIPT:", hydrated[:400] if hydrated else "[não encontrada]")
     else:
         print("CHROME: falhou")
 
