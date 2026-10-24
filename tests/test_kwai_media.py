@@ -323,3 +323,127 @@ async def test_realistic_share_metadata_extracts_caption_and_creator(monkeypatch
     assert result is not None
     assert result["title"] == "#ufc #mma #porrada #boxe #Lutas"
     assert result["author"] == "SPORTS (@TL.ESPORTE)"
+
+
+def test_kwai_slogan_is_not_a_post_caption():
+    for text in (
+        "Make Everyone Shine",
+        "Kwai - Make Everyone Shine",
+        "Kwai is a social network for short videos and trends. Discover funny short videos.",
+    ):
+        caption, _ = kwai_media._parse_kwai_post_description(text)
+        assert caption == ""
+    assert kwai_media.format_kwai_post_caption("Make Everyone Shine", "matematicacoml") == (
+        "👤 @matematicacoml"
+    )
+
+
+def test_embedded_post_caption_matches_requested_photo_id_only():
+    requested = "5188578357266245817"
+    other = "5188578357266245818"
+    page = (
+        '<meta property="og:title" content="Make Everyone Shine">'
+        '<script id="post-state" type="application/json">'
+        '{"items":['
+        f'{{"photoId":"{other}","caption":"Legenda de outro vídeo #outra"}},'
+        f'{{"photoId":"{requested}","caption":"Por que funciona?? #matematica #concursos"}}'
+        ']}'
+        '</script>'
+    )
+    original = kwai_media._extract_embedded_post_caption(
+        page, f"https://www.kwai.com/@matematicacoml/video/{requested}"
+    )
+    assert original == "Por que funciona?? #matematica #concursos"
+    unrelated = kwai_media._extract_embedded_post_caption(
+        page, "https://www.kwai.com/@matematicacoml/video/5000000000000000000"
+    )
+    assert unrelated == ""
+
+
+def test_embedded_post_caption_supports_escaped_json_strings():
+    requested = "5188578357266245817"
+    caption = "Por que funciona?? #matemática #concursos"
+    import json
+    page = json.dumps({
+        "photoId": requested,
+        "caption": caption,
+        "recommendations": [{"photoId": "5188578357266245888", "caption": "Outra postagem"}],
+    }, ensure_ascii=True)
+    assert kwai_media._extract_embedded_post_caption(
+        page, f"https://www.kwai.com/@matematicacoml/video/{requested}"
+    ) == caption
+
+
+@pytest.mark.asyncio
+async def test_generic_og_title_uses_matching_embedded_caption(monkeypatch):
+    video_id = "5188578357266245817"
+    final = f"https://www.kwai.com/@matematicacoml/video/{video_id}"
+    media = "https://aws-br-cdn.kwai.net/upic/math.mp4?tag=123"
+    page = (
+        '<meta property="og:title" content="Make Everyone Shine">'
+        '<meta property="og:description" content="Kwai is a social network for short videos and trends.">'
+        '<script type="application/json">'
+        f'{{"photoId":"{video_id}","caption":"Por que funciona?? #matematica"}}'
+        '</script>'
+        f'<meta property="og:video" content="{media}">'
+    )
+
+    class Response:
+        status = 200
+        url = final
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return False
+        async def text(self, **_):
+            return page
+
+    class Session:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return False
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_: Session())
+    result = await kwai_media.extract_kwai_video_page(final)
+    assert result is not None
+    assert result["title"] == "Por que funciona?? #matematica"
+    assert result["author"] == "matematicacoml"
+
+
+@pytest.mark.asyncio
+async def test_generic_og_title_without_post_caption_falls_back_safely(monkeypatch):
+    final = "https://www.kwai.com/@matematicacoml/video/5188578357266245817"
+    media = "https://aws-br-cdn.kwai.net/upic/math.mp4?tag=123"
+    page = (
+        '<meta property="og:title" content="Make Everyone Shine">'
+        '<meta property="og:description" content="Kwai is a social network for short videos and trends.">'
+        f'<meta property="og:video" content="{media}">'
+    )
+
+    class Response:
+        status = 200
+        url = final
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return False
+        async def text(self, **_):
+            return page
+    class Session:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *_):
+            return False
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_: Session())
+    result = await kwai_media.extract_kwai_video_page(final)
+    assert result is not None
+    assert result["title"] == "Vídeo do Kwai"
+    assert kwai_media.format_kwai_post_caption(result["title"], result["author"]) == (
+        "👤 @matematicacoml"
+    )
