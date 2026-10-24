@@ -258,7 +258,7 @@ def test_share_preview_extracts_original_caption_without_likes_comments():
     assert caption == "#ufc #mma #porrada #boxe #Lutas"
     assert creator == "SPORTS (@TL.ESPORTE)"
     assert kwai_media.format_kwai_post_caption(caption, creator) == (
-        "👤 SPORTS (@TL.ESPORTE)\n\n#ufc #mma #porrada #boxe #Lutas"
+        "#ufc #mma #porrada #boxe #Lutas"
     )
 
 
@@ -333,9 +333,7 @@ def test_kwai_slogan_is_not_a_post_caption():
     ):
         caption, _ = kwai_media._parse_kwai_post_description(text)
         assert caption == ""
-    assert kwai_media.format_kwai_post_caption("Make Everyone Shine", "matematicacoml") == (
-        "👤 @matematicacoml"
-    )
+    assert kwai_media.format_kwai_post_caption("Make Everyone Shine", "matematicacoml") == ""
 
 
 def test_embedded_post_caption_matches_requested_photo_id_only():
@@ -444,9 +442,7 @@ async def test_generic_og_title_without_post_caption_falls_back_safely(monkeypat
     result = await kwai_media.extract_kwai_video_page(final)
     assert result is not None
     assert result["title"] == "Vídeo do Kwai"
-    assert kwai_media.format_kwai_post_caption(result["title"], result["author"]) == (
-        "👤 @matematicacoml"
-    )
+    assert kwai_media.format_kwai_post_caption(result["title"], result["author"]) == ""
 
 
 def test_nuxt_site_title_is_not_video_caption():
@@ -498,7 +494,7 @@ async def test_nuxt_site_title_alone_does_not_become_caption(monkeypatch):
     assert result["title"] == "Vídeo do Kwai"
     assert kwai_media.format_kwai_post_caption(
         result["title"], result["author"]
-    ) == "👤 @matematicacoml"
+    ) == ""
 
 
 def test_kwai_nuxt_hydration_caption_matches_visible_span():
@@ -595,3 +591,10 @@ async def test_kwai_extractor_returns_visible_nuxt_caption(monkeypatch):
     assert result is not None
     assert result["title"] == wanted
     assert result["author"] == "matematicacoml"
+
+
+def test_kwai_caption_never_includes_profile_handle():
+    caption = "Por que funciona?? #matematica #enem"
+    assert kwai_media.format_kwai_post_caption(caption, "matematicacoml") == caption
+    assert kwai_media.format_kwai_post_caption(caption, "@matematicacoml") == caption
+    assert kwai_media.format_kwai_post_caption("", "matematicacoml") == ""
