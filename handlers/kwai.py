@@ -43,7 +43,7 @@ from handlers.utils import (
 )
 from services.logger import logger as logging, summarize_url_for_log
 from services.media.delivery import send_audio_with_thumbnail
-from services.platforms.kwai_media import is_kwai_url
+from services.platforms.kwai_media import format_kwai_post_caption, is_kwai_url
 from services.platforms.kwai_service import download_kwai_media
 from utils.media_cache import build_media_cache_key
 
@@ -69,7 +69,7 @@ def _url_hash(url: str) -> str:
 
 
 def _cache_key(url_hash: str, kind: str) -> str:
-    return build_media_cache_key("kwai", variant=f"v1:{kind}:{url_hash}")
+    return build_media_cache_key("kwai", variant=f"v2:{kind}:{url_hash}")
 
 
 def _kwai_keyboard(url: str, url_hash: str, settings: dict, lang: str | None):
@@ -168,7 +168,8 @@ async def _try_cache(
         return False
 
     markup = _kwai_keyboard(url, token, settings, lang)
-    caption = bm.captions(settings.get("captions", "on"), None, bot_url)
+    original_caption = await db.get_file_id(_cache_key(token, "caption"))
+    caption = bm.captions(settings.get("captions", "on"), original_caption, bot_url)
     try:
         if as_document:
             sent = await message.answer_document(
@@ -267,7 +268,8 @@ async def process_kwai_link(
         await safe_edit_text(status_message, bm.uploading_status(lang=lang))
         item = result.media_list[0]
         markup = _kwai_keyboard(url, token, settings, lang)
-        caption = bm.captions(settings.get("captions", "on"), result.description, bot_url)
+        original_caption = format_kwai_post_caption(result.description, result.author)
+        caption = bm.captions(settings.get("captions", "on"), original_caption, bot_url)
 
         if settings.get("as_document") == "on":
             sent = await message.answer_document(
@@ -282,6 +284,10 @@ async def process_kwai_link(
                 await db.add_file(
                     _cache_key(token, "document"), sent.document.file_id, "document"
                 )
+                if original_caption:
+                    await db.add_file(
+                        _cache_key(token, "caption"), original_caption[:1800], "caption"
+                    )
                 lease.mark_success()
         else:
             preview = thumb if thumb and os.path.isfile(thumb) else None
@@ -304,6 +310,10 @@ async def process_kwai_link(
                 await db.add_file(
                     _cache_key(token, "video"), sent.video.file_id, "video"
                 )
+                if original_caption:
+                    await db.add_file(
+                        _cache_key(token, "caption"), original_caption[:1800], "caption"
+                    )
                 lease.mark_success()
 
         if sent:
