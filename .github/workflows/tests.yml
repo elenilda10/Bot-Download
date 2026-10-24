@@ -41,6 +41,11 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
+      - name: Install native audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
+
       - name: Install dependencies
         run: |
           uv pip install --system -r requirements-dev.txt ruff
@@ -73,6 +78,11 @@ jobs:
           cache-dependency-glob: |
             requirements.txt
             requirements-dev.txt
+
+      - name: Install native audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
 
       - name: Install dependencies
         run: |
@@ -202,6 +212,11 @@ jobs:
           cache-dependency-glob: |
             requirements.txt
             requirements-dev.txt
+
+      - name: Install native audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev pkg-config
 
       - name: Install dependencies
         run: |
