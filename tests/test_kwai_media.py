@@ -247,3 +247,79 @@ async def test_chrome_fallback_rejects_untrusted_media_and_fails_closed(monkeypa
         ),
     )
     assert await kwai_media.extract_kwai_video_page(short) is None
+
+
+def test_share_preview_extracts_original_caption_without_likes_comments():
+    raw = (
+        '13571 Like(s), 100 Comment(s). Kwai video from '
+        'SPORTS(@TL.ESPORTE): "#ufc #mma #porrada #boxe #Lutas"'
+    )
+    caption, creator = kwai_media._parse_kwai_post_description(raw)
+    assert caption == "#ufc #mma #porrada #boxe #Lutas"
+    assert creator == "SPORTS (@TL.ESPORTE)"
+    assert kwai_media.format_kwai_post_caption(caption, creator) == (
+        "👤 SPORTS (@TL.ESPORTE)\n\n#ufc #mma #porrada #boxe #Lutas"
+    )
+
+
+def test_share_caption_handles_unicode_newlines_and_html_entities():
+    caption, creator = kwai_media._parse_kwai_post_description(
+        '1,234 Like(s), 75 Comment(s). Kwai video from '
+        'Criadora(@criadora): "Minha legenda ❤️\\n#UFC &amp; #MMA"'
+    )
+    assert caption == "Minha legenda ❤️\\n#UFC & #MMA"
+    assert creator == "Criadora (@criadora)"
+
+
+def test_generic_share_heading_does_not_become_video_caption():
+    text, creator = kwai_media._parse_kwai_post_description(
+        "100 Like(s), 10 Comment(s). Kwai video from perfil"
+    )
+    assert text == ""
+    assert creator is None
+    assert kwai_media.format_kwai_post_caption("Vídeo do Kwai", "Kwai") == ""
+
+
+@pytest.mark.asyncio
+async def test_realistic_share_metadata_extracts_caption_and_creator(monkeypatch):
+    final = "https://www.kwai.com/@TL.ESPORTE/video/123456"
+    media = "https://aws-br-cdn.kwai.net/upic/video.mp4?signature=ok"
+    description = (
+        '13571 Like(s), 100 Comment(s). Kwai video from '
+        'SPORTS(@TL.ESPORTE): &quot;#ufc #mma #porrada #boxe #Lutas&quot;'
+    )
+    page = (
+        f'<meta property="og:description" content="{description}">'
+        f'<meta property="og:video" content="{media}">'
+    )
+
+    class Response:
+        url = final
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return page
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_kwargs: Session())
+    result = await kwai_media.extract_kwai_video_page(
+        "https://k.kwai.com/p/example"
+    )
+    assert result is not None
+    assert result["title"] == "#ufc #mma #porrada #boxe #Lutas"
+    assert result["author"] == "SPORTS (@TL.ESPORTE)"
