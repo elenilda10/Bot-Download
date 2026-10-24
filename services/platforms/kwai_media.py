@@ -386,6 +386,119 @@ def _extract_media_url(page: str) -> str | None:
     return None
 
 
+
+# For downloads, a Kwai page can contain many recommended CDN videos.
+# Resolve media only when its owning post can be verified.
+def _video_id_from_url(url: str) -> str | None:
+    if not is_kwai_url(url):
+        return None
+    match = re.search(r"/video/(\d{8,})(?:[/?#]|$)", urlparse(url).path)
+    return match.group(1) if match else None
+
+
+def _allowed_mp4(value: str) -> str | None:
+    candidate = _normalize_page(value).rstrip(";,)}")
+    if _is_allowed_media_url(candidate) and urlparse(candidate).path.lower().endswith(".mp4"):
+        return candidate
+    return None
+
+
+def _javascript_object_at(script: str, brace: int) -> str | None:
+    """Read a JS object without treating quoted braces as structure."""
+    if brace < 0 or brace >= len(script) or script[brace] != "{":
+        return None
+    depth = 0
+    quote = None
+    escaped = False
+    for i in range(brace, min(len(script), brace + 250_000)):
+        char = script[i]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in ('"', "'", chr(96)):
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return script[brace:i + 1]
+    return None
+
+
+def _scoped_mp4_urls(block: str) -> list[str]:
+    normalized = _normalize_page(block)
+    urls = re.findall(
+        r"""https?://[^"'<>\\\s]+?\.mp4(?:\?[^"'<>\\\s]*)?""",
+        normalized, flags=re.IGNORECASE,
+    )
+    found = []
+    for url in urls:
+        candidate = _allowed_mp4(url)
+        if candidate and candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _extract_verified_media_url(page: str, post_url: str) -> str | None:
+    """Never choose an unassociated MP4 from recommended Kwai content.
+
+    Accept a post-scoped og:video URL when og:url identifies the same post,
+    or media inside the primary Nuxt E[0] object whose caption is visibly
+    rendered on this page. Ambiguity causes a safe failure.
+    """
+    requested_id = _video_id_from_url(post_url)
+    if not requested_id:
+        return None
+
+    og_url = _extract_meta(page, "og:url")
+    if og_url and _video_id_from_url(og_url) == requested_id:
+        for field in ("og:video", "og:video:url", "twitter:player:stream"):
+            url = _allowed_mp4(_extract_meta(page, field))
+            if url:
+                return url
+
+    parser = _KwaiPageText()
+    parser.feed(page)
+    visible = {
+        _comparable_kwai_caption(span)
+        for span in parser.spans
+        if 4 <= len(span.strip()) <= 4096
+    }
+    verified: list[str] = []
+    for script in parser.scripts:
+        for entry in _HYDRATION_ENTRY.finditer(script):
+            if entry.group(1) != "0":
+                continue
+            block = _javascript_object_at(script, entry.end() - 1)
+            if not block:
+                continue
+            found = _HYDRATED_CAPTION_FIELD.search(block)
+            if not found:
+                continue
+            try:
+                caption = json.loads(found.group("value"))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if (
+                not isinstance(caption, str)
+                or _comparable_kwai_caption(caption) not in visible
+            ):
+                continue
+            candidates = _scoped_mp4_urls(block)
+            if len({urlparse(item).path for item in candidates}) == 1 and candidates:
+                verified.append(candidates[0])
+
+    if len({urlparse(item).path for item in verified}) == 1 and verified:
+        return verified[0]
+    return None
+
+
+
 def _fetch_kwai_chrome_page(url: str) -> tuple[str, str] | None:
     """Fetch public page with Chrome TLS impersonation; no browser cookies.
 
@@ -455,7 +568,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
                     return None
                 if response.status == 200:
                     page = await response.text(errors="ignore")
-                    media_url = _extract_media_url(page)
+                    media_url = _extract_verified_media_url(page, final_url)
 
             canonical = final_url.split("?", 1)[0].split("#", 1)[0]
             if not media_url and canonical != url and is_kwai_url(canonical):
@@ -469,7 +582,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
                         return None
                     if response.status == 200:
                         page = await response.text(errors="ignore")
-                        media_url = _extract_media_url(page)
+                        media_url = _extract_verified_media_url(page, final_url)
 
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
         logger.warning("Kwai aiohttp page request failed: %s", type(exc).__name__)
@@ -484,14 +597,14 @@ async def extract_kwai_video_page(url: str) -> dict | None:
         chrome_page = await asyncio.to_thread(_fetch_kwai_chrome_page, chrome_url)
         if chrome_page:
             chrome_final_url, chrome_html = chrome_page
-            candidate = _extract_media_url(chrome_html)
+            candidate = _extract_verified_media_url(chrome_html, chrome_final_url)
             if candidate:
                 final_url, page, media_url = chrome_final_url, chrome_html, candidate
-                logger.info("Kwai video extracted via Chrome impersonation")
+                logger.info("Kwai verified post-scoped video extracted via Chrome impersonation")
 
     if not media_url:
         logger.warning(
-            "Kwai page contains no playable MP4: status=%s html_size=%s",
+            "Kwai page contains no verified post-scoped MP4: status=%s html_size=%s",
             last_status,
             len(page),
         )
