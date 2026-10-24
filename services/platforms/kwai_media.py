@@ -5,6 +5,7 @@ import html
 import json
 import logging
 import re
+from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import aiohttp
@@ -256,6 +257,103 @@ def _extract_embedded_post_caption(page: str, post_url: str) -> str:
     return ""
 
 
+
+# Kwai's Nuxt hydration can expose the main post as E[0]={time:...,caption:"..."}
+# without either photoId or a JSON-quoted key. Validate the caption against
+# a rendered <span> in the same response so an unrelated recommended video
+# cannot silently become the downloaded post's description.
+_HYDRATED_CAPTION_FIELD = re.compile(
+    r'(?<![\w$])(?:caption|photoCaption|videoCaption)\s*:\s*'
+    r'(?P<value>"(?:[^"\\]|\\.)*")'
+)
+_HYDRATION_ENTRY = re.compile(r"\b[A-Za-z_$][\w$]*\[(\d+)\]\s*=\s*\{")
+
+
+class _KwaiPageText(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.spans: list[str] = []
+        self.scripts: list[str] = []
+        self._open_spans: list[list[str]] = []
+        self._script_parts: list[str] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self._script_parts = []
+        elif tag == "span" and self._script_parts is None:
+            self._open_spans.append([])
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self._script_parts is not None:
+            self.scripts.append("".join(self._script_parts))
+            self._script_parts = None
+        elif tag == "span" and self._open_spans and self._script_parts is None:
+            self.spans.append("".join(self._open_spans.pop()))
+
+    def handle_data(self, data):
+        if self._script_parts is not None:
+            self._script_parts.append(data)
+        else:
+            for span in self._open_spans:
+                span.append(data)
+
+
+def _comparable_kwai_caption(text: str) -> str:
+    # Collapse whitespace only for matching; preserve the author's wording.
+    return " ".join(html.unescape(text).split()).casefold()
+
+
+def _extract_visible_hydrated_caption(page: str) -> str:
+    """Use public JS hydration only when it agrees with rendered post text.
+
+    Prefer the E[0] entry when present: later entries can be recommended
+    videos. Reject unverified JS captions and marketing boilerplate.
+    """
+    parser = _KwaiPageText()
+    parser.feed(page)
+    visible = {
+        _comparable_kwai_caption(span)
+        for span in parser.spans
+        if 4 <= len(span.strip()) <= 4096
+    }
+
+    primary: list[str] = []
+    unindexed: list[str] = []
+
+    for script in parser.scripts:
+        for found in _HYDRATED_CAPTION_FIELD.finditer(script):
+            try:
+                original = json.loads(found.group("value"))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(original, str):
+                continue
+            caption, _ = _parse_kwai_post_description(original)
+            if not caption or _is_generic_kwai_text(caption):
+                continue
+            normalized = _comparable_kwai_caption(caption)
+            if normalized not in visible:
+                continue
+
+            # Inspect the nearest state-array assignment, if provided.
+            # E[0] is the top-level post shown on this Kwai video page.
+            prefix = script[max(0, found.start() - 1500):found.start()]
+            entries = list(_HYDRATION_ENTRY.finditer(prefix))
+            if entries:
+                if entries[-1].group(1) == "0":
+                    primary.append(caption)
+            else:
+                unindexed.append(caption)
+
+    if primary:
+        return primary[0]
+    # Without an index, only accept an unambiguous caption corroborated by
+    # a visible <span>; do not select among multiple post/recommendation texts.
+    distinct = list(dict.fromkeys(unindexed))
+    return distinct[0] if len(distinct) == 1 else ""
+
+
+
 def _extract_media_url(page: str) -> str | None:
     """Find a playable MP4 from Kwai's public page, preferring post metadata.
 
@@ -416,7 +514,10 @@ async def extract_kwai_video_page(url: str) -> dict | None:
 
     # OG descriptions may wrap the user's real text with dynamic counters
     # and "Kwai video from ..." boilerplate. Keep only the original caption.
-    title = _extract_embedded_post_caption(page, final_url)
+    title = (
+        _extract_embedded_post_caption(page, final_url)
+        or _extract_visible_hydrated_caption(page)
+    )
     creator = None
     for key in ("og:description", "twitter:description", "description"):
         raw = _extract_meta(page, key)
