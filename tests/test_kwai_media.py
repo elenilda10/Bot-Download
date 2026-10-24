@@ -682,3 +682,43 @@ def test_verified_kwai_accepts_post_scoped_og_video():
         f'<meta property="og:video" content="{wanted.replace("&", "&amp;")}">'
     )
     assert kwai_media._extract_verified_media_url(page, link) == wanted
+
+
+@pytest.mark.asyncio
+async def test_kwai_extractor_refuses_foreign_video_from_recommendations(monkeypatch):
+    requested = "https://www.kwai.com/@gabyvalence/video/5200118832330956026"
+    unrelated = "https://aws-br-cdn.kwai.net/upic/chandler-47-seconds.mp4"
+    page = (
+        '<span>Vídeo de roupa de cama da Gaby</span>'
+        '<script>E[0]={caption:"Vídeo de roupa de cama da Gaby"};'
+        f'E[1]={{caption:"Outro vídeo",file:"{unrelated}"}};'
+        '</script>'
+    )
+
+    class Response:
+        status = 200
+        url = requested
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def text(self, **_kwargs):
+            return page
+
+    class Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_: Session())
+    monkeypatch.setattr(kwai_media, "_fetch_kwai_chrome_page", lambda *_: None)
+
+    assert await kwai_media.extract_kwai_video_page(requested) is None
