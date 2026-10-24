@@ -291,7 +291,7 @@ def test_generic_share_heading_does_not_become_video_caption():
 
 @pytest.mark.asyncio
 async def test_realistic_share_metadata_extracts_caption_and_creator(monkeypatch):
-    final = "https://www.kwai.com/@TL.ESPORTE/video/123456"
+    final = "https://www.kwai.com/@TL.ESPORTE/video/5200118832330956026"
     media = "https://aws-br-cdn.kwai.net/upic/video.mp4?signature=ok"
     description = (
         '13571 Like(s), 100 Comment(s). Kwai video from '
@@ -299,12 +299,6 @@ async def test_realistic_share_metadata_extracts_caption_and_creator(monkeypatch
     )
     page = (
         f'<meta property="og:description" content="{description}">'
-        f'<meta property="og:url" content="{final}">'
-        f'<meta property="og:url" content="{final}">'
-        f'<meta property="og:url" content="{final}">'
-        f'<meta property="og:url" content="{final}">'
-        f'<meta property="og:url" content="{final}">'
-        f'<meta property="og:url" content="{final}">'
         f'<meta property="og:url" content="{final}">'
         f'<meta property="og:video" content="{media}">'
     )
@@ -399,6 +393,7 @@ async def test_generic_og_title_uses_matching_embedded_caption(monkeypatch):
         '<script type="application/json">'
         f'{{"photoId":"{video_id}","caption":"Por que funciona?? #matematica"}}'
         '</script>'
+        f'<meta property="og:url" content="{final}">'
         f'<meta property="og:video" content="{media}">'
     )
 
@@ -434,6 +429,7 @@ async def test_generic_og_title_without_post_caption_falls_back_safely(monkeypat
     page = (
         '<meta property="og:title" content="Make Everyone Shine">'
         '<meta property="og:description" content="Kwai is a social network for short videos and trends.">'
+        f'<meta property="og:url" content="{final}">'
         f'<meta property="og:video" content="{media}">'
     )
 
@@ -478,6 +474,7 @@ async def test_nuxt_site_title_alone_does_not_become_caption(monkeypatch):
     page = (
         '<meta name="description" content="Kwai is a social network for short videos">'
         '<meta property="og:title" content="kwai-nuxt-pwa-pc">'
+        f'<meta property="og:url" content="{final}">'
         f'<meta property="og:video" content="{media}">'
     )
 
@@ -576,6 +573,7 @@ async def test_kwai_extractor_returns_visible_nuxt_caption(monkeypatch):
         '<span>' + wanted + '</span>'
         '<script>E[0]={time:"2026-10-23 16:00:44",timestamp:1792742444535,'
         'caption:"' + wanted + '"};</script>'
+        f'<meta property="og:url" content="{url}">'
         '<meta property="og:video" content="https://aws-br-cdn.kwai.net/upic/test.mp4">'
     )
 
