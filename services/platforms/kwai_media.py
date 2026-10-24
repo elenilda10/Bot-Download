@@ -104,6 +104,8 @@ _KWAI_SHARE_DESCRIPTION = re.compile(
 
 _GENERIC_KWAI_TITLES = frozenset({
     "make everyone shine",
+    "kwai-nuxt-pwa-pc",
+    "kwai-nuxt-pwa-pc-online",
     "kwai - make everyone shine",
     "kwai",
     "kwai video",
@@ -416,7 +418,7 @@ async def extract_kwai_video_page(url: str) -> dict | None:
     # and "Kwai video from ..." boilerplate. Keep only the original caption.
     title = _extract_embedded_post_caption(page, final_url)
     creator = None
-    for key in ("og:description", "twitter:description", "description", "og:title"):
+    for key in ("og:description", "twitter:description", "description"):
         raw = _extract_meta(page, key)
         if not raw:
             continue
@@ -429,6 +431,8 @@ async def extract_kwai_video_page(url: str) -> dict | None:
             break
     if creator:
         author = creator
+    # Do not use generic site/app title as a video caption. An absent
+    # description is safer than attributing marketing text to the creator.
     title = title or "Vídeo do Kwai"
 
     return {
