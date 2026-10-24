@@ -32,7 +32,9 @@ async def main(url: str):
     if chrome:
         final, page = chrome
         print("CHROME HTML:", len(page))
-        print("ID PRESENTE:", bool(re.search(r"/video/(\d+)", final)))
+        video_id = (re.search(r"/video/(\d+)", final) or id_match)
+        target_id = video_id.group(1) if video_id else ""
+        print("ID NOS DADOS DO VÍDEO:", target_id in kwai._POST_ID_FIELD.findall(page))
         print("OBJETOS photoId:", len(kwai._POST_ID_FIELD.findall(page)))
         print("CAMPOS caption:", len(kwai._EMBEDDED_CAPTION_FIELD.findall(page)))
         print("TEXTO 'Por que funciona' NA PÁGINA:", "por que funciona" in page.casefold())
