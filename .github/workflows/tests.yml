@@ -22,6 +22,19 @@ env:
   PYTHONPATH: ${{ github.workspace }}
 
 jobs:
+  kwai-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install isolated Kwai test dependencies
+        run: python -m pip install aiohttp pytest pytest-asyncio
+      - name: Test public Kwai link extraction
+        run: python -m pytest -q tests/test_kwai_media.py
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
