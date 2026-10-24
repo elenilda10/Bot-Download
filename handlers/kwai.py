@@ -50,7 +50,7 @@ from utils.media_cache import build_media_cache_key
 router = Router(name="kwai_handler")
 logging = logging.bind(service="kwai")
 
-_KWAI_LINK_REGEX = r"https?://(?:[a-zA-Z0-9-]+\.)*(?:kwai\.com|kwai-video\.com|kw\.ai)(?:/[^\s<>'\"]*)?"
+_KWAI_LINK_REGEX = r"https?://(?:[a-zA-Z0-9-]+\.)*(?:kwai\.com|kwai-video\.com|kw\.ai)(?::[0-9]+)?(?=[/?#\s<>'\"]|$)(?:/[^\s<>'\"]*)?"
 _KWAI_CALLBACK_HASH = re.compile(r"^[0-9a-f]{16}$")
 
 
