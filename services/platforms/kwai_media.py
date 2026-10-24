@@ -141,28 +141,44 @@ async def extract_kwai_video_page(url: str) -> dict | None:
     }
 
     timeout = aiohttp.ClientTimeout(total=30)
+    final_url = url
+    page = ""
+    media_url = None
 
+    # Some shared links return a transient PWA shell without video data.
+    # Once the short URL has resolved, retry its canonical post URL without
+    # tracking/query parameters before declaring the public video unavailable.
+    candidates = [url]
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(
-                url,
-                allow_redirects=True,
-                timeout=timeout,
-            ) as response:
-                if response.status != 200:
-                    return None
+            for attempt in range(3):
+                current_url = candidates[-1]
+                async with session.get(
+                    current_url,
+                    allow_redirects=True,
+                    timeout=timeout,
+                ) as response:
+                    final_url = str(response.url)
+                    if not is_kwai_url(final_url):
+                        return None
+                    if response.status != 200:
+                        if attempt == 2:
+                            return None
+                    else:
+                        page = await response.text(errors="ignore")
+                        media_url = _extract_media_url(page)
+                        if media_url:
+                            break
 
-                final_url = str(response.url)
+                    clean_url = final_url.split("?", 1)[0].split("#", 1)[0]
+                    if is_kwai_url(clean_url) and clean_url != current_url:
+                        candidates.append(clean_url)
+                    elif attempt < 2:
+                        candidates.append(current_url)
 
-                if not is_kwai_url(final_url):
-                    return None
-
-                page = await response.text(errors="ignore")
-
-    except Exception:
+    except (aiohttp.ClientError, TimeoutError, ValueError):
         return None
 
-    media_url = _extract_media_url(page)
     if not media_url:
         return None
 
