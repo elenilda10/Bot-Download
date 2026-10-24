@@ -69,7 +69,7 @@ def _url_hash(url: str) -> str:
 
 
 def _cache_key(url_hash: str, kind: str) -> str:
-    return build_media_cache_key("kwai", variant=f"v2:{kind}:{url_hash}")
+    return build_media_cache_key("kwai", variant=f"v3:{kind}:{url_hash}")
 
 
 def _kwai_keyboard(url: str, url_hash: str, settings: dict, lang: str | None):
