@@ -569,7 +569,7 @@ async def test_kwai_extractor_returns_visible_nuxt_caption(monkeypatch):
 
     class Response:
         status = 200
-        url = url
+        url = "https://www.kwai.com/@matematicacoml/video/5188578357266245817"
 
         async def __aenter__(self):
             return self
