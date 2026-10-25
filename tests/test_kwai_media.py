@@ -862,3 +862,73 @@ async def test_empty_verified_caption_never_uses_foreign_page_description(monkey
     monkeypatch.setattr(kwai_media.aiohttp, "ClientSession", lambda **_: Session())
     result = await kwai_media.extract_kwai_video_page(POST_URL)
     assert result["title"] == "Vídeo do Kwai"
+
+
+SHOP_URL = (
+    'https://m-shop.kwai.com/krn-web/detail?itemId=4311573118'
+    '&photoId=150111566247027&photoId=5232206978093612857'
+    '&share_item_type=goods_video_distribute'
+    '&share_item_info=5232206978093612857&authorKwaiId=samyashop'
+)
+SHOP_VIDEO = 'https://www.kwai.com/@samyashop/video/5232206978093612857'
+
+
+def test_shop_uses_outer_shared_video_identity_instead_of_product_photo():
+    assert kwai_media._shop_shared_video_url(SHOP_URL) == SHOP_VIDEO
+    assert kwai_media.is_kwai_url('https://k.kwai.com/w/0C00dDjZ')
+
+
+@pytest.mark.parametrize('url', [
+    SHOP_URL.replace('m-shop.kwai.com', 'evil.example'),
+    SHOP_URL.replace('goods_video_distribute', 'product'),
+    SHOP_URL.replace('share_item_info=5232206978093612857', 'share_item_info=99999999'),
+    SHOP_URL + '&share_item_info=150111566247027',
+    SHOP_URL + '&authorKwaiId=other',
+    SHOP_URL.replace('samyashop', 'bad%2Fprofile'),
+    'https://m-shop.kwai.com/krn-web/detail?itemId=4311573118',
+])
+def test_shop_refuses_ambiguous_or_product_only_links(url):
+    assert kwai_media._shop_shared_video_url(url) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('use_profile', [False, True])
+async def test_shop_short_redirect_downloads_only_exact_shared_post(monkeypatch, use_profile):
+    page, media = _realistic_nuxt_post(identity='5232206978093612857')
+    calls = []
+    profile_calls = []
+
+    class Response:
+        status = 200
+        def __init__(self, url, body):
+            self.url, self.body = url, body
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        async def text(self, **_): return self.body
+
+    class Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        def get(self, url, **kwargs):
+            calls.append(url)
+            assert 'Cookie' not in kwargs.get('headers', {})
+            if len(calls) == 1:
+                return Response(SHOP_URL, '<html>Kwai Shop</html>')
+            assert url == SHOP_VIDEO
+            return Response(url, '<html>empty</html>' if use_profile else page)
+
+    def firefox(url, profile):
+        profile_calls.append(url)
+        assert url == SHOP_VIDEO
+        return url, page
+
+    monkeypatch.setattr(kwai_media.aiohttp, 'ClientSession', lambda **_: Session())
+    monkeypatch.setattr(kwai_media, '_fetch_kwai_chrome_page', lambda *_: None)
+    monkeypatch.setattr(kwai_media, '_fetch_kwai_firefox_page', firefox)
+    result = await kwai_media.extract_kwai_video_page(
+        'https://k.kwai.com/w/0C00dDjZ',
+        firefox_profile='/test/profile' if use_profile else None,
+    )
+    assert result['page_url'] == SHOP_VIDEO
+    assert result['media_url'] == media
+    assert profile_calls == ([SHOP_VIDEO] if use_profile else [])

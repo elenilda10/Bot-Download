@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
@@ -670,9 +670,35 @@ def _fetch_kwai_firefox_page(url: str, profile: str) -> tuple[str, str] | None:
     return fetch_kwai_firefox_page(url, profile)
 
 
+def _shop_shared_video_url(url: str) -> str | None:
+    """Resolve the shared video, never the product's other photoId.
+
+    Shop redirects contain duplicate photoId fields and nested product URLs.
+    Only the outer goods_video_distribute share identity selects the video.
+    """
+    parsed = urlparse(url)
+    if (parsed.scheme != "https" or parsed.hostname != "m-shop.kwai.com"
+            or parsed.path != "/krn-web/detail"):
+        return None
+    query = parse_qs(parsed.query)
+    if query.get("share_item_type") != ["goods_video_distribute"]:
+        return None
+    ids = query.get("share_item_info", [])
+    authors = query.get("authorKwaiId", [])
+    if len(ids) != 1 or len(authors) != 1:
+        return None
+    post_id, author = ids[0], authors[0]
+    if (not re.fullmatch(r"[0-9]{8,}", post_id)
+            or post_id not in query.get("photoId", [])
+            or not re.fullmatch(r"[A-Za-z0-9_.-]+", author)):
+        return None
+    return f"https://www.kwai.com/@{author}/video/{post_id}"
+
+
 async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = None) -> dict | None:
     if not is_kwai_url(url):
         return None
+    url = _shop_shared_video_url(url) or url
 
     headers = {
         "User-Agent": _DEFAULT_UA,
@@ -710,7 +736,10 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
                     page = await response.text(errors="ignore")
                     media_url = _extract_verified_media_url(page, final_url)
 
-            canonical = final_url.split("?", 1)[0].split("#", 1)[0]
+            shop_video = _shop_shared_video_url(final_url)
+            if shop_video:
+                requested_id = _video_id_from_url(shop_video)
+            canonical = shop_video or final_url.split("?", 1)[0].split("#", 1)[0]
             if not media_url and canonical != url and is_kwai_url(canonical):
                 async with session.get(
                     canonical, allow_redirects=True, timeout=timeout

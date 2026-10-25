@@ -97,3 +97,21 @@ restart and verify private/group Telegram flows, cache replies, and MP3/document
 buttons. The first integrated version was successfully smoke-tested on the VPS
 and delivered multiple short and web URLs in Telegram; the reply/general-release
 update still needs its final Telegram check.
+
+### Vídeos compartilhados pelo Kwai Shop
+
+Links `/w/` que redirecionam para `m-shop.kwai.com/krn-web/detail`
+com `share_item_type=goods_video_distribute` são convertidos para a página
+normal do vídeo usando `share_item_info` e `authorKwaiId`. O ID compartilhado
+precisa constar nos parâmetros externos `photoId`; IDs de produto e URLs
+aninhadas não selecionam o vídeo. A extração continua exigindo identidade
+exata no registro dono do MP4. Cookies do perfil só chegam à página canônica,
+nunca à loja. Links de produto sem identidade de vídeo não são convertidos.
+
+Exemplo de teste na VPS:
+
+```bash
+/root/Bot-Download/venv/bin/python scripts/test_kwai_download.py \
+  'https://k.kwai.com/w/0C00dDjZ' \
+  --firefox-profile /home/firefoxbot/.config/mozilla/firefox/p2u2gipq.default-release
+```
