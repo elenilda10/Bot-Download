@@ -62,7 +62,7 @@ def _load_helpers():
     return namespace
 
 
-def test_firefox_profile_is_explicit_owner_private_only(monkeypatch):
+def test_firefox_profile_is_explicit_and_enabled_for_users_and_groups(monkeypatch):
     from enum import Enum
     class ChatType(str, Enum):
         PRIVATE = "private"
@@ -75,8 +75,10 @@ def test_firefox_profile_is_explicit_owner_private_only(monkeypatch):
     assert profile(1, private) == "/test/profile"
     assert profile(1, SimpleNamespace(id=1, type=ChatType.PRIVATE)) == "/test/profile"
     assert profile(1, private, "business-id") is None
-    assert profile(2, SimpleNamespace(id=2, type="private")) is None
-    assert profile(1, SimpleNamespace(id=-100123, type="supergroup")) is None
+    assert profile(2, SimpleNamespace(id=2, type="private")) == "/test/profile"
+    assert profile(1, SimpleNamespace(id=-100123, type="supergroup")) == "/test/profile"
+    assert profile(2, SimpleNamespace(id=-123, type="group")) == "/test/profile"
+    assert profile(1, SimpleNamespace(id=-123, type="channel")) is None
     assert profile(1, SimpleNamespace(id=2, type="private")) is None
 
 
@@ -84,11 +86,12 @@ def test_authenticated_cache_and_callbacks_cannot_use_public_keys():
     helpers = _load_helpers()
     scope = helpers["_cache_scope"]
     key = helpers["_cache_key"]
-    assert scope(None, 1) == "public"
-    assert scope("/profile", 1) == "owner:1"
+    assert scope(None, 1, 1) == "public"
+    assert scope("/profile", 1, 1) == "owner:1:chat:1"
     for kind in ("video", "document", "audio", "caption"):
-        assert key("token", kind, scope("/profile", 1)) != key("token", kind)
-        assert key("token", kind, "owner:1") != key("token", kind, "owner:2")
+        assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind)
+        assert key("token", kind, scope("/profile", 1, -123)) != key("token", kind, scope("/profile", 2, -123))
+        assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind, scope("/profile", 1, -123))
         assert "v7:" in key("token", kind)
 
 

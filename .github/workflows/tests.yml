@@ -33,9 +33,9 @@ jobs:
       - name: Install isolated Kwai test dependencies
         run: python -m pip install aiohttp pytest pytest-asyncio ruff
       - name: Test Kwai extraction and routing
-        run: python -m pytest --noconftest -q tests/test_kwai_media.py tests/test_kwai_handler_routing.py tests/test_kwai_service.py tests/test_kwai_firefox.py tests/test_kwai_installer.py
+        run: python -m pytest --noconftest -q tests/test_kwai_media.py tests/test_kwai_handler_routing.py tests/test_kwai_service.py tests/test_kwai_firefox.py tests/test_kwai_installer.py tests/test_kwai_reply.py
       - name: Lint dedicated Kwai handler and tests
-        run: python -m ruff check --select=E,F,W --ignore=E501 handlers/kwai.py services/platforms/kwai_media.py services/platforms/kwai_service.py services/platforms/kwai_firefox.py tests/test_kwai_handler_routing.py tests/test_kwai_service.py tests/test_kwai_firefox.py
+        run: python -m ruff check --select=E,F,W --ignore=E501 handlers/kwai.py services/platforms/kwai_media.py services/platforms/kwai_service.py services/platforms/kwai_firefox.py tests/test_kwai_handler_routing.py tests/test_kwai_service.py tests/test_kwai_firefox.py tests/test_kwai_reply.py
       - name: Validate Kwai diagnostic script
         run: python -m py_compile scripts/diagnose_kwai_page.py scripts/diagnose_kwai_caption.py scripts/diagnose_kwai_post_identity.py scripts/install_kwai_vps.py scripts/test_kwai_download.py
 

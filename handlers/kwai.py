@@ -22,7 +22,7 @@ from aiogram.types import FSInputFile, InlineKeyboardButton
 import keyboards as kb
 import messages as bm
 from app_context import bot, db, send_analytics
-from config import ADMIN_ID, MAX_FILE_SIZE, OUTPUT_DIR
+from config import MAX_FILE_SIZE, OUTPUT_DIR
 from handlers import commands as cmd_mod
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
@@ -76,15 +76,17 @@ def _cache_key(url_hash: str, kind: str, scope: str = "public") -> str:
 def _profile_for_request(user_id, chat, business_id=None) -> str | None:
     chat_type = getattr(chat, "type", "")
     chat_type = getattr(chat_type, "value", chat_type)
-    if (business_id is None and str(user_id) == str(ADMIN_ID)
-            and chat_type == "private"
-            and str(getattr(chat, "id", "")) == str(user_id)):
-        return os.getenv("KWAI_FIREFOX_PROFILE", "").strip() or None
-    return None
+    if business_id is not None or user_id is None:
+        return None
+    if chat_type not in {"private", "group", "supergroup"}:
+        return None
+    if chat_type == "private" and str(getattr(chat, "id", "")) != str(user_id):
+        return None
+    return os.getenv("KWAI_FIREFOX_PROFILE", "").strip() or None
 
 
-def _cache_scope(profile: str | None, user_id) -> str:
-    return f"owner:{user_id}" if profile else "public"
+def _cache_scope(profile: str | None, user_id, chat_id) -> str:
+    return f"owner:{user_id}:chat:{chat_id}" if profile else "public"
 
 
 def _kwai_keyboard(url: str, url_hash: str, settings: dict, lang: str | None):
@@ -196,6 +198,7 @@ async def _try_cache(
                 reply_markup=markup,
                 disable_content_type_detection=True,
                 allow_sending_without_reply=True,
+                reply_to_message_id=message.message_id,
             )
             return bool(sent and sent.document)
 
@@ -206,6 +209,7 @@ async def _try_cache(
             reply_markup=markup,
             supports_streaming=True,
             allow_sending_without_reply=True,
+            reply_to_message_id=message.message_id,
         )
         return bool(sent and sent.video)
     except TelegramBadRequest:
@@ -248,7 +252,7 @@ async def process_kwai_link(
 
     business_id = getattr(message, "business_connection_id", None)
     profile = _profile_for_request(user_id, message.chat, business_id)
-    scope = _cache_scope(profile, user_id)
+    scope = _cache_scope(profile, user_id, message.chat.id)
     status_message = None
     result = None
     try:
@@ -271,7 +275,9 @@ async def process_kwai_link(
 
         if business_id is None:
             status_message = await message.answer(
-                bm.downloading_video_status(lang=lang)
+                bm.downloading_video_status(lang=lang),
+                reply_to_message_id=message.message_id,
+                allow_sending_without_reply=True,
             )
 
         result = await _download(url, profile)
@@ -298,6 +304,7 @@ async def process_kwai_link(
                 reply_markup=markup,
                 disable_content_type_detection=True,
                 allow_sending_without_reply=True,
+                reply_to_message_id=message.message_id,
             )
             if sent and sent.document:
                 await db.add_file(
@@ -324,6 +331,7 @@ async def process_kwai_link(
                 parse_mode=ParseMode.HTML,
                 reply_markup=markup,
                 allow_sending_without_reply=True,
+                reply_to_message_id=message.message_id,
             )
             if sent and sent.video:
                 await db.add_file(
@@ -367,7 +375,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
         call.from_user.id, call.message.chat,
         getattr(call.message, "business_connection_id", None),
     )
-    scope = _cache_scope(profile, call.from_user.id)
+    scope = _cache_scope(profile, call.from_user.id, call.message.chat.id)
     lang = await db.get_language(call.from_user.id)
     source = _callback_url(call.message, token)
     cached_id = await db.get_file_id(_cache_key(token, kind, scope))
@@ -388,6 +396,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             bm.downloading_audio_status(lang=lang)
             if kind == "audio" else bm.downloading_video_status(lang=lang),
             allow_sending_without_reply=True,
+            reply_to_message_id=call.message.message_id,
         )
         bot_url = await get_bot_url(bot)
 
@@ -398,6 +407,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
                         document=cached_id,
                         allow_sending_without_reply=True,
                         disable_content_type_detection=True,
+                        reply_to_message_id=call.message.message_id,
                     )
                     if sent and sent.document:
                         return
@@ -410,6 +420,8 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
                         bot_avatar=avatar,
                         bot_url=bot_url,
                         parse_mode="HTML",
+                        reply_to_message_id=call.message.message_id,
+                        allow_sending_without_reply=True,
                     )
                     if sent and sent.audio:
                         return
@@ -439,6 +451,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
                 document=FSInputFile(path, filename=f"kwai_{token}.mp4"),
                 disable_content_type_detection=True,
                 allow_sending_without_reply=True,
+                reply_to_message_id=call.message.message_id,
             )
             if sent and sent.document:
                 await db.add_file(
@@ -481,6 +494,8 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             bot_avatar=avatar,
             bot_url=bot_url,
             parse_mode="HTML",
+            reply_to_message_id=call.message.message_id,
+            allow_sending_without_reply=True,
         )
         if sent and sent.audio:
             await db.add_file(

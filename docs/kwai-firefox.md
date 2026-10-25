@@ -31,12 +31,19 @@ Firefox may hold its SQLite DB locked; the loader can use a temporary snapshot
 of the DB and WAL. A session being rewritten may temporarily fail validation;
 retry after Firefox has saved the session, rather than importing an old session.
 
-The Telegram handler only enables profile use for `ADMIN_ID` in that user's
-normal private chat when `KWAI_FIREFOX_PROFILE` is explicitly configured.
-Groups, business messages and other users retain anonymous extraction. Auth
-cache entries (video, document, MP3, caption) use an owner namespace, and forwarded
-callbacks do not acquire the administrator's profile or cache. Cache v7 also
-invalidates files created before exact string-ID checks.
+With `KWAI_FIREFOX_PROFILE` explicitly configured, the Telegram handler enables
+the profile fallback for users in normal private chats, groups and supergroups.
+Business messages retain anonymous extraction. Authenticated cache entries
+(video, document, MP3, caption) are separated by requesting user and chat;
+forwarded buttons cannot read another user's/chat's cache. Cookies remain on
+the server and are never included in Telegram messages or callbacks. Cache v7
+also invalidates files created before exact string-ID checks.
+
+Fresh and cached videos/documents reply to the user's original link message.
+MP3/document callbacks reply to the bot video message carrying the buttons.
+Every media reply keeps `allow_sending_without_reply=True`, allowing delivery
+if the referenced message was deleted. This also works with the existing
+deleted-reply fallback middleware on the VPS.
 
 Example configuration in the bot's existing environment file:
 
@@ -59,16 +66,17 @@ side effects, and does not need bot secrets:
 The manual VPS investigation verified this post as an 8.9-second H.264/AAC
 video, 576x1024, 940133 bytes. Those numbers describe this one sample, not a
 selection rule. The smoke script reports duration rounded by the existing
-ffprobe helper (9 seconds). Test another public post and a mismatched/missing
-post as well. Manual investigation succeeded with combined profile cookies;
-the newly integrated code still requires a VPS/Telegram smoke test.
+ffprobe helper (9 seconds). The integrated downloader subsequently passed the
+VPS smoke test with exactly these dimensions/bytes and generated its thumbnail.
+Telegram delivered the Gaby clip and additional short/web URLs with captions.
+The reply/general-release update still requires its final Telegram check.
 
 Run isolated regression tests without the bot's global conftest:
 
 ```bash
 python -m pytest --noconftest -q tests/test_kwai_media.py \
   tests/test_kwai_firefox.py tests/test_kwai_service.py \
-  tests/test_kwai_handler_routing.py tests/test_kwai_installer.py
+  tests/test_kwai_handler_routing.py tests/test_kwai_installer.py tests/test_kwai_reply.py
 ```
 
 ## Selective installation
@@ -85,4 +93,7 @@ It copies only Kwai modules and surgically patches existing route registrations;
 it never performs a whole-checkout pull/reset, changes the environment file,
 or restarts a service. Keep the backup path printed by the installer. Configure
 the explicit profile environment variable separately before a controlled bot
-restart and verify the private Telegram flow, MP3 and document buttons.
+restart and verify private/group Telegram flows, cache replies, and MP3/document
+buttons. The first integrated version was successfully smoke-tested on the VPS
+and delivered multiple short and web URLs in Telegram; the reply/general-release
+update still needs its final Telegram check.
