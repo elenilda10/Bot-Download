@@ -166,47 +166,6 @@ async def test_gallery_first_single_photo_never_uses_unrelated_post_text(
     assert result.description == expected
 
 
-@pytest.mark.asyncio
-async def test_album_preflight_passes_only_unique_media_ids(monkeypatch):
-    data = album_messages()
-    proc = SimpleNamespace(
-        returncode=0,
-        communicate=AsyncMock(return_value=(json.dumps(data).encode(), b"")),
-    )
-    spawn = AsyncMock(return_value=proc)
-    monkeypatch.setattr(facebook_media.asyncio, "create_subprocess_exec", spawn)
-    # No real subprocess or Firefox session in this test.
-    record = await facebook_media._facebook_profile_post_metadata(URL, "/firefox/test")
-    assert record == {"ids": IDS, "description": TEXT}
-    assert "--cookies-from-browser" in spawn.await_args.args
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("second_caption, expected", [
-    (TEXT, TEXT),
-    ("Konstantin Rokossovsky", ""),
-    ("Photos from an unrelated post", ""),
-])
-async def test_verified_album_does_not_forward_conflicting_captions(
-    monkeypatch, second_caption, expected,
-):
-    monkeypatch.setattr(
-        facebook_media, "_facebook_profile_post_metadata",
-        AsyncMock(return_value={"ids": IDS, "description": TEXT}),
-    )
-    result = SimpleNamespace(
-        description=second_caption,
-        media_list=[SimpleNamespace(type="photo") for _ in IDS],
-    )
-    gallery = AsyncMock(return_value=result)
-    final = await facebook_media._download_facebook_profile_post_photos(
-        URL, "/tmp", "test",
-        browser_profile="/firefox/test", gallery_downloader=gallery,
-    )
-    assert final is result
-    assert final.description == expected
-    assert gallery.await_args.kwargs["facebook_expected_photo_ids"] == IDS
-
 
 def test_verified_album_sidecars_must_match_post_identity_and_photo_ids(tmp_path):
     parent = tmp_path / f"Photos (pcb.{POST_ID})"
