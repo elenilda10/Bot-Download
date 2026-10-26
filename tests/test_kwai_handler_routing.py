@@ -7,6 +7,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import importlib.util
+import os
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,6 +30,7 @@ def _load_helpers():
             selected.append(node)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {
             "_extract_kwai_url", "_url_hash", "_callback_url",
+            "_profile_for_request", "_cache_scope", "_cache_key",
         }:
             selected.append(node)
 
@@ -42,6 +44,9 @@ def _load_helpers():
     namespace = {
         "re": re,
         "hashlib": hashlib,
+        "os": os,
+        "ADMIN_ID": 1,
+        "build_media_cache_key": lambda platform, *, variant: platform + ":" + variant,
         "is_kwai_url": is_kwai_url,
         "get_message_text": lambda message: message.text,
     }
@@ -55,6 +60,39 @@ def _load_helpers():
     ast.fix_missing_locations(module)
     exec(compile(module, filename=str(HANDLER), mode="exec"), namespace)
     return namespace
+
+
+def test_firefox_profile_is_explicit_and_enabled_for_users_and_groups(monkeypatch):
+    from enum import Enum
+    class ChatType(str, Enum):
+        PRIVATE = "private"
+    helpers = _load_helpers()
+    profile = helpers["_profile_for_request"]
+    private = SimpleNamespace(id=1, type="private")
+    monkeypatch.delenv("KWAI_FIREFOX_PROFILE", raising=False)
+    assert profile(1, private) is None
+    monkeypatch.setenv("KWAI_FIREFOX_PROFILE", "/test/profile")
+    assert profile(1, private) == "/test/profile"
+    assert profile(1, SimpleNamespace(id=1, type=ChatType.PRIVATE)) == "/test/profile"
+    assert profile(1, private, "business-id") is None
+    assert profile(2, SimpleNamespace(id=2, type="private")) == "/test/profile"
+    assert profile(1, SimpleNamespace(id=-100123, type="supergroup")) == "/test/profile"
+    assert profile(2, SimpleNamespace(id=-123, type="group")) == "/test/profile"
+    assert profile(1, SimpleNamespace(id=-123, type="channel")) is None
+    assert profile(1, SimpleNamespace(id=2, type="private")) is None
+
+
+def test_authenticated_cache_and_callbacks_cannot_use_public_keys():
+    helpers = _load_helpers()
+    scope = helpers["_cache_scope"]
+    key = helpers["_cache_key"]
+    assert scope(None, 1, 1) == "public"
+    assert scope("/profile", 1, 1) == "owner:1:chat:1"
+    for kind in ("video", "document", "audio", "caption"):
+        assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind)
+        assert key("token", kind, scope("/profile", 1, -123)) != key("token", kind, scope("/profile", 2, -123))
+        assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind, scope("/profile", 1, -123))
+        assert "v8:" in key("token", kind)
 
 
 def test_handler_extracts_short_and_canonical_links():
