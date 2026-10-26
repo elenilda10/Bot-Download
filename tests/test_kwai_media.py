@@ -932,3 +932,59 @@ async def test_shop_short_redirect_downloads_only_exact_shared_post(monkeypatch,
     assert result['page_url'] == SHOP_VIDEO
     assert result['media_url'] == media
     assert profile_calls == ([SHOP_VIDEO] if use_profile else [])
+
+
+def _photo_post(identity='5200118832330956026', video=False):
+    own = 'https://aws-br-pic.kwai.net/upic/photo.jpg?tag=1'
+    mirror = own.replace('aws-br', 'ak-br')
+    other = 'https://aws-br-pic.kwai.net/upic/foreign.jpg'
+    clip = 'https://aws-br-cdn.kwai.net/upic/own.mp4'
+    return ('<script>u[0]={photo_id_str:"' + identity + '",'
+            'caption:"Fotos originais",user_name:"Autora",'
+            'images:[{url:"' + own + '"},{url:"' + mirror + '"}],'
+            'headurls:[{url:"' + other + '"}],'
+            'recommendations:[{images:[{url:"' + other + '"}]}]'
+            + (',main_mv_urls:[{url:"' + clip + '"}]' if video else '')
+            + '};</script>')
+
+
+def test_photo_collection_excludes_avatars_recommendations_and_cdn_mirrors():
+    result = kwai_media._extract_verified_image_post(_photo_post(), POST_URL)
+    assert result['image_urls'] == ['https://aws-br-pic.kwai.net/upic/photo.jpg?tag=1']
+    assert result['title'] == 'Fotos originais'
+
+
+def test_foreign_record_never_supplies_photos():
+    assert kwai_media._extract_verified_image_post(_photo_post('9999999999999999999'), POST_URL) is None
+
+
+def test_same_post_can_have_photos_and_video():
+    page = _photo_post(video=True)
+    assert kwai_media._extract_verified_image_post(page, POST_URL)
+    assert kwai_media._extract_verified_hydrated_post(page, POST_URL)['media_url'].endswith('/own.mp4')
+
+
+def test_cover_is_only_photo_fallback_when_video_missing():
+    page = '<script>u[0]={photo_id_str:"5200118832330956026",cover_first_frame_urls:[{url:"https://aws-br-pic.kwai.net/cover.webp"}]};</script>'
+    assert kwai_media._extract_verified_image_post(page, POST_URL)['image_urls']
+    page = page.replace('cover_first_frame_urls:', 'main_mv_urls:[{url:"https://aws-br-cdn.kwai.net/v.mp4"}],cover_first_frame_urls:')
+    assert kwai_media._extract_verified_image_post(page, POST_URL) is None
+
+
+@pytest.mark.asyncio
+async def test_photo_only_page_returns_images_without_requiring_mp4(monkeypatch):
+    class Response:
+        status = 200
+        url = POST_URL
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        async def text(self, **_): return _photo_post()
+    class Session:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        def get(self, *_args, **_kwargs): return Response()
+    monkeypatch.setattr(kwai_media.aiohttp, 'ClientSession', lambda **_: Session())
+    result = await kwai_media.extract_kwai_video_page(POST_URL)
+    assert result['media_url'] is None
+    assert result['image_urls']
+    assert result['title'] == 'Fotos originais'

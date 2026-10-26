@@ -69,8 +69,8 @@ def _url_hash(url: str) -> str:
 
 
 def _cache_key(url_hash: str, kind: str, scope: str = "public") -> str:
-    # v7 invalidates files cached before exact photo_id_str verification.
-    return build_media_cache_key("kwai", variant=f"v7:{scope}:{kind}:{url_hash}")
+    # v8 invalidates video-only caches before photo/album delivery.
+    return build_media_cache_key("kwai", variant=f"v8:{scope}:{kind}:{url_hash}")
 
 
 def _profile_for_request(user_id, chat, business_id=None) -> str | None:
@@ -217,6 +217,53 @@ async def _try_cache(
         return False
 
 
+async def _send_kwai_album(message, result, settings, caption):
+    """Telegram allows at most ten media per group; keep the post's order."""
+    items = result.media_list
+    for item in items:
+        if not os.path.isfile(item.url) or os.path.getsize(item.url) >= MAX_FILE_SIZE:
+            raise ValueError("Invalid or oversized Kwai album item")
+    as_document = settings.get("as_document") == "on"
+    sent = []
+    for offset in range(0, len(items), 10):
+        batch = items[offset:offset + 10]
+        reply = {"reply_to_message_id": message.message_id,
+                 "allow_sending_without_reply": True}
+        text = caption if offset == 0 else None
+        if len(batch) == 1:
+            item = batch[0]
+            kwargs = dict(caption=text or None, parse_mode=ParseMode.HTML, **reply)
+            if as_document:
+                response = await message.answer_document(document=FSInputFile(item.url), **kwargs)
+            elif item.type == "photo":
+                response = await message.answer_photo(photo=FSInputFile(item.url), **kwargs)
+            else:
+                response = await message.answer_video(
+                    video=FSInputFile(item.url), supports_streaming=True, **kwargs
+                )
+            if not response:
+                return False
+            sent.append(response)
+            continue
+        media = []
+        for index, item in enumerate(batch):
+            kwargs = {"media": FSInputFile(item.url)}
+            if index == 0 and text:
+                kwargs.update(caption=text, parse_mode=ParseMode.HTML)
+            if as_document:
+                entry = types.InputMediaDocument(**kwargs)
+            elif item.type == "photo":
+                entry = types.InputMediaPhoto(**kwargs)
+            else:
+                entry = types.InputMediaVideo(supports_streaming=True, **kwargs)
+            media.append(entry)
+        response = await message.answer_media_group(media=media, **reply)
+        if not response or len(response) != len(batch):
+            return False
+        sent.extend(response)
+    return bool(sent)
+
+
 @router.message(
     (F.text.regexp(_KWAI_LINK_REGEX, mode="search")
      | F.caption.regexp(_KWAI_LINK_REGEX, mode="search"))
@@ -281,6 +328,16 @@ async def process_kwai_link(
             )
 
         result = await _download(url, profile)
+        if result and any(item.type == "photo" for item in result.media_list):
+            await safe_edit_text(status_message, bm.uploading_status(lang=lang))
+            original_caption = format_kwai_post_caption(result.description, result.author)
+            caption = bm.captions(settings.get("captions", "on"), original_caption, bot_url)
+            if await _send_kwai_album(message, result, settings, caption):
+                lease.mark_success()
+                await maybe_delete_user_message(message, settings.get("delete_message"))
+            else:
+                await handle_download_error(message, business_id=business_id, lang=lang)
+            return
         path, thumb = _file_path(result)
         if not path:
             await handle_download_error(message, business_id=business_id, lang=lang)

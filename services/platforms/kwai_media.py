@@ -557,6 +557,51 @@ def _extract_verified_hydrated_post(page: str, post_url: str) -> dict | None:
     return None
 
 
+def _extract_verified_image_post(page: str, post_url: str) -> dict | None:
+    """Read photos only from the record owning the exact requested post ID."""
+    requested = _video_id_from_url(post_url)
+    if not requested:
+        return None
+    parser = _KwaiPageText()
+    parser.feed(page)
+    found = []
+    for script in parser.scripts:
+        for entry in _HYDRATION_ENTRY.finditer(script):
+            block = _javascript_object_at(script, entry.end() - 1)
+            fields = _record_fields(block) if block else {}
+            identity = next((fields[k] for k in ("photo_id_str", "photoId", "photo_id")
+                             if k in fields), "")
+            if _json_string(identity) != requested:
+                continue
+            # Explicit photo collections only; never headurls or recommendations.
+            photos = [fields[k] for k in (
+                "atlas", "atlas_photos", "image_list", "images", "picture_urls"
+            ) if k in fields]
+            # A verified cover is useful when the video itself is unavailable.
+            if not photos and not _scoped_mp4_urls(fields.get("main_mv_urls", "")):
+                photos = [fields[k] for k in ("cover_first_frame_urls", "cover_thumbnail_urls")
+                          if k in fields][:1]
+            urls, paths = [], set()
+            for value in photos:
+                normalized = _normalize_page(value)
+                for match in re.finditer(r'https://[^"\s<>]+', normalized):
+                    url = match.group(0)
+                    path = urlparse(url).path
+                    if (not _is_allowed_media_url(url)
+                            or not re.search(r"\.(?:jpe?g|png|webp)$", path, re.I)
+                            or path in paths):
+                        continue
+                    paths.add(path)
+                    urls.append(url)
+            if urls:
+                found.append({"image_urls": urls[:10],
+                              "title": _nuxt_caption(script, fields.get("caption", "")),
+                              "author": _json_string(fields.get("user_name", "")) or ""})
+    if found and all(p["image_urls"] == found[0]["image_urls"] for p in found):
+        return found[0]
+    return None
+
+
 def _extract_verified_media_url(page: str, post_url: str) -> str | None:
     """Never choose an unassociated MP4 from recommended Kwai content.
 
@@ -740,7 +785,8 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
             if shop_video:
                 requested_id = _video_id_from_url(shop_video)
             canonical = shop_video or final_url.split("?", 1)[0].split("#", 1)[0]
-            if not media_url and canonical != url and is_kwai_url(canonical):
+            if (not media_url and not _extract_verified_image_post(page, final_url)
+                    and canonical != url and is_kwai_url(canonical)):
                 async with session.get(
                     canonical, allow_redirects=True, timeout=timeout
                 ) as response:
@@ -758,7 +804,7 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
     except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
         logger.warning("Kwai aiohttp page request failed: %s", type(exc).__name__)
 
-    if not media_url:
+    if not media_url and not _extract_verified_image_post(page, final_url):
         # Confirmed on a real public Kwai URL: curl_cffi Chrome returns
         # MP4s while aiohttp returns an HTML shell. Do not use user cookies.
         chrome_url = final_url.split("?", 1)[0].split("#", 1)[0]
@@ -773,11 +819,13 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
                 if not requested_id or _video_id_from_url(chrome_final_url) == requested_id
                 else None
             )
-            if candidate:
+            if (candidate or (
+                    (not requested_id or _video_id_from_url(chrome_final_url) == requested_id)
+                    and _extract_verified_image_post(chrome_html, chrome_final_url))):
                 final_url, page, media_url = chrome_final_url, chrome_html, candidate
                 logger.info("Kwai verified post-scoped video extracted via Chrome impersonation")
 
-    if not media_url:
+    if not media_url and not _extract_verified_image_post(page, final_url):
         if firefox_profile:
             # Resolve short shares anonymously first. Profile cookies only
             # reach a fixed canonical www.kwai.com document, never redirects.
@@ -794,13 +842,14 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
                     # Profile-backed pages must verify the exact owning
                     # record; OG/visible text alone cannot establish identity.
                     verified = _extract_verified_hydrated_post(firefox_html, canonical)
-                    if firefox_url == canonical and verified:
+                    if firefox_url == canonical and (
+                            verified or _extract_verified_image_post(firefox_html, canonical)):
                         final_url, page = canonical, firefox_html
-                        media_url = verified["media_url"]
+                        media_url = verified["media_url"] if verified else None
 
-    if not media_url:
+    if not media_url and not _extract_verified_image_post(page, final_url):
         logger.warning(
-            "Kwai page contains no verified post-scoped MP4: status=%s html_size=%s",
+            "Kwai page contains no verified post-scoped media: status=%s html_size=%s",
             last_status,
             len(page),
         )
@@ -813,7 +862,8 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
 
     # OG descriptions may wrap the user's real text with dynamic counters
     # and "Kwai video from ..." boilerplate. Keep only the original caption.
-    verified_post = _extract_verified_hydrated_post(page, final_url)
+    verified_post = (_extract_verified_hydrated_post(page, final_url)
+                     or _extract_verified_image_post(page, final_url))
     if verified_post and verified_post.get("author"):
         author = verified_post["author"]
     title = (verified_post["title"] if verified_post else "") or (
@@ -838,9 +888,13 @@ async def extract_kwai_video_page(url: str, *, firefox_profile: str | None = Non
     # description is safer than attributing marketing text to the creator.
     title = title or "Vídeo do Kwai"
 
-    return {
+    result = {
         "page_url": final_url,
         "media_url": media_url,
         "title": title,
         "author": author,
     }
+    images = _extract_verified_image_post(page, final_url)
+    if images:
+        result["image_urls"] = images["image_urls"]
+    return result

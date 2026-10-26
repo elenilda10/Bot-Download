@@ -162,3 +162,44 @@ async def test_standalone_rejects_unsafe_temp_id(monkeypatch, tmp_path):
             "https://www.kwai.com/@user/video/123",
             output_dir=str(tmp_path), post_id="../../escape",
         )
+
+
+@pytest.mark.asyncio
+async def test_verified_photos_are_downloaded_and_normalized_without_cookies(monkeypatch, tmp_path):
+    module = _load_service(monkeypatch)
+    image_url = 'https://aws-br-pic.kwai.net/upic/post.webp'
+    async def extract(*_args, **_kwargs):
+        return {'image_urls': [image_url], 'title': 'Fotos', 'author': 'Autor'}
+    monkeypatch.setattr(module, 'extract_kwai_video_page', extract)
+    _mock_http(monkeypatch, module, chunks=[b'RIFF0000WEBPdata'], final_url=image_url)
+    async def probe(path): return {'width': 100, 'height': 100, 'duration': None}
+    monkeypatch.setattr(module, '_run_probe', probe)
+    from types import SimpleNamespace
+    async def convert(*args, **kwargs):
+        Path(args[-1]).write_bytes(b'jpeg-normalized')
+        async def communicate(): return b'', b''
+        return SimpleNamespace(returncode=0, communicate=communicate)
+    monkeypatch.setattr(module.asyncio, 'create_subprocess_exec', convert)
+    result = await module.download_kwai_media(
+        'https://www.kwai.com/@user/video/5200118832330956026',
+        post_id='photo_test', output_dir=str(tmp_path),
+    )
+    assert result.media_list[0].type == 'photo'
+    assert Path(result.media_list[0].url).read_bytes() == b'jpeg-normalized'
+    assert not list(tmp_path.glob('*.raw'))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('body,max_size', [(b'<html>not an image</html>', 1000), (b'RIFF0000WEBPdata', 4)])
+async def test_invalid_and_oversize_images_leave_no_files(monkeypatch, tmp_path, body, max_size):
+    module = _load_service(monkeypatch)
+    image_url = 'https://aws-br-pic.kwai.net/upic/post.webp'
+    async def extract(*_args, **_kwargs): return {'image_urls': [image_url]}
+    monkeypatch.setattr(module, 'extract_kwai_video_page', extract)
+    _mock_http(monkeypatch, module, chunks=[body], final_url=image_url)
+    result = await module.download_kwai_media(
+        'https://www.kwai.com/@user/video/5200118832330956026',
+        post_id='photo_test', output_dir=str(tmp_path), max_file_size=max_size,
+    )
+    assert result is None
+    assert not list(tmp_path.iterdir())

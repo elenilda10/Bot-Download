@@ -159,3 +159,39 @@ async def test_callback_media_reply_to_video_in_same_chat(tmp_path, monkeypatch,
     ns["logging"].exception.assert_not_called()
     cache_lookup = ns["db"].get_file_id.await_args.args[0]
     assert "owner:2:chat:-123" in cache_lookup
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('count', [1, 2, 10, 11])
+@pytest.mark.parametrize('as_document', [False, True])
+async def test_photos_and_mixed_album_split_reply_and_cleanup(tmp_path, monkeypatch, count, as_document):
+    ns = runtime(tmp_path, monkeypatch, cached=False, as_document=as_document)
+    result = ns['_download'].return_value
+    ns['remove_file'] = AsyncMock(side_effect=lambda path: Path(path).unlink(missing_ok=True))
+    if count == 1:
+        result.media_list = []
+    for index in range(count - len(result.media_list)):
+        path = tmp_path / f'photo{index}.jpg'
+        path.write_bytes(b'photo')
+        result.media_list.append(SimpleNamespace(url=str(path), type='photo', thumb=None))
+    def entry(**kwargs): return kwargs
+    ns['types'].InputMediaPhoto = entry
+    ns['types'].InputMediaVideo = entry
+    ns['types'].InputMediaDocument = entry
+    message = Message()
+    message.answer_photo = AsyncMock(return_value=SimpleNamespace())
+    message.answer_media_group = AsyncMock(side_effect=lambda **k: [SimpleNamespace() for _ in k['media']])
+    await ns['process_kwai_link'](message)
+    ns['logging'].exception.assert_not_called()
+    ns['handle_download_error'].assert_not_awaited()
+    if count >= 2:
+        groups = message.answer_media_group.await_args_list
+        assert len(groups) == 1
+        assert len(groups[0].kwargs['media']) == min(count, 10)
+        assert groups[0].kwargs['reply_to_message_id'] == message.message_id
+        assert groups[0].kwargs['media'][0]['caption'] == 'caption'
+        if count == 11 and not as_document:
+            assert message.answer_photo.await_args.kwargs['caption'] is None
+    elif not as_document:
+        message.answer_photo.assert_awaited_once()
+    assert not any(Path(item.url).exists() for item in result.media_list)

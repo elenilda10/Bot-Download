@@ -115,3 +115,26 @@ Exemplo de teste na VPS:
   'https://k.kwai.com/w/0C00dDjZ' \
   --firefox-profile /home/firefoxbot/.config/mozilla/firefox/p2u2gipq.default-release
 ```
+
+### Fotos e álbuns
+
+A extração aceita as primeiras dez fotos dos campos de coleção reconhecidos
+(`atlas`, `atlas_photos`, `image_list`, `images`, `picture_urls`) do registro
+com ID exato. URLs de avatar e recomendações não entram na seleção. Espelhos
+CDN da mesma imagem são deduplicados. Sem vídeo nem coleção, a primeira capa
+do próprio registro pode ser enviada como imagem de prévia; ela não é uma
+recuperação do vídeo original.
+
+Fotos são baixadas sem cookies, com limite de 10 MiB por arquivo, validação
+de assinatura JPEG/PNG/WebP e dimensões, e conversão local para JPEG. O bot
+envia vídeo e fotos juntos quando ambos estão disponíveis. Os grupos têm até
+dez mídias; uma mídia isolada é enviada individualmente. O modo documento
+continua enviando arquivos, sem misturar documentos e fotos num mesmo grupo.
+A legenda aparece somente no primeiro item do primeiro grupo. Álbuns são
+extraídos novamente a cada pedido; o cache de vídeo isolado foi invalidado.
+Os botões de MP3/arquivo continuam no fluxo de vídeo isolado.
+
+Isso não resolve respostas que só contêm registros de publicações alheias:
+nesses casos o bot continua recusando a página. Os formatos de coleção foram
+verificados com fixtures sintéticas; a confirmação com fotos reais na VPS e
+a entrega de álbum no Telegram ainda são necessárias.

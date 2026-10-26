@@ -41,9 +41,10 @@ async def main() -> None:
         firefox_profile=args.firefox_profile,
     )
     if not result:
-        raise SystemExit("FALHOU: nenhum vídeo com identidade verificada foi baixado.")
+        raise SystemExit("FALHOU: nenhuma mídia com identidade verificada foi baixada.")
     item = result.media_list[0]
-    print("SUCESSO: vídeo com identidade verificada")
+    print("SUCESSO: publicação com identidade verificada")
+    print("Mídias:", len(result.media_list))
     print("Autor:", result.author)
     print("Legenda:", result.description)
     print("Duração (s):", item.duration)
@@ -51,6 +52,8 @@ async def main() -> None:
     print("Bytes:", Path(item.url).stat().st_size)
     print("Arquivo:", item.url)
     print("Miniatura:", item.thumb or "[não gerada]")
+    for media in result.media_list:
+        print("Mídia:", media.type, media.url)
 
 
 if __name__ == "__main__":

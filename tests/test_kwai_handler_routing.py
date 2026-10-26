@@ -92,7 +92,7 @@ def test_authenticated_cache_and_callbacks_cannot_use_public_keys():
         assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind)
         assert key("token", kind, scope("/profile", 1, -123)) != key("token", kind, scope("/profile", 2, -123))
         assert key("token", kind, scope("/profile", 1, 1)) != key("token", kind, scope("/profile", 1, -123))
-        assert "v7:" in key("token", kind)
+        assert "v8:" in key("token", kind)
 
 
 def test_handler_extracts_short_and_canonical_links():

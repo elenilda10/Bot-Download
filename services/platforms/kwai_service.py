@@ -117,13 +117,14 @@ async def _make_thumbnail(video_file: str, thumb_file: str) -> str | None:
     return None
 
 
-async def download_kwai_media(
+async def _download_kwai_video(
     url: str,
     *,
     output_dir: str = "downloads",
     post_id: str,
     max_file_size: int = 1_000_000_000,
     firefox_profile: str | None = None,
+    info: dict | None = None,
 ) -> KwaiDownloadResult | None:
     """Download a public Kwai video with a firm byte limit.
 
@@ -135,7 +136,7 @@ async def download_kwai_media(
     if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", post_id):
         raise ValueError("Invalid Kwai temporary media ID")
 
-    info = (
+    info = info or (
         await extract_kwai_video_page(url, firefox_profile=firefox_profile)
         if firefox_profile else await extract_kwai_video_page(url)
     )
@@ -213,3 +214,106 @@ async def download_kwai_media(
         if not completed:
             video_path.unlink(missing_ok=True)
             thumb_path.unlink(missing_ok=True)
+
+
+async def _download_kwai_images(info, directory, post_id, max_bytes):
+    items = []
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": _DEFAULT_UA, "Referer": "https://www.kwai.com/"},
+        timeout=timeout,
+    ) as session:
+        for index, url in enumerate(info.get("image_urls", [])[:10]):
+            if not _is_allowed_media_url(url):
+                continue
+            raw = directory / f"{post_id}_photo_{index}.raw"
+            target = directory / f"{post_id}_photo_{index}.jpg"
+            proc = None
+            try:
+                async with session.get(url, allow_redirects=False) as response:
+                    if response.status != 200 or not _is_allowed_media_url(str(response.url)):
+                        continue
+                    size = 0
+                    with raw.open("wb") as output:
+                        async for chunk in response.content.iter_chunked(256 * 1024):
+                            size += len(chunk)
+                            if size > min(max_bytes, 10 * 1024 * 1024):
+                                raise ValueError("Image exceeds byte limit")
+                            output.write(chunk)
+                with raw.open("rb") as image_input:
+                    magic = image_input.read(12)
+                if not (magic.startswith(b"\xff\xd8\xff")
+                        or magic.startswith(b"\x89PNG\r\n\x1a\n")
+                        or (magic.startswith(b"RIFF") and magic[8:12] == b"WEBP")):
+                    continue
+                meta = await _run_probe(str(raw))
+                if not meta or not meta.get("width") or not meta.get("height"):
+                    continue
+                if meta["width"] * meta["height"] > 40_000_000:
+                    continue
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-nostdin", "-y", "-v", "error", "-i", str(raw),
+                    "-frames:v", "1", "-vf", "scale=min(2560\\,iw):-2",
+                    "-q:v", "3", str(target),
+                    stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=30)
+                if proc.returncode == 0 and target.is_file() and 0 < target.stat().st_size <= min(max_bytes, 10 * 1024 * 1024):
+                    items.append(KwaiDownloadItem(url=str(target), type="photo", index=index))
+            except asyncio.CancelledError:
+                for item in items:
+                    Path(item.url).unlink(missing_ok=True)
+                raise
+            except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as exc:
+                logger.warning("Kwai image failed: %s", type(exc).__name__)
+            finally:
+                if proc and proc.returncode is None:
+                    proc.kill()
+                    await proc.communicate()
+                raw.unlink(missing_ok=True)
+                if not any(item.url == str(target) for item in items):
+                    target.unlink(missing_ok=True)
+    return items
+
+
+async def download_kwai_media(
+    url: str, *, output_dir: str = "downloads", post_id: str,
+    max_file_size: int = 1_000_000_000, firefox_profile: str | None = None,
+) -> KwaiDownloadResult | None:
+    """Download the verified post's video and first ten photos, in order."""
+    if not is_kwai_url(url):
+        return None
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", post_id):
+        raise ValueError("Invalid Kwai temporary media ID")
+    info = (await extract_kwai_video_page(url, firefox_profile=firefox_profile)
+            if firefox_profile else await extract_kwai_video_page(url))
+    if not info:
+        return None
+    result = None
+    items = []
+    try:
+        if info.get("media_url"):
+            result = await _download_kwai_video(
+                url, output_dir=output_dir, post_id=post_id,
+                max_file_size=max_file_size, info=info,
+            )
+            if result:
+                items.extend(result.media_list)
+        if info.get("image_urls"):
+            directory = Path(output_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            items.extend(await _download_kwai_images(
+                info, directory, post_id, max(1, int(max_file_size))
+            ))
+        if not items:
+            return None
+        return KwaiDownloadResult(
+            id=post_id, description=info.get("title") or "",
+            author=info.get("author") or "Kwai", media_list=items,
+        )
+    except BaseException:
+        for item in items:
+            Path(item.url).unlink(missing_ok=True)
+            if item.thumb:
+                Path(item.thumb).unlink(missing_ok=True)
+        raise
