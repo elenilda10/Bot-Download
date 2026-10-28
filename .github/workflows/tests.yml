@@ -22,6 +22,23 @@ env:
   PYTHONPATH: ${{ github.workspace }}
 
 jobs:
+  instagram-cookies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install isolated Instagram test dependencies
+        run: python -m pip install httpx pytest ruff
+      - name: Test Instagram cookie commands and selective installer
+        run: python -m pytest --noconftest -q tests/test_instagram_cookies.py
+      - name: Lint and compile Instagram cookie changes
+        run: |
+          python -m ruff check --select=E,F,W --ignore=E501 services/platforms/instagram_media.py scripts/install_instagram_cookies_vps.py scripts/test_instagram_download.py tests/test_instagram_cookies.py
+          python -m py_compile services/platforms/instagram_media.py scripts/install_instagram_cookies_vps.py scripts/test_instagram_download.py
+
   kwai-unit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
