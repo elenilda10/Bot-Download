@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_ytdlp_options
 import asyncio
 import glob
 import os
@@ -116,6 +117,13 @@ def build_ytdlp_youtube_options(**overrides: Any) -> dict[str, Any]:
             options["cookiesfrombrowser"] = _parse_cookies_from_browser(cookies_from_browser)
         except ValueError as exc:
             logging.warning("Ignoring %s", exc)
+
+    # Preserve the existing explicit browser configuration when supplied.
+    if not (cookies_from_browser and cookies_from_browser.strip()):
+        profile_options = firefox_ytdlp_options("youtube")
+        if profile_options:
+            options.pop("cookiefile", None)
+            options.update(profile_options)
 
     extractor_args: dict[str, dict[str, list[str]]] = {}
     player_client = os.getenv("YTDLP_YOUTUBE_PLAYER_CLIENT")
