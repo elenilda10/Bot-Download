@@ -151,6 +151,7 @@ def _allowed_image_url(url):
 
 def gallery_sources(post):
     """Return only static image sources in this post's declared gallery order."""
+    post = _media_post(post)
     gallery = post.get('gallery_data')
     if not isinstance(gallery, dict):
         return None
@@ -283,3 +284,57 @@ async def fetch_reddit_post(url, profile):
 
 async def download_reddit_gallery(post, sources, directory, max_bytes):
     return await _thread_complete(_download_gallery_sync, post, sources, directory, max_bytes)
+
+
+def _media_post(post):
+    """Allow a crosspost parent only through its explicit t3 relationship."""
+    parent_name = post.get('crosspost_parent')
+    parents = post.get('crosspost_parent_list')
+    if isinstance(parent_name, str) and isinstance(parents, list):
+        parent = next((p for p in parents if isinstance(p, dict) and p.get('name') == parent_name), None)
+        if parent and not post.get('secure_media') and not post.get('media'):
+            return parent
+    return post
+
+
+def single_image_sources(post):
+    media = _media_post(post)
+    if media.get('is_video') or media.get('is_gallery'):
+        return None
+    url = media.get('url_overridden_by_dest') or media.get('url')
+    if not isinstance(url, str):
+        return None
+    url = html.unescape(url)
+    if _allowed_image_url(url) and urlparse(url).path.lower().endswith(('.jpg', '.jpeg', '.png')):
+        return [url]
+    return None
+
+
+def allowed_video_url(url):
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == 'https' and parsed.hostname == 'v.redd.it'
+                and not parsed.username and not parsed.password and parsed.port in (None, 443)
+                and parsed.path.lower().endswith(('.mpd', '.m3u8', '.mp4')))
+    except ValueError:
+        return False
+
+
+def native_video_source(post):
+    media = _media_post(post)
+    for field in ('secure_media', 'media'):
+        container = media.get(field)
+        video = container.get('reddit_video') if isinstance(container, dict) else None
+        if not isinstance(video, dict):
+            continue
+        for key in ('dash_url', 'hls_url'):
+            url = html.unescape(video.get(key) or '')
+            if allowed_video_url(url):
+                return {'url': url, 'expects_audio': video.get('has_audio') is True}
+        if video.get('is_gif') or video.get('has_audio') is False:
+            url = html.unescape(video.get('fallback_url') or '')
+            if allowed_video_url(url):
+                return {'url': url, 'expects_audio': False}
+    return None

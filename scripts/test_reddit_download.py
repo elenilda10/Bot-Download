@@ -37,6 +37,8 @@ async def main():
     print('SUCESSO:', len(result.media_list), 'mídia(s)')
     for item in result.media_list:
         print(item.type, Path(item.url).stat().st_size, 'bytes:', item.url)
+        if hasattr(item, 'has_audio'):
+            print('ÁUDIO:', 'sim' if item.has_audio else 'não')
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 NEW_FILES = ('handlers/reddit.py', 'services/links/reddit.py', 'services/platforms/reddit_download.py',
-             'services/platforms/reddit_json.py')
+             'services/platforms/reddit_json.py', 'services/platforms/reddit_native.py')
 
 
 def patch_init(source):

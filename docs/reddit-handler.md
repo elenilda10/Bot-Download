@@ -65,7 +65,7 @@ login nem exportação de cookies. Imprime os arquivos para inspeção, sem cook
 ```
 
 Sem `--apply` é simulação. Com `--apply`, valida a sintaxe e faz backup antes de
-instalar os quatro módulos dedicados e adaptar registro, detecção, despacho de lotes
+instalar os cinco módulos dedicados e adaptar registro, detecção, despacho de lotes
 e nome de exibição. Preserva o restante desses arquivos locais e recusa anchors
 incompatíveis. Requer o helper de cookies instalado anteriormente; não altera
 Kwai, Instagram ou outros handlers e não reinicia o serviço.
@@ -103,3 +103,25 @@ original com o mesmo caminho em i.redd.it, em vez de baixar a página HTML.
 Redirecionamentos externos continuam recusados. Falhas passam a registrar códigos
 como `image_http_403` ou `image_redirect_limit`, sem URLs assinadas ou cookies.
 O download real após essa alteração ainda deve ser confirmado na VPS.
+
+
+### Mídia avulsa e vídeo nativo
+
+Posts de imagem única em i.redd.it/preview.redd.it também usam a URL original
+indicada no JSON. Não usa a miniatura de uma página externa como se fosse a
+imagem da publicação. Crossposts só usam o pai apontado explicitamente por
+`crosspost_parent` e `name`.
+
+Vídeos nativos usam `secure_media.reddit_video` ou `media.reddit_video` do JSON,
+priorizando o manifesto DASH/HLS. yt-dlp recebe o manifesto direto em v.redd.it,
+com configurações externas ignoradas e sem cookies da conta; não tenta extrair
+novamente a página Reddit. Seleciona vídeo e áudio disponíveis e faz merge/remux
+em MP4. ffprobe valida a faixa de vídeo e a presença de áudio quando declarada
+na origem. A URL fallback de vídeo isolado só é aceita quando explicitamente
+silenciosa/GIF. O processo tem timeout e seu grupo é encerrado em cancelamento;
+falhas removem os temporários. Tipos externos/não reconhecidos ainda podem cair
+no backend legado e não têm acesso garantido.
+
+O smoke test mostra a classificação da mídia e informa se o arquivo de vídeo
+contém áudio. Esta etapa foi testada sem rede com subprocessos simulados; o
+novo link deve ser confirmado com sessão real na VPS antes da instalação.

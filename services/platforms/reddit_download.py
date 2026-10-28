@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import asyncio
 import time
+from urllib.parse import urlparse
 from pathlib import Path
 
 from services.logger import logger as logging
 from services.platforms.firefox_cookies import firefox_profile
-from services.platforms.reddit_json import RedditImageError, fetch_reddit_post, gallery_sources, download_reddit_gallery
+from services.platforms.reddit_json import (
+    RedditImageError, fetch_reddit_post, gallery_sources, single_image_sources,
+    native_video_source, download_reddit_gallery,
+)
+from services.platforms.reddit_native import RedditVideoError, download_native_video
 from services.links.reddit import is_reddit_media_url, normalize_reddit_url
 from services.platforms.universal_extractor import download_universal_media
 
@@ -19,7 +24,11 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
     info = await fetch_reddit_post(normalize_reddit_url(url), firefox_profile('reddit'))
     logging.info('Reddit JSON: status=%s http=%s seconds=%.2f', info['status'], info.get('http'), time.monotonic() - started)
     if info['status'] == 'ok':
-        sources = gallery_sources(info['post'])
+        sources = gallery_sources(info['post']) or single_image_sources(info['post'])
+        video = native_video_source(info['post'])
+        logging.info('Reddit media kind: images=%s native_video=%s source_host=%s',
+                     len(sources or []), bool(video),
+                     urlparse(info['post'].get('url') or '').hostname)
         if sources:
             try:
                 result = await download_reddit_gallery(info['post'], sources, output_dir, max_file_size)
@@ -27,8 +36,16 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
                 logging.warning('Reddit gallery failed: %s', exc.code if isinstance(exc, RedditImageError) else type(exc).__name__)
                 return None
             logging.info('Reddit gallery: items=%s seconds=%.2f', len(result.media_list), time.monotonic() - started)
+        elif video:
+            try:
+                result = await download_native_video(info['post'], video, output_dir, max_file_size)
+            except Exception as exc:
+                logging.warning('Reddit native video failed: %s', exc.code if isinstance(exc, RedditVideoError) else type(exc).__name__)
+                return None
+            logging.info('Reddit native video: seconds=%.2f audio=%s',
+                         time.monotonic() - started, result.media_list[0].has_audio)
         else:
-            # Keep the established merged-video path for non-static galleries.
+            # External or unsupported post types keep the legacy fallback.
             result = await asyncio.wait_for(download_universal_media(
                 info['canonical'], output_dir=output_dir, post_id='reddit_post'
             ), timeout=420)

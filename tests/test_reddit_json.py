@@ -255,3 +255,41 @@ def test_html_viewer_redirect_uses_original_image_without_fetching_viewer(module
     assert Path(item.url).is_file()
     assert sessions[0].calls[1][0] == 'https://i.redd.it/a.png'
     assert redirect.closed and payload.closed
+
+
+def test_single_image_uses_original_link_not_an_article_thumbnail(module):
+    data = {'id': 'abc', 'url_overridden_by_dest': 'https://i.redd.it/one.jpg'}
+    assert module.single_image_sources(data) == ['https://i.redd.it/one.jpg']
+    data = {'id': 'abc', 'url': 'https://example.test/article',
+            'preview': {'images': [{'source': {'url': 'https://i.redd.it/thumb.jpg'}}]}}
+    assert module.single_image_sources(data) is None
+
+
+@pytest.mark.parametrize('field', ['secure_media', 'media'])
+def test_native_video_prefers_manifest_over_video_only_fallback(module, field):
+    data = {field: {'reddit_video': {
+        'dash_url': 'https://v.redd.it/abc/DASHPlaylist.mpd?a=1&amp;b=2',
+        'fallback_url': 'https://v.redd.it/abc/DASH_720.mp4', 'has_audio': True}}}
+    assert module.native_video_source(data) == {
+        'url': 'https://v.redd.it/abc/DASHPlaylist.mpd?a=1&b=2', 'expects_audio': True}
+
+
+def test_native_video_only_fallback_requires_explicit_silent_flag(module):
+    video = {'fallback_url': 'https://v.redd.it/abc/DASH_720.mp4'}
+    assert module.native_video_source({'secure_media': {'reddit_video': video}}) is None
+    video['is_gif'] = True
+    assert module.native_video_source({'secure_media': {'reddit_video': video}})['expects_audio'] is False
+
+
+@pytest.mark.parametrize('url', ['https://evil.test/a.mpd', 'http://v.redd.it/a.mpd', 'https://v.redd.it.evil.test/a.mpd'])
+def test_native_video_refuses_untrusted_manifest_urls(module, url):
+    assert module.native_video_source({'secure_media': {'reddit_video': {'dash_url': url}}}) is None
+
+
+def test_crosspost_only_uses_explicitly_referenced_parent(module):
+    parent = {'name': 't3_parent', 'url': 'https://i.redd.it/parent.jpg'}
+    data = {'crosspost_parent': 't3_parent', 'crosspost_parent_list': [
+        {'name': 't3_foreign', 'url': 'https://i.redd.it/foreign.jpg'}, parent]}
+    assert module.single_image_sources(data) == ['https://i.redd.it/parent.jpg']
+    data['crosspost_parent'] = 't3_absent'
+    assert module.single_image_sources(data) is None

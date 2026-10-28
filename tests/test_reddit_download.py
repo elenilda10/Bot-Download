@@ -27,6 +27,12 @@ def service(monkeypatch, result):
     fast.fetch_reddit_post = AsyncMock(return_value={
         'status': 'ok', 'post': {}, 'canonical': 'https://redd.it/abc123'})
     fast.gallery_sources = Mock(return_value=None)
+    fast.single_image_sources = Mock(return_value=None)
+    fast.native_video_source = Mock(return_value=None)
+    native = ModuleType('services.platforms.reddit_native')
+    native.RedditVideoError = type('RedditVideoError', (ValueError,), {})
+    native.download_native_video = AsyncMock(return_value=result)
+    monkeypatch.setitem(sys.modules, 'services.platforms.reddit_native', native)
     fast.download_reddit_gallery = AsyncMock(return_value=result)
     monkeypatch.setitem(sys.modules, 'services.logger', logger)
     monkeypatch.setitem(sys.modules, 'services.platforms.firefox_cookies', access)
@@ -90,4 +96,27 @@ async def test_verified_photo_gallery_bypasses_shared_downloader(monkeypatch, tm
     module.gallery_sources.return_value = ['https://i.redd.it/image.png']
     assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is result
     module.download_reddit_gallery.assert_awaited_once()
+    shared.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_single_image_bypasses_blocked_page_extractors(monkeypatch, tmp_path):
+    path = tmp_path / 'one.jpg'
+    path.write_bytes(b'photo')
+    result = SimpleNamespace(media_list=[SimpleNamespace(type='photo', url=str(path))])
+    module, shared = service(monkeypatch, result)
+    module.single_image_sources.return_value = ['https://i.redd.it/one.jpg']
+    assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is result
+    shared.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_native_video_bypasses_blocked_page_extractors(monkeypatch, tmp_path):
+    path = tmp_path / 'one.mp4'
+    path.write_bytes(b'video')
+    result = SimpleNamespace(media_list=[SimpleNamespace(type='video', url=str(path), has_audio=True)])
+    module, shared = service(monkeypatch, result)
+    module.native_video_source.return_value = {'url': 'https://v.redd.it/one/DASHPlaylist.mpd', 'expects_audio': True}
+    assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is result
+    module.download_native_video.assert_awaited_once()
     shared.assert_not_awaited()
