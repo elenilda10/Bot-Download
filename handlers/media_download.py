@@ -77,6 +77,11 @@ async def _process_supported_link(message: types.Message, service: str, url: str
         await kwai.process_kwai_link(message, direct_url=url)
         return
 
+    if service == "reddit":
+        from handlers import reddit
+        await reddit.process_reddit(message, direct_url=url)
+        return
+
     if service == "instagram":
         from handlers import instagram
         await instagram.process_instagram_url(message, url=url)

@@ -1,5 +1,5 @@
 from aiogram import Router
-from . import user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
+from . import user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, reddit, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
 
 router = Router(name=__name__)
 router.include_routers(
@@ -24,6 +24,7 @@ router.include_routers(
     eporner.router,
     facebook.router,
     kwai.router,
+    reddit.router,
     universal.router,
     guest.router,
 )

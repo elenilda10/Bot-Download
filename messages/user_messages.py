@@ -237,8 +237,14 @@ def downloading_audio_status(lang: str = DEFAULT_LANG):
     return f"{emoji} Baixando áudio..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading audio..."
 
 
-def downloading_video_status(lang: str = DEFAULT_LANG):
+def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "video", count: int = 1):
     emoji = '<tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji>'
+    if media_kind == "unknown":
+        return f"{emoji} Baixando..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading..."
+    if media_kind == "photo":
+        if _normalize_lang(lang) == "pt":
+            return f"{emoji} Baixando imagens..." if count > 1 else f"{emoji} Baixando imagem..."
+        return f"{emoji} Downloading images..." if count > 1 else f"{emoji} Downloading image..."
     return f"{emoji} Baixando vídeo..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading video..."
 
 

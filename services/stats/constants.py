@@ -20,6 +20,7 @@ SERVICE_DISPLAY_NAMES = {
     "spotify": "Spotify",
     "pinterest": "Pinterest",
     "twitter": "X / Twitter",
+    "reddit": "Reddit",
 }
 VALID_STATS_PERIODS = {"Week", "Month", "Year"}
 VALID_STATS_MODES = {"total", "split"}

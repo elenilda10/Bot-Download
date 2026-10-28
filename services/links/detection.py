@@ -21,6 +21,10 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "reddit",
+        re.compile(r"(https?://(?:[A-Za-z0-9-]+\.)*(?:reddit\.com|redd\.it)(?=[/?#\s<>\x27\"]|$)(?:/[^\s<>\x27\"]*)?)", re.IGNORECASE),
+    ),
+    (
         "instagram",
         re.compile(r"(https?://(www\.)?instagram\.com/\S+)", re.IGNORECASE),
     ),
@@ -84,6 +88,8 @@ def canonicalize_supported_url(service: str, url: str) -> str:
             if key in {"v", "list", "t", "start"}:
                 keep.append((key, value))
         query = urlencode(keep)
+    elif service == "reddit" and parsed.hostname in {"i.redd.it", "v.redd.it", "preview.redd.it"}:
+        query = parsed.query
     elif service in {"soundcloud", "spotify"}:
         # Audio links keep meaningful path IDs/slugs; tracking lives in query/fragment.
         query = ""
