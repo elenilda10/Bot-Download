@@ -136,7 +136,7 @@ def runtime(tmp_path, *, kinds=('video',), as_document=False):
               db=SimpleNamespace(user_settings=AsyncMock(return_value={'captions': 'on'}), get_file_id=AsyncMock(side_effect=get), add_file=AsyncMock(side_effect=add), get_language=AsyncMock(return_value='pt')),
               cmd_mod=SimpleNamespace(is_banned=AsyncMock(return_value=False)),
               ChatAction=SimpleNamespace(UPLOAD_VIDEO='video'),
-              bm=SimpleNamespace(captions=lambda mode, caption, bot: caption if mode != 'off' else '', downloading_video_status=lambda **_: 'downloading'),
+              bm=SimpleNamespace(captions=lambda mode, caption, bot: caption if mode != 'off' else '', downloading_file_status=lambda **_: 'downloading-file', downloading_audio_status=lambda **_: 'downloading-audio', uploading_status=lambda **_: 'uploading'),
               load_user_settings=AsyncMock(return_value={'as_document': 'on' if as_document else 'off', 'captions': 'on'}),
               get_bot_url=AsyncMock(return_value='https://t.me/bot'),
               get_message_text=lambda m: m.text,

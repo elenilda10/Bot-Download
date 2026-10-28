@@ -41,12 +41,6 @@ class PartialRedditDeliveryError(Exception):
     """Avoid resending an entire album after an earlier batch succeeded."""
 
 
-def _status_text(lang, uploading=False):
-    if str(lang or 'pt').lower().startswith('pt'):
-        return '📤 Enviando mídia…' if uploading else '⬇️ Baixando mídia…'
-    return '📤 Uploading media…' if uploading else '⬇️ Downloading media…'
-
-
 def _token(url):
     return hashlib.blake2s(url.encode(), digest_size=8).hexdigest()
 
@@ -155,7 +149,7 @@ async def _fresh(message, url, settings, lang, bot_url, scope, directory, status
     result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE)
     if not result:
         return False
-    await safe_edit_text(status_message, _status_text(lang, uploading=True))
+    await safe_edit_text(status_message, bm.uploading_status(lang=lang), parse_mode='HTML')
     entries = [{'kind': item.type, 'path': item.url} for item in result.media_list]
     if len(entries) > 100:
         raise ValueError('Reddit post exceeds media count limit')
@@ -204,7 +198,7 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
             await maybe_delete_user_message(message, settings.get('delete_message'))
             return
         if business_id is None:
-            status = await message.answer(_status_text(lang),
+            status = await message.answer(bm.downloading_file_status(lang=lang), parse_mode='HTML',
                                           reply_to_message_id=message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-', dir=OUTPUT_DIR)
@@ -266,7 +260,9 @@ async def reddit_media_action(call: types.CallbackQuery):
                     return
                 except TelegramBadRequest:
                     pass
-        status = await call.message.answer(_status_text(lang),
+        status = await call.message.answer(
+            bm.downloading_audio_status(lang=lang) if kind == 'audio' else bm.downloading_file_status(lang=lang),
+            parse_mode='HTML',
                                            reply_to_message_id=call.message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-action-', dir=OUTPUT_DIR)
@@ -294,6 +290,7 @@ async def reddit_media_action(call: types.CallbackQuery):
         if proc.returncode or not Path(audio).is_file() or not 0 < Path(audio).stat().st_size < MAX_FILE_SIZE:
             await handle_download_error(call.message)
             return
+        await safe_edit_text(status, bm.uploading_status(lang=lang), parse_mode='HTML')
         sent = await send_audio_with_thumbnail(
             call.message.answer_audio, audio=FSInputFile(audio), audio_path=audio,
             bot_avatar=await get_bot_avatar_thumbnail(bot), bot_url=bot_url,
