@@ -144,7 +144,7 @@ def runtime(tmp_path, *, kinds=('video',), as_document=False):
               should_skip_duplicate_business_message=AsyncMock(return_value=False),
               claim_message_request=AsyncMock(return_value=SimpleNamespace(mark_success=Mock(), finish=Mock())),
               )
-    for name in ('send_analytics','react_to_message','send_chat_action_if_needed','safe_delete_message',
+    for name in ('safe_edit_text','send_analytics','react_to_message','send_chat_action_if_needed','safe_delete_message',
                  'maybe_delete_user_message','handle_download_error'):
         ns[name] = AsyncMock()
     module = ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[]))

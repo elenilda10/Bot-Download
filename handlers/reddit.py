@@ -22,7 +22,7 @@ from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
     get_bot_avatar_thumbnail, get_bot_url, get_message_text, handle_download_error,
     load_user_settings, maybe_delete_user_message, react_to_message,
-    safe_delete_message, send_chat_action_if_needed,
+    safe_delete_message, safe_edit_text, send_chat_action_if_needed,
     should_skip_duplicate_business_message, with_message_logging,
 )
 from services.links.reddit import REDDIT_URL_REGEX, extract_reddit_url
@@ -39,6 +39,12 @@ logging = logging.bind(service='reddit')
 
 class PartialRedditDeliveryError(Exception):
     """Avoid resending an entire album after an earlier batch succeeded."""
+
+
+def _status_text(lang, uploading=False):
+    if str(lang or 'pt').lower().startswith('pt'):
+        return '📤 Enviando mídia…' if uploading else '⬇️ Baixando mídia…'
+    return '📤 Uploading media…' if uploading else '⬇️ Downloading media…'
 
 
 def _token(url):
@@ -145,10 +151,11 @@ async def _try_cache(message, url, settings, lang, bot_url, scope):
         return False
 
 
-async def _fresh(message, url, settings, lang, bot_url, scope, directory):
+async def _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=None):
     result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE)
     if not result:
         return False
+    await safe_edit_text(status_message, _status_text(lang, uploading=True))
     entries = [{'kind': item.type, 'path': item.url} for item in result.media_list]
     if len(entries) > 100:
         raise ValueError('Reddit post exceeds media count limit')
@@ -197,11 +204,11 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
             await maybe_delete_user_message(message, settings.get('delete_message'))
             return
         if business_id is None:
-            status = await message.answer(bm.downloading_video_status(lang=lang),
+            status = await message.answer(_status_text(lang),
                                           reply_to_message_id=message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-', dir=OUTPUT_DIR)
-        if await _fresh(message, url, settings, lang, bot_url, scope, directory):
+        if await _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=status):
             lease.mark_success()
             await maybe_delete_user_message(message, settings.get('delete_message'))
         else:
@@ -259,12 +266,12 @@ async def reddit_media_action(call: types.CallbackQuery):
                     return
                 except TelegramBadRequest:
                     pass
-        status = await call.message.answer(bm.downloading_video_status(lang=lang),
+        status = await call.message.answer(_status_text(lang),
                                            reply_to_message_id=call.message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-action-', dir=OUTPUT_DIR)
         if kind == 'doc':
-            if not await _fresh(call.message, url, settings, lang, bot_url, scope, directory):
+            if not await _fresh(call.message, url, settings, lang, bot_url, scope, directory, status_message=status):
                 await handle_download_error(call.message)
             return
         result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE)

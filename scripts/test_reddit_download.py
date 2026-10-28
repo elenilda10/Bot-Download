@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 import types
 from pathlib import Path
 
@@ -28,7 +29,9 @@ async def main():
     output = tempfile.mkdtemp(prefix='reddit-smoke-')
     print('Cookies:', 'Firefox' if firefox_profile('reddit') else 'sem perfil configurado')
     print('Testando Reddit...', flush=True)
+    started = time.monotonic()
     result = await download_reddit_media(args.url, output_dir=output, max_file_size=64 * 1024 * 1024)
+    print('TEMPO TOTAL: %.2f s' % (time.monotonic() - started))
     if not result:
         raise SystemExit('FALHOU: nenhuma mídia. Temporários: ' + output)
     print('SUCESSO:', len(result.media_list), 'mídia(s)')

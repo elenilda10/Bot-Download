@@ -9,11 +9,23 @@ compartilhamentos `/r/sub/s/TOKEN` e mídias `i.redd.it`/`v.redd.it`. Não baixa
 subreddits ou perfis inteiros. Domínios parecidos são rejeitados. Parâmetros
 assinados de `preview.redd.it` são preservados.
 
-O adapter `services/platforms/reddit_download.py` reutiliza o downloader local
-compartilhado gallery-dl/yt-dlp e a seleção de cookies já instalada. Não encaminha
-a requisição ao handler Universal. Valida os arquivos locais e o limite de bytes
-antes de enviar. Mantém o caminho de extração anterior; não substitui o backend
-por um download direto de URLs de vídeo potencialmente sem áudio.
+O adapter `services/platforms/reddit_download.py` consulta primeiro o JSON da
+publicação com `curl_cffi`/Firefox147, usando apenas os cookies persistentes do
+perfil configurado. O ID retornado precisa corresponder ao solicitado. Os
+links `/s/` são resolvidos com redirecionamentos limitados ao Reddit.
+
+Para galerias estáticas JPEG/PNG, usa somente os IDs declarados em
+`gallery_data.items` e seus registros em `media_metadata`, preservando a ordem.
+Baixa até três imagens simultaneamente e valida os arquivos com Pillow. Há
+limite de bytes, dimensões e tempo; sessões separadas sem cookies autenticados
+baixam os arquivos no CDN. Não encaminha a requisição ao handler Universal.
+
+Tipos não atendidos pelo caminho de fotos conservam o downloader compartilhado
+gallery-dl/yt-dlp, incluindo o caminho de vídeo com merge de áudio. Rejeições ou
+falhas no JSON encerram a tentativa, sem iniciar os fallbacks longos. Essa
+política não garante acesso quando o Reddit bloqueia a requisição. O caminho
+rápido usa somente cookies persistentes: o teste manual na VPS retornou HTTP
+200 e as três imagens com e sem o complemento de sessão.
 
 ## Entrega
 
@@ -53,7 +65,7 @@ login nem exportação de cookies. Imprime os arquivos para inspeção, sem cook
 ```
 
 Sem `--apply` é simulação. Com `--apply`, valida a sintaxe e faz backup antes de
-instalar os três módulos novos e adaptar registro, detecção, despacho de lotes
+instalar os quatro módulos dedicados e adaptar registro, detecção, despacho de lotes
 e nome de exibição. Preserva o restante desses arquivos locais e recusa anchors
 incompatíveis. Requer o helper de cookies instalado anteriormente; não altera
 Kwai, Instagram ou outros handlers e não reinicia o serviço.
@@ -61,3 +73,20 @@ Kwai, Instagram ou outros handlers e não reinicia o serviço.
 Validação local usa mídia, Telegram e downloader simulados. Ainda é necessário
 confirmar extração com sessão real, vídeo com áudio e envio Telegram na VPS.
 Não adiciona um fluxo dedicado de inline query nesta etapa.
+
+
+## Medição e validação da atualização de galerias
+
+O smoke test imprime o tempo total. Os logs distinguem a consulta JSON e o
+resultado da galeria. O status no Telegram usa “Baixando mídia…” e “Enviando
+mídia…”. O caminho de fotos tem consulta com orçamento de 20 segundos e
+conjunto de downloads com orçamento de 60 segundos, até 20 por imagem. Isso
+não significa que esse tempo será consumido em pedidos normais.
+
+Testes simulados cobrem o transporte Firefox, resolução de links curtos,
+recusa de redirects externos, validação do ID, ordem e concorrência das fotos,
+rejeição de mídia externa/inválida/grande e limpeza de galerias parciais. O
+HTTP 200 com o perfil foi confirmado manualmente pelo usuário na VPS; o novo
+download completo de fotos ainda precisa ser confirmado lá. Em ambiente local
+sem sessão, o mesmo post respondeu 403 e a tentativa encerrou em 4,74 s,
+sem passar pelos fallbacks; isso não mede a velocidade de download na VPS.
