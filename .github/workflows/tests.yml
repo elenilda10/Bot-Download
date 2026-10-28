@@ -22,6 +22,19 @@ env:
   PYTHONPATH: ${{ github.workspace }}
 
 jobs:
+  reddit-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: python -m pip install pytest pytest-asyncio ruff
+      - run: python -m pytest --noconftest -q tests/test_reddit_handler.py tests/test_reddit_download.py
+      - run: python -m ruff check --select=E,F,W --ignore=E501 handlers/reddit.py services/links/reddit.py services/platforms/reddit_download.py scripts/install_reddit_handler_vps.py scripts/test_reddit_download.py tests/test_reddit_handler.py tests/test_reddit_download.py
+      - run: python -m py_compile handlers/reddit.py services/links/reddit.py services/platforms/reddit_download.py scripts/install_reddit_handler_vps.py scripts/test_reddit_download.py
+
   instagram-cookies:
     runs-on: ubuntu-latest
     timeout-minutes: 5
