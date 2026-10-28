@@ -41,6 +41,12 @@ class PartialRedditDeliveryError(Exception):
     """Avoid resending an entire album after an earlier batch succeeded."""
 
 
+def _download_status(lang, settings, kind='unknown', count=1):
+    if settings.get('as_document') == 'on':
+        return bm.downloading_file_status(lang=lang)
+    return bm.downloading_video_status(lang=lang, media_kind=kind, count=count)
+
+
 def _token(url):
     return hashlib.blake2s(url.encode(), digest_size=8).hexdigest()
 
@@ -146,7 +152,9 @@ async def _try_cache(message, url, settings, lang, bot_url, scope):
 
 
 async def _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=None):
-    result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE)
+    async def on_kind(kind, count):
+        await safe_edit_text(status_message, _download_status(lang, settings, kind, count), parse_mode='HTML')
+    result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE, on_kind=on_kind)
     if not result:
         return False
     await safe_edit_text(status_message, bm.uploading_status(lang=lang), parse_mode='HTML')
@@ -198,7 +206,7 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
             await maybe_delete_user_message(message, settings.get('delete_message'))
             return
         if business_id is None:
-            status = await message.answer(bm.downloading_file_status(lang=lang), parse_mode='HTML',
+            status = await message.answer(_download_status(lang, settings), parse_mode='HTML',
                                           reply_to_message_id=message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-', dir=OUTPUT_DIR)

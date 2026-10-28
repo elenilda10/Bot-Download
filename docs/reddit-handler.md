@@ -78,9 +78,11 @@ Não adiciona um fluxo dedicado de inline query nesta etapa.
 ## Medição e validação da atualização de galerias
 
 O smoke test imprime o tempo total. Os logs distinguem a consulta JSON e o
-resultado da galeria. O status no Telegram reutiliza as mensagens centralizadas: “Baixando arquivo…”,
-“Baixando áudio…” para MP3 e “Enviando arquivo para o Telegram…”, com os emojis
-personalizados e a tradução existentes. O caminho de fotos tem consulta com orçamento de 20 segundos e
+resultado da galeria. O status inicial reutiliza a mensagem centralizada de vídeo
+com o texto “Baixando…”. Após identificar o conteúdo, muda para “Baixando imagem…”,
+“Baixando imagens…” ou “Baixando vídeo…”, preservando o emoji personalizado.
+Modo documento, MP3 e envio usam as mensagens centralizadas de arquivo, áudio
+e upload. As chamadas existentes da mensagem de vídeo mantêm seu texto padrão. O caminho de fotos tem consulta com orçamento de 20 segundos e
 conjunto de downloads com orçamento de 60 segundos, até 20 por imagem. Isso
 não significa que esse tempo será consumido em pedidos normais.
 

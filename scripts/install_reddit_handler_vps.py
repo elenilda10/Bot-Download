@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import shutil
 import tempfile
@@ -61,8 +62,38 @@ def patch_detection(source, reference):
     return source
 
 
+def patch_message_status(source, reference):
+    def find(text):
+        return next((n for n in ast.parse(text).body
+                     if isinstance(n, ast.FunctionDef) and n.name == 'downloading_video_status'), None)
+    old, new = find(source), find(reference)
+    if old is None or new is None or not isinstance(old.body[-1], ast.Return):
+        raise ValueError('Cannot adapt the existing video status safely')
+    old_emoji = next((n for n in old.body if isinstance(n, ast.Assign)
+                      and any(isinstance(t, ast.Name) and t.id == 'emoji' for t in n.targets)), None)
+    new_emoji = next((n for n in new.body if isinstance(n, ast.Assign)
+                      and any(isinstance(t, ast.Name) and t.id == 'emoji' for t in n.targets)), None)
+    if old_emoji is None or new_emoji is None:
+        raise ValueError('Cannot preserve the existing custom status emoji')
+    lines = reference.splitlines(keepends=True)[new.lineno - 1:new.end_lineno]
+    replacements = [
+        (new.body[-1].lineno - new.lineno, new.body[-1].end_lineno - new.lineno + 1,
+         '    ' + ast.get_source_segment(source, old.body[-1]) + '\n'),
+        (new_emoji.lineno - new.lineno, new_emoji.end_lineno - new.lineno + 1,
+         '    ' + ast.get_source_segment(source, old_emoji) + '\n'),
+    ]
+    for start, end, replacement in sorted(replacements, reverse=True):
+        lines[start:end] = [replacement]
+    block = ''.join(lines)
+    original = source.splitlines(keepends=True)
+    original[old.lineno - 1:old.end_lineno] = [block]
+    return ''.join(original)
+
+
 def prepare(target, reference):
     result = {name: (reference / name).read_text() for name in NEW_FILES}
+    name = 'messages/user_messages.py'
+    result[name] = patch_message_status((target / name).read_text(), (reference / name).read_text())
     name = 'handlers/__init__.py'
     result[name] = patch_init((target / name).read_text())
     name = 'handlers/media_download.py'

@@ -17,7 +17,15 @@ from services.links.reddit import is_reddit_media_url, normalize_reddit_url
 from services.platforms.universal_extractor import download_universal_media
 
 
-async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int):
+async def _notify_kind(callback, kind, count):
+    if callback is not None:
+        try:
+            await callback(kind, count)
+        except Exception as exc:
+            logging.warning('Reddit status update skipped: %s', type(exc).__name__)
+
+
+async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int, on_kind=None):
     if not is_reddit_media_url(url):
         return None
     started = time.monotonic()
@@ -30,6 +38,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
                      len(sources or []), bool(video),
                      urlparse(info['post'].get('url') or '').hostname)
         if sources:
+            await _notify_kind(on_kind, 'photo', len(sources))
             try:
                 result = await download_reddit_gallery(info['post'], sources, output_dir, max_file_size)
             except Exception as exc:
@@ -37,6 +46,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
                 return None
             logging.info('Reddit gallery: items=%s seconds=%.2f', len(result.media_list), time.monotonic() - started)
         elif video:
+            await _notify_kind(on_kind, 'video', 1)
             try:
                 result = await download_native_video(info['post'], video, output_dir, max_file_size)
             except Exception as exc:
@@ -50,6 +60,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
                 info['canonical'], output_dir=output_dir, post_id='reddit_post'
             ), timeout=420)
     elif info['status'] == 'direct':
+        await _notify_kind(on_kind, 'video' if urlparse(url).hostname == 'v.redd.it' else 'photo', 1)
         result = await asyncio.wait_for(download_universal_media(
             normalize_reddit_url(url), output_dir=output_dir, post_id='reddit_post'
         ), timeout=420)

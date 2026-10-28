@@ -94,8 +94,10 @@ async def test_verified_photo_gallery_bypasses_shared_downloader(monkeypatch, tm
     result = SimpleNamespace(media_list=[SimpleNamespace(url=str(path), type='photo')])
     module, shared = service(monkeypatch, result)
     module.gallery_sources.return_value = ['https://i.redd.it/image.png']
-    assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is result
+    on_kind = AsyncMock()
+    assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100, on_kind=on_kind) is result
     module.download_reddit_gallery.assert_awaited_once()
+    on_kind.assert_awaited_once_with('photo', 1)
     shared.assert_not_awaited()
 
 
@@ -120,3 +122,17 @@ async def test_native_video_bypasses_blocked_page_extractors(monkeypatch, tmp_pa
     assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is result
     module.download_native_video.assert_awaited_once()
     shared.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_status_callback_failure_does_not_abort_download(monkeypatch, tmp_path):
+    path = tmp_path / 'one.jpg'
+    path.write_bytes(b'photo')
+    result = SimpleNamespace(media_list=[SimpleNamespace(type='photo', url=str(path))])
+    module, _ = service(monkeypatch, result)
+    module.single_image_sources.return_value = ['https://i.redd.it/one.jpg']
+    on_kind = AsyncMock(side_effect=RuntimeError('message unavailable'))
+    assert await module.download_reddit_media(
+        'https://redd.it/abc123', output_dir=str(tmp_path),
+        max_file_size=100, on_kind=on_kind) is result
+    on_kind.assert_awaited_once_with('photo', 1)

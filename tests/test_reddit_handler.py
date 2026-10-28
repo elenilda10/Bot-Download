@@ -111,7 +111,9 @@ def runtime(tmp_path, *, kinds=('video',), as_document=False):
     store = {}
     async def get(key): return store.get(key)
     async def add(key, value, kind): store[key] = value
-    async def download(url, *, output_dir, max_file_size):
+    async def download(url, *, output_dir, max_file_size, on_kind=None):
+        if on_kind:
+            await on_kind('photo' if all(kind == 'photo' for kind in kinds) else 'video', len(kinds))
         items = []
         for index, kind in enumerate(kinds):
             path = Path(output_dir) / f'{index}.{ "jpg" if kind == "photo" else "mp4"}'
@@ -136,7 +138,7 @@ def runtime(tmp_path, *, kinds=('video',), as_document=False):
               db=SimpleNamespace(user_settings=AsyncMock(return_value={'captions': 'on'}), get_file_id=AsyncMock(side_effect=get), add_file=AsyncMock(side_effect=add), get_language=AsyncMock(return_value='pt')),
               cmd_mod=SimpleNamespace(is_banned=AsyncMock(return_value=False)),
               ChatAction=SimpleNamespace(UPLOAD_VIDEO='video'),
-              bm=SimpleNamespace(captions=lambda mode, caption, bot: caption if mode != 'off' else '', downloading_file_status=lambda **_: 'downloading-file', downloading_audio_status=lambda **_: 'downloading-audio', uploading_status=lambda **_: 'uploading'),
+              bm=SimpleNamespace(captions=lambda mode, caption, bot: caption if mode != 'off' else '', downloading_video_status=lambda **_: 'downloading-video', downloading_file_status=lambda **_: 'downloading-file', downloading_audio_status=lambda **_: 'downloading-audio', uploading_status=lambda **_: 'uploading'),
               load_user_settings=AsyncMock(return_value={'as_document': 'on' if as_document else 'off', 'captions': 'on'}),
               get_bot_url=AsyncMock(return_value='https://t.me/bot'),
               get_message_text=lambda m: m.text,
@@ -211,7 +213,7 @@ def test_callback_source_recovers_from_source_button_after_restart(tmp_path):
 def test_selective_installer_preserves_local_changes_and_is_idempotent(tmp_path):
     installer = load('scripts/install_reddit_handler_vps.py', 'reddit_installer_test')
     target = tmp_path / 'target'
-    names = ['handlers/__init__.py','handlers/media_download.py','services/links/detection.py','services/stats/constants.py']
+    names = ['handlers/__init__.py','handlers/media_download.py','services/links/detection.py','services/stats/constants.py','messages/user_messages.py']
     for name in names:
         path = target / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,7 +286,7 @@ async def test_audio_callback_caches_result_and_cleans_conversion_files(tmp_path
 @pytest.mark.asyncio
 async def test_download_failure_cleans_partial_files_and_finishes_lease(tmp_path):
     ns, _ = runtime(tmp_path)
-    async def fail(url, *, output_dir, max_file_size):
+    async def fail(url, *, output_dir, max_file_size, on_kind=None):
         (Path(output_dir) / 'partial.mp4').write_bytes(b'partial')
         raise ValueError('download failed')
     ns['download_reddit_media'].side_effect = fail
