@@ -7,7 +7,7 @@ from pathlib import Path
 
 from services.logger import logger as logging
 from services.platforms.firefox_cookies import firefox_profile
-from services.platforms.reddit_json import fetch_reddit_post, gallery_sources, download_reddit_gallery
+from services.platforms.reddit_json import RedditImageError, fetch_reddit_post, gallery_sources, download_reddit_gallery
 from services.links.reddit import is_reddit_media_url, normalize_reddit_url
 from services.platforms.universal_extractor import download_universal_media
 
@@ -24,7 +24,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
             try:
                 result = await download_reddit_gallery(info['post'], sources, output_dir, max_file_size)
             except Exception as exc:
-                logging.warning('Reddit gallery failed: %s', type(exc).__name__)
+                logging.warning('Reddit gallery failed: %s', exc.code if isinstance(exc, RedditImageError) else type(exc).__name__)
                 return None
             logging.info('Reddit gallery: items=%s seconds=%.2f', len(result.media_list), time.monotonic() - started)
         else:

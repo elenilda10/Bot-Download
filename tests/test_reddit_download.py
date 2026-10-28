@@ -23,6 +23,7 @@ def service(monkeypatch, result):
     access = ModuleType('services.platforms.firefox_cookies')
     access.firefox_profile = lambda _: '/test/profile'
     fast = ModuleType('services.platforms.reddit_json')
+    fast.RedditImageError = type('RedditImageError', (ValueError,), {})
     fast.fetch_reddit_post = AsyncMock(return_value={
         'status': 'ok', 'post': {}, 'canonical': 'https://redd.it/abc123'})
     fast.gallery_sources = Mock(return_value=None)

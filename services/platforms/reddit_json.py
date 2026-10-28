@@ -22,6 +22,20 @@ _HEADERS = {
     'Sec-Fetch-Dest': 'empty',
 }
 _IMAGE_HOSTS = {'i.redd.it', 'preview.redd.it', 'external-preview.redd.it'}
+_IMAGE_HEADERS = {
+    'Accept': 'image/jpeg,image/png,image/*;q=0.8,*/*;q=0.5',
+    'Referer': 'https://www.reddit.com/',
+    'Sec-Fetch-Dest': 'image',
+    'Sec-Fetch-Mode': 'no-cors',
+    'Sec-Fetch-Site': 'cross-site',
+}
+
+
+class RedditImageError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
 
 
 @dataclass
@@ -166,28 +180,55 @@ def _download_image_sync(index, url, directory, max_bytes, deadline=None):
         raise ValueError('Invalid Reddit image host')
     temporary = directory / f'reddit_gallery_{index}.part'
     try:
-        remaining = min(20, deadline - time.monotonic()) if deadline else 20
-        if remaining <= 0:
-            raise TimeoutError('Reddit gallery time limit')
+        file_deadline = min(deadline, time.monotonic() + 20) if deadline else time.monotonic() + 20
         # Fresh CDN session: never copy the authenticated Reddit cookie jar.
         with requests.Session(impersonate='firefox147') as session:
-            response = session.get(url, headers={'Referer': 'https://www.reddit.com/'},
-                                   allow_redirects=False, stream=True, timeout=remaining)
+            for _ in range(4):
+                remaining = file_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError('Reddit gallery time limit')
+                response = session.get(url, headers=_IMAGE_HEADERS,
+                                       allow_redirects=False, stream=True, timeout=remaining)
+                if response.status_code not in {301, 302, 303, 307, 308}:
+                    break
+                try:
+                    location = response.headers.get('Location', '')
+                    if not location:
+                        raise RedditImageError('image_redirect_missing_location')
+                    next_url = urljoin(url, location)
+                    viewer = urlparse(next_url)
+                    current = urlparse(url)
+                    if (viewer.scheme == 'https' and viewer.hostname == 'www.reddit.com'
+                            and viewer.path == '/media' and current.hostname == 'preview.redd.it'):
+                        # The HTML viewer is not an image. Native gallery
+                        # originals use the same path on i.redd.it instead.
+                        next_url = current._replace(netloc='i.redd.it', query='', fragment='').geturl()
+                    if not _allowed_image_url(next_url):
+                        raise RedditImageError('image_redirect_host_rejected')
+                    if next_url == url:
+                        raise RedditImageError('image_redirect_loop')
+                    url = next_url
+                finally:
+                    response.close()
+            else:
+                raise RedditImageError('image_redirect_limit')
             try:
                 if response.status_code != 200:
-                    raise ValueError('Reddit image HTTP failure')
+                    raise RedditImageError(f'image_http_{response.status_code}')
                 size = 0
                 with temporary.open('wb') as output:
                     for chunk in response.iter_content(64 * 1024):
                         size += len(chunk)
                         if size > min(max_bytes, 10 * 1024 * 1024):
-                            raise ValueError('Reddit image exceeds limit')
+                            raise RedditImageError('image_size_limit')
                         output.write(chunk)
             finally:
                 response.close()
         with Image.open(temporary) as image:
-            if image.format not in {'JPEG', 'PNG'} or image.width * image.height > 40_000_000:
-                raise ValueError('Invalid Reddit image')
+            if image.format not in {'JPEG', 'PNG'}:
+                raise RedditImageError('image_format_' + str(image.format))
+            if image.width * image.height > 40_000_000:
+                raise RedditImageError('image_dimensions_limit')
             extension = '.jpg' if image.format == 'JPEG' else '.png'
             image.verify()
         target = directory / f'reddit_gallery_{index}{extension}'

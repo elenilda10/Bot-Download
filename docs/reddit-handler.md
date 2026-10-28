@@ -90,3 +90,16 @@ HTTP 200 com o perfil foi confirmado manualmente pelo usuário na VPS; o novo
 download completo de fotos ainda precisa ser confirmado lá. Em ambiente local
 sem sessão, o mesmo post respondeu 403 e a tentativa encerrou em 4,74 s,
 sem passar pelos fallbacks; isso não mede a velocidade de download na VPS.
+
+
+### Redirecionamentos do CDN
+
+O teste inicial na VPS consultou o JSON em cerca de dois segundos, mas as três
+requisições de imagem responderam 307. A atualização envia headers de imagem
+(Accept e Sec-Fetch) e acompanha no máximo quatro hops entre os hosts de imagem
+permitidos, preservando o orçamento de tempo e sem carregar os cookies da conta.
+Se preview.redd.it apontar ao visualizador HTML `/media` do Reddit, solicita o
+original com o mesmo caminho em i.redd.it, em vez de baixar a página HTML.
+Redirecionamentos externos continuam recusados. Falhas passam a registrar códigos
+como `image_http_403` ou `image_redirect_limit`, sem URLs assinadas ou cookies.
+O download real após essa alteração ainda deve ser confirmado na VPS.

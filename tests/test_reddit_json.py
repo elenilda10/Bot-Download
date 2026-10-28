@@ -201,3 +201,57 @@ def test_large_json_is_rejected_before_parsing(module, monkeypatch):
     transport(monkeypatch, lambda *_: response)
     assert module._fetch_post_sync('https://redd.it/1xgtvr5', None)['status'] == 'invalid'
     assert response.closed
+
+
+@pytest.mark.parametrize('status', [301, 302, 303, 307, 308])
+def test_image_redirects_within_reddit_cdn_are_followed_without_authentication(module, monkeypatch, tmp_path, status):
+    redirect = Response(status=status, headers={'Location': 'https://i.redd.it/original.png'})
+    image = Response(image_bytes())
+    def get(url, kwargs):
+        assert kwargs['allow_redirects'] is False
+        assert kwargs['headers']['Sec-Fetch-Dest'] == 'image'
+        assert kwargs['headers']['Accept'].startswith('image/')
+        assert 'Cookie' not in kwargs['headers']
+        return redirect if 'preview.redd.it' in url else image
+    sessions = transport(monkeypatch, get)
+    item = module._download_image_sync(0, 'https://preview.redd.it/a.png', tmp_path, 1000)
+    assert Path(item.url).is_file()
+    assert len(sessions[0].calls) == 2
+    assert 'cookies' not in sessions[0].options
+    assert redirect.closed and image.closed
+
+
+@pytest.mark.parametrize('target', ['https://evil.test/image.jpg', 'http://i.redd.it/image.jpg',
+                                    'https://www.reddit.com/login/'])
+def test_image_redirect_outside_cdn_is_rejected_before_following(module, monkeypatch, tmp_path, target):
+    response = Response(status=307, headers={'Location': target})
+    sessions = transport(monkeypatch, lambda *_: response)
+    with pytest.raises(module.RedditImageError, match='image_redirect_host_rejected'):
+        module._download_image_sync(0, 'https://preview.redd.it/a.png', tmp_path, 1000)
+    assert len(sessions[0].calls) == 1
+    assert response.closed
+    assert not list(tmp_path.iterdir())
+
+
+def test_image_redirect_cycle_is_bounded(module, monkeypatch, tmp_path):
+    def get(url, kwargs):
+        target = 'https://i.redd.it/a.png' if 'preview.' in url else 'https://preview.redd.it/a.png'
+        return Response(status=307, headers={'Location': target})
+    sessions = transport(monkeypatch, get)
+    with pytest.raises(module.RedditImageError, match='image_redirect_limit'):
+        module._download_image_sync(0, 'https://preview.redd.it/a.png', tmp_path, 1000)
+    assert len(sessions[0].calls) == 4
+    assert not list(tmp_path.iterdir())
+
+
+def test_html_viewer_redirect_uses_original_image_without_fetching_viewer(module, monkeypatch, tmp_path):
+    redirect = Response(status=307, headers={'Location': 'https://www.reddit.com/media?url=anything'})
+    payload = Response(image_bytes())
+    def get(url, kwargs):
+        assert 'www.reddit.com/media' not in url
+        return redirect if 'preview.redd.it' in url else payload
+    sessions = transport(monkeypatch, get)
+    item = module._download_image_sync(0, 'https://preview.redd.it/a.png?s=signed', tmp_path, 1000)
+    assert Path(item.url).is_file()
+    assert sessions[0].calls[1][0] == 'https://i.redd.it/a.png'
+    assert redirect.closed and payload.closed
