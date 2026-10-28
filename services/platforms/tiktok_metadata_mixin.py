@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_ytdlp_options
 import asyncio
 import os
 from typing import Any, Mapping, Optional
@@ -45,8 +46,7 @@ class TikTokMetadataMixin:
             "retries": 2,
             "extractor_retries": 2,
         }
-        if cookie_file:
-            opts["cookiefile"] = cookie_file
+        opts.update(firefox_ytdlp_options("tiktok", cookie_file))
         return opts
 
     def _extract_tiktok_detail_sync(self, video_url: str) -> tuple[dict[str, Any], int]:

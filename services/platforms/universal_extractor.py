@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_cookie_args
 import asyncio
 import glob
 import hashlib
@@ -398,8 +399,7 @@ async def _download_with_gallery_dl(
     if _is_facebook_url(url):
         cmd.extend(facebook_gallery_arguments(facebook_browser_profile))
     cookie_file = _resolve_cookie(url)
-    if cookie_file:
-        cmd.extend(["--cookies", cookie_file])
+    cmd.extend(firefox_cookie_args(url, 'gallery-dl', cookie_file))
     cmd.append(url)
 
     try:
@@ -593,8 +593,7 @@ async def _download_with_ytdlp(
         "--no-check-certificates",
         "--no-playlist", "--socket-timeout", "30", "--retries", "2",
     ]
-    if cookie_file:
-        info_args.extend(["--cookies", cookie_file])
+    info_args.extend(firefox_cookie_args(target_url, 'yt-dlp', cookie_file))
 
     # Facebook's media pages often fail on metadata extraction while
     # still exposing downloadable formats. Do not preflight it twice.
@@ -640,8 +639,7 @@ async def _download_with_ytdlp(
         "-o", output_template,
     ]
     is_facebook = _is_facebook_url(target_url)
-    if cookie_file:
-        base_download_args.extend(["--cookies", cookie_file])
+    base_download_args.extend(firefox_cookie_args(target_url, 'yt-dlp', cookie_file))
     if is_facebook:
         base_download_args.extend(facebook_ytdlp_arguments(facebook_browser_profile))
 

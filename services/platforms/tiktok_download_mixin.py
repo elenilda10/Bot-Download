@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_ytdlp_options
 import asyncio
 import glob
 import os
@@ -55,8 +56,7 @@ class TikTokDownloadMixin:
             "fragment_retries": 1,
             "concurrent_fragment_downloads": 5,
         }
-        if cookie_file:
-            opts["cookiefile"] = cookie_file
+        opts.update(firefox_ytdlp_options("tiktok", cookie_file))
         return opts
 
     @staticmethod

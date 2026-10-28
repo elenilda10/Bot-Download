@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_cookie_args
 import asyncio
 import hashlib
 import json
@@ -61,8 +62,9 @@ async def _fetch_reddit_with_gallery_dl(url: str) -> Optional[RedditVideo]:
 
     cookie_file = "/root/Bot-Download/cookies/reddit_cookies.txt"
     cmd = ["gallery-dl", "-j"]
-    if os.path.exists(cookie_file):
-        cmd.extend(["--cookies", cookie_file])
+    cmd.extend(firefox_cookie_args(
+        clean_url, "gallery-dl", cookie_file if os.path.exists(cookie_file) else None
+    ))
     cmd.append(clean_url)
 
     try:

@@ -1,3 +1,4 @@
+from services.platforms.firefox_cookies import firefox_cookie_args
 import asyncio
 import glob
 import hashlib
@@ -240,8 +241,7 @@ async def download_twitter_media(url: str, output_dir: str = "/root/Bot-Download
         "--merge-output-format", "mp4",
         "-o", raw_template,
     ]
-    if cookie_file:
-        cmd_dl.extend(["--cookies", cookie_file])
+    cmd_dl.extend(firefox_cookie_args(clean_url, "yt-dlp", cookie_file))
     cmd_dl.append(clean_url)
 
     title = ""
