@@ -259,12 +259,12 @@ async def send_inline_deezer_music(
         bot_url = await get_bot_url_fn(deps.bot)
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='Deezer'))
             return None
 
         async def _download_audio():
             nonlocal downloaded_track
-            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang, platform='Deezer'))
 
             download_coro = download_deezer_track(request.source_url, output_dir=output_dir)
             if asyncio.iscoroutine(download_coro):
@@ -293,7 +293,7 @@ async def send_inline_deezer_music(
             return DeezerMetadataWrapper(downloaded_track)
 
         async def _send_downloaded(path: str, meta_wrapper):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='Deezer'))
             meta = meta_wrapper.track if meta_wrapper else downloaded_track
             bot_avatar = await get_bot_avatar_thumbnail_fn(deps.bot) if get_bot_avatar_thumbnail_fn else None
             audio_thumbnail = (

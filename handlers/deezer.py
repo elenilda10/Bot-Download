@@ -92,7 +92,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
     status_message: Optional[types.Message] = None
     if business_id is None:
         status_message = await message.answer(
-            bm.downloading_audio_status(lang=user_lang)
+            bm.downloading_audio_status(lang=user_lang, platform='Deezer')
         )
 
     try:
@@ -109,7 +109,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
             return
 
         if status_message:
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Deezer'))
 
         audio_file = FSInputFile(track.file_path)
         thumb_file = FSInputFile(track.thumb_path) if (track.thumb_path and os.path.exists(track.thumb_path)) else None

@@ -97,7 +97,7 @@ async def handle_mega(message: types.Message):
 
         etapa = "mensagem_status"
         status = await message.answer(
-            bm.downloading_file_status(lang),
+            bm.downloading_file_status(lang, platform='MEGA'),
             allow_sending_without_reply=True,
             parse_mode="HTML",
         )
@@ -113,7 +113,7 @@ async def handle_mega(message: types.Message):
 
                 etapa = "atualizacao_status"
                 await status.edit_text(
-                    bm.uploading_file_status(lang),
+                    bm.uploading_file_status(lang, platform='MEGA'),
                     parse_mode="HTML",
                 )
 

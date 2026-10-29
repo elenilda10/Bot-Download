@@ -150,7 +150,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
         bot_url = await get_bot_url(bot)
         bot_avatar = await get_bot_avatar_thumbnail(bot)
         if show_service_status:
-            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang))
+            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang, platform='SoundCloud'))
 
         cache_key = build_audio_cache_key(source_url)
         track: Optional[SoundCloudTrack] = None
@@ -159,7 +159,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             await safe_edit_text(status_message, text)
 
         async def _send_cached(file_id: str):
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='SoundCloud'))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -219,7 +219,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='SoundCloud'))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -411,7 +411,7 @@ async def _send_inline_soundcloud_audio(
             return
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='SoundCloud'))
             return None
 
         async def _download_audio():
@@ -419,7 +419,7 @@ async def _send_inline_soundcloud_audio(
             request_id = f"soundcloud_inline:{request.owner_user_id}:{request_event_id}:{track.id}"
             audio_name = f"{track.id}_{timestamp}_soundcloud_inline.mp3"
 
-            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang, platform='SoundCloud'))
 
             on_progress = make_status_text_progress_updater(
                 "SoundCloud audio", _edit_inline_status
@@ -455,7 +455,7 @@ async def _send_inline_soundcloud_audio(
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='SoundCloud'))
             audio_thumbnail = (
                 FSInputFile(str(prepared_metadata.thumbnail_path), filename="cover.jpg")
                 if prepared_metadata.thumbnail_path

@@ -436,7 +436,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
     status = None
     try:
         status = await message.answer(
-            bm.downloading_video_status(lang=lang),
+            bm.downloading_video_status(lang=lang, platform='Pornhub'),
             parse_mode=ParseMode.HTML,
         )
         bot_url = await get_bot_url(bot)
@@ -448,7 +448,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
             sent = None
             if cached_id:
                 await safe_edit_text(
-                    status, bm.uploading_status(lang=lang),
+                    status, bm.uploading_status(lang=lang, platform='Pornhub'),
                     parse_mode=ParseMode.HTML,
                 )
                 try:
@@ -478,7 +478,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                         url, directory, prepare_preview=False
                     )
                     await safe_edit_text(
-                        status, bm.uploading_status(lang=lang),
+                        status, bm.uploading_status(lang=lang, platform='Pornhub'),
                         parse_mode=ParseMode.HTML,
                     )
                     caption = bm.captions(
@@ -560,7 +560,7 @@ async def download_pornhub_test(message: types.Message):
         ) or "pt"
         await react_to_message(message, "👾")
         status = await message.answer(
-            bm.downloading_video_status(lang=user_lang),
+            bm.downloading_video_status(lang=user_lang, platform='Pornhub'),
             parse_mode=ParseMode.HTML,
         )
 
@@ -581,7 +581,7 @@ async def download_pornhub_test(message: types.Message):
             cached_id = await db.get_file_id(selected_cache_key)
             if cached_id:
                 await safe_edit_text(
-                    status, bm.uploading_status(lang=user_lang),
+                    status, bm.uploading_status(lang=user_lang, platform='Pornhub'),
                     parse_mode=ParseMode.HTML,
                 )
                 await send_chat_action_if_needed(
@@ -608,7 +608,7 @@ async def download_pornhub_test(message: types.Message):
                     media = await _download_video(url, Path(tmp))
                     file = media.path
                     await safe_edit_text(
-                        status, bm.uploading_status(lang=user_lang),
+                        status, bm.uploading_status(lang=user_lang, platform='Pornhub'),
                         parse_mode=ParseMode.HTML,
                     )
                     await send_chat_action_if_needed(

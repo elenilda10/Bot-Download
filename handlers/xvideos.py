@@ -113,7 +113,7 @@ async def handle_xvideos(message: types.Message) -> None:
         settings = await load_user_settings(db, message)
         language = settings.get("language") or await db.get_language(message.from_user.id)
         if not business_id:
-            status = await message.answer(bm.downloading_video_status(lang=language))
+            status = await message.answer(bm.downloading_video_status(lang=language, platform='Xvideos'))
         await bot.send_chat_action(
             chat_id=message.chat.id,
             action=ChatAction.UPLOAD_VIDEO,
@@ -162,7 +162,7 @@ async def handle_xvideos(message: types.Message) -> None:
                     if status:
                         await safe_edit_text(
                             status,
-                            bm.uploading_status(lang=language),
+                            bm.uploading_status(lang=language, platform='Xvideos'),
                         )
 
                     if como_arquivo:
@@ -201,7 +201,7 @@ async def handle_xvideos(message: types.Message) -> None:
                     if status:
                         await safe_edit_text(
                             status,
-                            bm.uploading_status(lang=language),
+                            bm.uploading_status(lang=language, platform='Xvideos'),
                         )
 
                     if como_arquivo:

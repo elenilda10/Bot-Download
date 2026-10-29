@@ -364,7 +364,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
 
         if show_service_status:
             status_message = await message.answer(
-                bm.downloading_video_status(lang=user_lang),
+                bm.downloading_video_status(lang=user_lang, platform='YouTube'),
                 reply_markup=progress_kb,
             )
 
@@ -490,7 +490,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             cache_key=cache_key,
             cache_file_type=cache_file_type,
             db_service=db,
-            upload_status_text=bm.uploading_status(lang=user_lang),
+            upload_status_text=bm.uploading_status(lang=user_lang, platform='YouTube'),
             upload_action="upload_video",
             update_status=_update_status_and_mark,
             send_chat_action=lambda action: send_chat_action_if_needed(
@@ -577,7 +577,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
         bot_url = await get_bot_url(bot)
         bot_avatar = await get_bot_avatar_thumbnail(bot)
         if show_service_status:
-            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang))
+            status_message = await message.answer(bm.downloading_audio_status(lang=user_lang, platform='YouTube'))
 
         yt = await _get_youtube_video_with_timeout(url)
         if not yt:
@@ -600,7 +600,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
                 )
 
         async def _send_cached(file_id: str):
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='YouTube'))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_audio", business_id
             )
@@ -642,7 +642,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='YouTube'))
             await send_chat_action_if_needed(
                 bot, message.chat.id, "upload_voice", business_id
             )
@@ -734,7 +734,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:
-        status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang))
+        status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang, platform='YouTube'))
     video_id = call.data.split(":", 2)[2]
     url = f"https://www.youtube.com/watch?v={video_id}"
     logging.info(
@@ -765,7 +765,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
                 )
 
         async def _send_cached(file_id: str):
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='YouTube'))
             await send_chat_action_if_needed(
                 bot, call.message.chat.id, "upload_audio", business_id
             )
@@ -810,7 +810,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
             await send_chat_action_if_needed(
                 bot, call.message.chat.id, "upload_audio", business_id
             )
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='YouTube'))
             audio_thumbnail = (
                 FSInputFile(str(prepared_metadata.thumbnail_path), filename="cover.jpg")
                 if prepared_metadata.thumbnail_path

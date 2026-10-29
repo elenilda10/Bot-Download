@@ -192,7 +192,7 @@ async def deliver_inline_photo(
             await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True, media_kind="photo")
             return
 
-        await edit_status(bm.uploading_status(lang=lang), media_kind="photo")
+        await edit_status(bm.uploading_status(lang=lang, platform=service_name), media_kind="photo")
         sent = await deps.bot.send_photo(
             chat_id=channel_id,
             photo=FSInputFile(photo_url) if (isinstance(photo_url, str) and os.path.exists(photo_url)) else photo_url,
@@ -205,7 +205,7 @@ async def deliver_inline_photo(
         db_id = sent.photo[-1].file_id
         await deps.db.add_file(cache_key, db_id, "photo")
     else:
-        await edit_status(bm.uploading_status(lang=lang), media_kind="photo")
+        await edit_status(bm.uploading_status(lang=lang, platform=service_name), media_kind="photo")
 
     edited = await safe_edit_inline_media_fn(
         deps.bot,
@@ -260,7 +260,7 @@ async def deliver_inline_video(
             await edit_status(bm.something_went_wrong(lang=lang), with_retry_button=True)
             return
 
-        await edit_status(bm.downloading_video_status(lang=lang))
+        await edit_status(bm.downloading_video_status(lang=lang, platform=service_name))
 
         # Inline messages keep a static download status. Avoid percentage/ETA edits
         # during the transfer to reduce Telegram Bot API edit traffic and 429 risk.
@@ -285,7 +285,7 @@ async def deliver_inline_video(
             await edit_status(bm.video_too_large(lang=lang))
             return
 
-        await edit_status(bm.uploading_status(lang=lang))
+        await edit_status(bm.uploading_status(lang=lang, platform=service_name))
         
         # Otimiza o container de vídeo para streaming instantâneo
         _optimize_video_for_streaming(metrics.path)
@@ -319,7 +319,7 @@ async def deliver_inline_video(
             db_id,
         )
     else:
-        await edit_status(bm.uploading_status(lang=lang))
+        await edit_status(bm.uploading_status(lang=lang, platform=service_name))
 
     edited = await safe_edit_inline_media_fn(
         deps.bot,

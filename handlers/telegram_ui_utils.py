@@ -553,6 +553,8 @@ def _build_progress_bar(percent: float, width: int = 10) -> str:
 
 
 def build_progress_status(label: str, progress: DownloadProgress) -> str:
+    platform = label.rsplit(" ", 1)[0] if label.rsplit(" ", 1)[-1] in {"video", "audio", "photo"} else label
+    header = bm.media_transfer_status(platform)
     speed = _format_bytes(int(progress.speed_bps)) + "/s"
     downloaded = _format_bytes(progress.downloaded_bytes)
     if progress.total_bytes > 0:
@@ -560,12 +562,12 @@ def build_progress_status(label: str, progress: DownloadProgress) -> str:
         percent = (progress.downloaded_bytes / progress.total_bytes) * 100.0
         bar = _build_progress_bar(percent)
         return (
-            f"⬇️ {label}\n"
+            f"{header}\n"
             f"{bar} {percent:.0f}%\n"
             f"{downloaded} / {total} • {speed} • {_format_eta_short(progress.eta_seconds)}"
         )
     return (
-        f"⬇️ {label}\n{downloaded} • {speed} • {_format_eta_short(progress.eta_seconds)}"
+        f"{header}\n{downloaded} • {speed} • {_format_eta_short(progress.eta_seconds)}"
     )
 
 

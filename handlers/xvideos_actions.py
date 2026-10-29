@@ -183,7 +183,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
     try:
         async with LIMIT:
             status = await message.answer(
-                bm.downloading_video_status(lang=language)
+                bm.downloading_video_status(lang=language, platform='Xvideos')
             )
 
             cached = await db.get_file_id(key)
@@ -220,7 +220,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
 
                     await safe_edit_text(
                         status,
-                        bm.uploading_status(lang=language),
+                        bm.uploading_status(lang=language, platform='Xvideos'),
                     )
 
                     if parts[1] == "a":

@@ -43,8 +43,8 @@ class PartialRedditDeliveryError(Exception):
 
 def _download_status(lang, settings, kind='unknown', count=1):
     if settings.get('as_document') == 'on':
-        return bm.downloading_file_status(lang=lang)
-    return bm.downloading_video_status(lang=lang, media_kind=kind, count=count)
+        return bm.downloading_file_status(lang=lang, platform='Reddit')
+    return bm.downloading_video_status(lang=lang, media_kind=kind, count=count, platform='Reddit')
 
 
 def _token(url):
@@ -157,7 +157,7 @@ async def _fresh(message, url, settings, lang, bot_url, scope, directory, status
     result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE, on_kind=on_kind)
     if not result:
         return False
-    await safe_edit_text(status_message, bm.uploading_status(lang=lang), parse_mode='HTML')
+    await safe_edit_text(status_message, bm.uploading_status(lang=lang, platform='Reddit'), parse_mode='HTML')
     entries = [{'kind': item.type, 'path': item.url} for item in result.media_list]
     if len(entries) > 100:
         raise ValueError('Reddit post exceeds media count limit')
@@ -269,7 +269,7 @@ async def reddit_media_action(call: types.CallbackQuery):
                 except TelegramBadRequest:
                     pass
         status = await call.message.answer(
-            bm.downloading_audio_status(lang=lang) if kind == 'audio' else bm.downloading_file_status(lang=lang),
+            bm.downloading_audio_status(lang=lang, platform='Reddit') if kind == 'audio' else bm.downloading_file_status(lang=lang, platform='Reddit'),
             parse_mode='HTML',
                                            reply_to_message_id=call.message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
@@ -298,7 +298,7 @@ async def reddit_media_action(call: types.CallbackQuery):
         if proc.returncode or not Path(audio).is_file() or not 0 < Path(audio).stat().st_size < MAX_FILE_SIZE:
             await handle_download_error(call.message)
             return
-        await safe_edit_text(status, bm.uploading_status(lang=lang), parse_mode='HTML')
+        await safe_edit_text(status, bm.uploading_status(lang=lang, platform='Reddit'), parse_mode='HTML')
         sent = await send_audio_with_thumbnail(
             call.message.answer_audio, audio=FSInputFile(audio), audio_path=audio,
             bot_avatar=await get_bot_avatar_thumbnail(bot), bot_url=bot_url,

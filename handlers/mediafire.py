@@ -102,7 +102,7 @@ async def handle_mediafire(message: types.Message):
                 return
 
         status = await message.answer(
-            bm.downloading_file_status(lang),
+            bm.downloading_file_status(lang, platform='MediaFire'),
             allow_sending_without_reply=True,
             parse_mode="HTML",
         )
@@ -116,7 +116,7 @@ async def handle_mediafire(message: types.Message):
                 )
 
                 await status.edit_text(
-                    bm.uploading_file_status(lang),
+                    bm.uploading_file_status(lang, platform='MediaFire'),
                     parse_mode="HTML",
                 )
 
