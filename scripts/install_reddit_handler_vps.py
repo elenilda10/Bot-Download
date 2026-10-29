@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import ast
 import os
+import runpy
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -94,6 +95,8 @@ def prepare(target, reference):
     result = {name: (reference / name).read_text() for name in NEW_FILES}
     name = 'messages/user_messages.py'
     result[name] = patch_message_status((target / name).read_text(), (reference / name).read_text())
+    status_installer = runpy.run_path(str(reference / 'scripts/install_platform_status_vps.py'))
+    result[name] = status_installer['patch_messages'](result[name])
     name = 'handlers/__init__.py'
     result[name] = patch_init((target / name).read_text())
     name = 'handlers/media_download.py'

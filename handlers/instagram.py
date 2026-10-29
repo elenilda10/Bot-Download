@@ -194,7 +194,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
     status_message: Optional[types.Message] = None
     if business_id is None:
         status_message = await message.answer(
-            bm.downloading_video_status(lang=user_lang)
+            bm.downloading_video_status(lang=user_lang, platform='Instagram')
         )
 
     local_files_to_clean: list[str] = []
@@ -234,7 +234,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                 await react_to_message(message, "👎", business_id=business_id)
                 return
 
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Instagram'))
             caption = bm.captions(
                 user_settings.get("captions", "on"), video_data.description, bot_url
             )

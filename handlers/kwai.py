@@ -248,7 +248,7 @@ async def process_kwai_link(
 
         if business_id is None:
             status_message = await message.answer(
-                bm.downloading_video_status(lang=lang)
+                bm.downloading_video_status(lang=lang, platform='Kwai')
             )
 
         result = await _download(url)
@@ -261,7 +261,7 @@ async def process_kwai_link(
             await handle_video_too_large(message, business_id=business_id, lang=lang)
             return
 
-        await safe_edit_text(status_message, bm.uploading_status(lang=lang))
+        await safe_edit_text(status_message, bm.uploading_status(lang=lang, platform='Kwai'))
         item = result.media_list[0]
         markup = _kwai_keyboard(url, token, settings, lang)
         caption = bm.captions(settings.get("captions", "on"), result.description, bot_url)
@@ -346,8 +346,8 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
     mp3_path = None
     try:
         status_message = await call.message.answer(
-            bm.downloading_audio_status(lang=lang)
-            if kind == "audio" else bm.downloading_video_status(lang=lang),
+            bm.downloading_audio_status(lang=lang, platform='Kwai')
+            if kind == "audio" else bm.downloading_video_status(lang=lang, platform='Kwai'),
             allow_sending_without_reply=True,
         )
         bot_url = await get_bot_url(bot)
@@ -431,7 +431,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             )
             return
 
-        await safe_edit_text(status_message, bm.uploading_status(lang=lang))
+        await safe_edit_text(status_message, bm.uploading_status(lang=lang, platform='Kwai'))
         avatar = await get_bot_avatar_thumbnail(bot)
         sent = await send_audio_with_thumbnail(
             call.message.answer_audio,

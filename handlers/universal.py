@@ -353,7 +353,7 @@ async def process_universal_link(
 
     if business_id is None:
         status_message = await message.answer(
-            bm.downloading_video_status(lang=user_lang),
+            bm.downloading_video_status(lang=user_lang, platform='Link'),
             reply_markup=progress_kb,
         )
 
@@ -441,7 +441,7 @@ async def process_universal_link(
             UNIVERSAL_PROGRESS[post_id]["status"] = "uploading"
 
         if status_message:
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Link'))
 
         user_captions_mode = user_settings.get("captions", "on")
         caption = bm.captions(user_captions_mode, res.description, bot_url)
@@ -694,7 +694,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
         return
 
     status_message = await call.message.answer(
-        bm.downloading_video_status(lang=user_lang)
+        bm.downloading_video_status(lang=user_lang, platform='Link')
     )
     try:
         res = await download_universal_media(original_url)
@@ -773,7 +773,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         return
 
     status_message = await call.message.answer(
-        bm.downloading_audio_status(lang=user_lang)
+        bm.downloading_audio_status(lang=user_lang, platform='Link')
     )
     bot_url = await get_bot_url(bot)
     bot_avatar = await get_bot_avatar_thumbnail(bot)
@@ -781,7 +781,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     if cached_audio_id:
         try:
             await safe_edit_text(
-                status_message, bm.uploading_status(lang=user_lang)
+                status_message, bm.uploading_status(lang=user_lang, platform='Link')
             )
             await send_chat_action_if_needed(
                 bot, call.message.chat.id, "upload_audio",
@@ -845,7 +845,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
             await safe_delete_message(status_message)
             return
 
-        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Link'))
         await send_chat_action_if_needed(bot, call.message.chat.id, "upload_audio", call.message.business_connection_id)
 
         sent_audio = await send_audio_with_thumbnail(

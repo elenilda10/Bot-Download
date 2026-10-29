@@ -168,7 +168,7 @@ async def process_pinterest_single_media(
     media = post.media_list[0]
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang, platform='Pinterest'))
 
     extension = "mp4"
     if media_kind == "photo":
@@ -284,7 +284,7 @@ async def process_pinterest_single_media(
         cache_key=cache_key,
         cache_file_type=media_kind,
         db_service=db,
-        upload_status_text=bm.uploading_status(lang=user_lang),
+        upload_status_text=bm.uploading_status(lang=user_lang, platform='Pinterest'),
         upload_action="upload_video" if media_kind == "video" else "upload_photo",
         update_status=_edit_status,
         send_chat_action=lambda action: send_chat_action_if_needed(bot, message.chat.id, action, business_id),
@@ -344,7 +344,7 @@ async def process_pinterest_media_group(
     user_lang = await db.get_language(message.from_user.id)
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang, platform='Pinterest'))
     await send_chat_action_if_needed(bot, message.chat.id, "upload_photo", business_id)
     request_id = f"pinterest_group:{message.chat.id}:{message.message_id}:{post.id}"
 
@@ -388,7 +388,7 @@ async def process_pinterest_media_group(
         metrics_label="pinterest_group",
         error_label="Pinterest",
         update_status=lambda text: safe_edit_text(status_message, text),
-        upload_status_text=bm.uploading_status(lang=user_lang),
+        upload_status_text=bm.uploading_status(lang=user_lang, platform='Pinterest'),
         send_entries=_send_entries,
         on_empty=lambda: handle_download_error(message, business_id=business_id),
         delete_status_message=lambda: safe_delete_message(status_message),

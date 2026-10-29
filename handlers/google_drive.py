@@ -102,7 +102,7 @@ async def handle_google_drive(message: types.Message):
                 return
 
         status = await message.answer(
-            bm.downloading_file_status(lang),
+            bm.downloading_file_status(lang, platform='Google Drive'),
             allow_sending_without_reply=True,
             parse_mode="HTML",
         )
@@ -117,7 +117,7 @@ async def handle_google_drive(message: types.Message):
                 )
 
                 await status.edit_text(
-                    bm.uploading_file_status(lang),
+                    bm.uploading_file_status(lang, platform='Google Drive'),
                     parse_mode="HTML",
                 )
 

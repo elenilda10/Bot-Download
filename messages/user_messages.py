@@ -205,7 +205,9 @@ def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
     return _truncate_escaped(footer, limit)
 
 
-def downloading_file_status(lang: str = DEFAULT_LANG):
+def downloading_file_status(lang: str = DEFAULT_LANG, *, platform: str | None = None):
+    if platform is not None:
+        return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="5854908544712707500">📦</tg-emoji>'
     return (
         f"{emoji} Baixando arquivo..."
@@ -214,7 +216,9 @@ def downloading_file_status(lang: str = DEFAULT_LANG):
     )
 
 
-def uploading_file_status(lang: str = DEFAULT_LANG):
+def uploading_file_status(lang: str = DEFAULT_LANG, *, platform: str | None = None):
+    if platform is not None:
+        return media_transfer_status(platform, uploading=True, lang=lang)
     emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
     return (
         f"{emoji} Enviando arquivo para o Telegram..."
@@ -232,12 +236,16 @@ def mediafire_document_caption(lang: str = DEFAULT_LANG):
     )
 
 
-def downloading_audio_status(lang: str = DEFAULT_LANG):
+def downloading_audio_status(lang: str = DEFAULT_LANG, *, platform: str | None = None):
+    if platform is not None:
+        return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="6024055893111345718">😄</tg-emoji>'
     return f"{emoji} Baixando áudio..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading audio..."
 
 
-def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "video", count: int = 1):
+def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "video", count: int = 1, platform: str | None = None):
+    if platform is not None:
+        return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji>'
     if media_kind == "unknown":
         return f"{emoji} Baixando..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading..."
@@ -248,7 +256,9 @@ def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "vid
     return f"{emoji} Baixando vídeo..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading video..."
 
 
-def uploading_status(lang: str = DEFAULT_LANG):
+def uploading_status(lang: str = DEFAULT_LANG, *, platform: str | None = None):
+    if platform is not None:
+        return media_transfer_status(platform, uploading=True, lang=lang)
     emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
     return f"{emoji} Enviando arquivo para o Telegram..." if _normalize_lang(lang) == "pt" else f"{emoji} Uploading file to Telegram..."
 
@@ -1036,3 +1046,17 @@ def channel_subscription_required(lang: str = DEFAULT_LANG) -> str:
         '<tg-emoji emoji-id="5866185097312474258">👇</tg-emoji> '
         'Join the channel and verify your subscription to unlock access.'
     )
+
+
+def media_transfer_status(platform: str, *, uploading: bool = False, lang: str = DEFAULT_LANG):
+    emoji = (
+        '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>' if uploading
+        else '<tg-emoji emoji-id="5435977112538324435">⬇️</tg-emoji>'
+    )
+    platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
+    label = html.escape(platform)
+    if _normalize_lang(lang) == "pt":
+        action = "Enviando para o Telegram…" if uploading else "Baixando conteúdo…"
+    else:
+        action = "Sending to Telegram…" if uploading else "Downloading content…"
+    return f"{emoji} {label}: {action}"

@@ -104,7 +104,7 @@ def _create_throttled_progress_updater(label: str, edit_fn, min_interval: float 
 
         current_mb = current / (1024 * 1024)
         total_mb = total / (1024 * 1024)
-        text = f"⏳ <b>{label}:</b> {percent}% ({current_mb:.1f}MB / {total_mb:.1f}MB)"
+        text = bm.media_transfer_status("TikTok") + f" {percent}% ({current_mb:.1f}MB / {total_mb:.1f}MB)"
 
         if text == last_rendered_text:
             return
@@ -309,7 +309,7 @@ async def process_tiktok_video(
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:
-        status_message = await message.answer(bm.downloading_video_status(lang=user_lang))
+        status_message = await message.answer(bm.downloading_video_status(lang=user_lang, platform='TikTok'))
 
     as_document = user_settings.get("as_document") == "on"
     variant_prefix = "doc" if as_document else "video"
@@ -417,7 +417,7 @@ async def process_tiktok_video(
         cache_key=media_cache_key,
         cache_file_type=cache_file_type,
         db_service=db,
-        upload_status_text=bm.uploading_status(lang=user_lang),
+        upload_status_text=bm.uploading_status(lang=user_lang, platform='TikTok'),
         upload_action="upload_video",
         update_status=_edit_status,
         send_chat_action=lambda action: send_chat_action_if_needed(
@@ -476,7 +476,7 @@ async def process_tiktok_photos(
     )
     status_message: Optional[types.Message] = None
     if business_id is None:
-        status_message = await message.answer(bm.uploading_status(lang=user_lang))
+        status_message = await message.answer(bm.uploading_status(lang=user_lang, platform='TikTok'))
 
     try:
         await send_chat_action_if_needed(
@@ -732,7 +732,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
     show_service_status = business_id is None
     status_message: Optional[types.Message] = None
     if show_service_status:
-        status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang))
+        status_message = await call.message.answer(bm.downloading_audio_status(lang=user_lang, platform='TikTok'))
     parts = call.data.split(":", 3)
     if len(parts) != 4:
         await handle_download_error(call.message, lang=user_lang)
@@ -754,7 +754,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
         audio_duration = None
         db_file_id = await db.get_file_id(cache_key)
         if db_file_id:
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='TikTok'))
             await send_chat_action_if_needed(
                 bot,
                 call.message.chat.id,
@@ -821,7 +821,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
             "upload_audio",
             business_id,
         )
-        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang))
+        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='TikTok'))
         sent_message = await send_audio_with_thumbnail(
             call.message.answer_audio,
             audio=FSInputFile(metrics.path),

@@ -135,7 +135,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
 
         user_lang = await db.get_language(message.from_user.id)
         status_message = await message.answer(
-            bm.downloading_video_status(lang=user_lang),
+            bm.downloading_video_status(lang=user_lang, platform='X/Twitter'),
             allow_sending_without_reply=True,
         )
 
@@ -185,6 +185,8 @@ async def handle_twitter_message(message: types.Message, **kwargs):
                 local_files_to_clean.append(item.url)
             if item.thumb and os.path.exists(item.thumb):
                 local_files_to_clean.append(item.thumb)
+
+        await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform="X/Twitter"))
 
         caption = bm.captions(
             user_settings.get("captions", "on"),

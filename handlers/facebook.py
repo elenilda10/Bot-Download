@@ -338,9 +338,9 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                     logging.warning("Facebook cached conversion file ID rejected")
 
         status = await call.message.answer(
-            bm.downloading_audio_status(lang=await db.get_language(actor))
+            bm.downloading_audio_status(lang=await db.get_language(actor), platform='Facebook')
             if kind == "audio"
-            else bm.downloading_video_status(lang=await db.get_language(actor))
+            else bm.downloading_video_status(lang=await db.get_language(actor), platform='Facebook')
         )
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         work_dir = tempfile.mkdtemp(prefix="facebook-action-", dir=OUTPUT_DIR)
@@ -411,7 +411,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             return
 
         await safe_edit_text(
-            status, bm.uploading_status(lang=await db.get_language(actor)),
+            status, bm.uploading_status(lang=await db.get_language(actor), platform='Facebook'),
         )
         caption = bm.captions(
             user_settings.get("captions", "on"),
@@ -596,7 +596,7 @@ async def process_facebook_link(
         }
         # No Facebook progress button: keep only the editable status message.
         if business_id is None:
-            status = await message.answer(bm.downloading_video_status(lang=lang))
+            status = await message.answer(bm.downloading_video_status(lang=lang, platform='Facebook'))
 
         result = await download_facebook_media(
             target,
@@ -630,7 +630,7 @@ async def process_facebook_link(
 
         _PROGRESS[progress_key]["status"] = "uploading"
         if status:
-            await safe_edit_text(status, bm.uploading_status(lang=lang))
+            await safe_edit_text(status, bm.uploading_status(lang=lang, platform='Facebook'))
 
         caption = bm.captions(
             settings.get("captions", "on"), result.description, bot_url,

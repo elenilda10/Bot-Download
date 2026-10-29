@@ -224,12 +224,12 @@ async def send_inline_youtube_music(
         bot_url = await get_bot_url_fn(deps.bot)
 
         async def _send_cached(_file_id: str):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='YouTube'))
             return None
 
         async def _download_audio():
             base_name = f"{yt.get('id', 'youtube_music')}_youtube_music_inline"
-            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang))
+            await _edit_inline_status(bm.downloading_audio_status(lang=user_lang, platform='YouTube'))
             return await retry_async_operation_fn(
                 lambda: download_mp3_with_ytdlp_metrics_fn(
                     request.source_url,
@@ -263,7 +263,7 @@ async def send_inline_youtube_music(
             )
 
         async def _send_downloaded(path: str, prepared_metadata):
-            await _edit_inline_status(bm.uploading_status(lang=user_lang))
+            await _edit_inline_status(bm.uploading_status(lang=user_lang, platform='YouTube'))
             bot_avatar = await get_bot_avatar_thumbnail_fn(deps.bot)
             audio_thumbnail = (
                 FSInputFile(str(prepared_metadata.thumbnail_path), filename="cover.jpg")
