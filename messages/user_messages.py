@@ -1049,11 +1049,14 @@ def channel_subscription_required(lang: str = DEFAULT_LANG) -> str:
 
 
 def media_transfer_status(platform: str, *, uploading: bool = False, lang: str = DEFAULT_LANG):
-    emoji = '<tg-emoji emoji-id="5435977112538324435">⬇️</tg-emoji>'
+    emoji = (
+        '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>' if uploading
+        else '<tg-emoji emoji-id="5435977112538324435">⬇️</tg-emoji>'
+    )
     platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
     label = html.escape(platform)
     if _normalize_lang(lang) == "pt":
-        action = "Enviando…" if uploading else "Baixando…"
+        action = "Enviando para o Telegram…" if uploading else "Baixando conteúdo…"
     else:
-        action = "Uploading…" if uploading else "Downloading…"
+        action = "Sending to Telegram…" if uploading else "Downloading content…"
     return f"{emoji} {label}: {action}"

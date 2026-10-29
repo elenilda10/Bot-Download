@@ -17,13 +17,16 @@ PLATFORMS = {
 STATUS_NAMES = {'downloading_video_status', 'downloading_audio_status',
                 'downloading_file_status', 'uploading_status', 'uploading_file_status'}
 HELPER = '''def media_transfer_status(platform: str, *, uploading: bool = False, lang: str = DEFAULT_LANG):
-    emoji = '<tg-emoji emoji-id="5435977112538324435">⬇️</tg-emoji>'
+    emoji = (
+        '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>' if uploading
+        else '<tg-emoji emoji-id="5435977112538324435">⬇️</tg-emoji>'
+    )
     platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
     label = html.escape(platform)
     if _normalize_lang(lang) == "pt":
-        action = "Enviando…" if uploading else "Baixando…"
+        action = "Enviando para o Telegram…" if uploading else "Baixando conteúdo…"
     else:
-        action = "Uploading…" if uploading else "Downloading…"
+        action = "Sending to Telegram…" if uploading else "Downloading content…"
     return f"{emoji} {label}: {action}"
 '''
 
@@ -49,8 +52,14 @@ def patch_messages(source):
     for start, end, replacement in sorted(edits, reverse=True):
         lines[start:end] = [replacement]
     source = ''.join(lines)
-    if not any(isinstance(n, ast.FunctionDef) and n.name == 'media_transfer_status' for n in ast.parse(source).body):
+    helper = next((n for n in ast.parse(source).body
+                   if isinstance(n, ast.FunctionDef) and n.name == 'media_transfer_status'), None)
+    if helper is None:
         source += '\n\n' + HELPER
+    else:
+        lines = source.splitlines(keepends=True)
+        lines[helper.lineno - 1:helper.end_lineno] = [HELPER]
+        source = ''.join(lines)
     return source
 
 

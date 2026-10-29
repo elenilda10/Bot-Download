@@ -29,7 +29,7 @@ def downloading_video_status(lang="pt"):
         result = installer.patch_messages(source)
         namespace = messages(result)
         self.assertEqual(namespace['downloading_video_status']('en'), 'LOCAL VIDEO en')
-        self.assertIn('X/Twitter: Baixando…', namespace['downloading_video_status'](platform='Twitter'))
+        self.assertIn('X/Twitter: Baixando conteúdo…', namespace['downloading_video_status'](platform='Twitter'))
         self.assertEqual(installer.patch_messages(result), result)
 
     def test_all_platform_calls_are_escaped_and_localized(self):
@@ -37,10 +37,20 @@ def downloading_video_status(lang="pt"):
         for platform in installer.PLATFORMS.values():
             for name in installer.STATUS_NAMES:
                 text = namespace[name](lang='pt', platform=platform)
-                self.assertIn('5435977112538324435', text)
-                self.assertIn('Enviando…' if name.startswith('uploading') else 'Baixando…', text)
-        self.assertIn('Uploading…', namespace['uploading_status']('en', platform='Twitter'))
+                self.assertIn('5866355487255039002' if name.startswith('uploading') else '5435977112538324435', text)
+                self.assertIn('Enviando para o Telegram…' if name.startswith('uploading') else 'Baixando conteúdo…', text)
+        self.assertIn('Sending to Telegram…', namespace['uploading_status']('en', platform='Twitter'))
         self.assertIn('&lt;name&gt;', namespace['media_transfer_status']('<name>'))
+
+    def test_upgrade_replaces_existing_helper_and_preserves_neighbors(self):
+        source = (ROOT / 'messages/user_messages.py').read_text()
+        start = source.index('def media_transfer_status(')
+        old = source[:start] + 'def media_transfer_status(*args, **kwargs):\n    return "OLD STATUS"\n\ndef local_customization():\n    return "KEEP"\n'
+        revised = installer.patch_messages(old)
+        namespace = messages(revised)
+        self.assertIn('5866355487255039002', namespace['uploading_status'](platform='Reddit'))
+        self.assertEqual(namespace['local_customization'](), 'KEEP')
+        self.assertEqual(installer.patch_messages(revised), revised)
 
     def test_selective_call_patch_handles_multiline_unicode_and_trailing_comma(self):
         source = '''a = "ç"; x = bm.downloading_video_status(lang="pt")

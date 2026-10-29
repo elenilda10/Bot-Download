@@ -1,7 +1,8 @@
 # Mensagens de transferência por plataforma
 
-O status usa o emoji personalizado `5435977112538324435` e o nome da plataforma:
-`X/Twitter: Baixando…` → `X/Twitter: Enviando…`. Fotos, vídeos, álbuns,
+O status de download usa o emoji personalizado `5435977112538324435`; no envio,
+troca para o foguete `5866355487255039002`. A mesma mensagem muda de
+`⬇️ X/Twitter: Baixando conteúdo…` para `🚀 X/Twitter: Enviando para o Telegram…`. Fotos, vídeos, álbuns,
 áudio e documentos usam o mesmo texto. Português e inglês são preservados.
 
 As funções centralizadas em `messages/user_messages.py` aceitam `platform` como
@@ -20,6 +21,6 @@ Para instalar na VPS, execute o script a partir desta revisão:
 O instalador adapta as funções e chamadas dos arquivos presentes no destino,
 valida a sintaxe antes de escrever e salva backups em `backups/platform-status-*`.
 Não muda `.env`, não reinicia o serviço e preserva o restante dos handlers locais.
-O novo emoji precisa ser conferido no Telegram após a instalação.
+A troca dos emojis precisa ser conferida no Telegram após a instalação.
 
 Verificação isolada: `python tests/test_platform_status.py`.
