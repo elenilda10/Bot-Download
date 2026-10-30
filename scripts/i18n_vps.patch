@@ -239,7 +239,7 @@ index b10cdc1..579e7bb 100644
          logging.error('Failed to clean up expired file cache entries: %s', e)
      for admin_id in ADMINS_UID:
 diff --git a/handlers/channel_membership.py b/handlers/channel_membership.py
-index 51a1858..6d68edc 100644
+index 51a1858..ed30331 100644
 --- a/handlers/channel_membership.py
 +++ b/handlers/channel_membership.py
 @@ -1,3 +1,4 @@
@@ -247,6 +247,15 @@ index 51a1858..6d68edc 100644
  import logging
  
  from aiogram.enums import ChatType
+@@ -9,7 +10,7 @@ from services.runtime.channel_subscription_notices import (
+     remove_notice,
+ )
+ 
+-CHANNEL_USERNAME = "savevideodl"
++CHANNEL_USERNAME = "nexohubdev"
+ 
+ 
+ def _is_member(member):
 @@ -26,15 +27,11 @@ def _is_member(member):
  def _confirmation(lang):
      if str(lang).lower().startswith("pt"):
@@ -4058,7 +4067,7 @@ index 0000000..0604960
 +  "download_error.reason.verification": "Não foi possível confirmar que a mídia pertence à publicação enviada."
 +}
 diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
-index 1513cfe..113f9eb 100644
+index 1513cfe..b134310 100644
 --- a/keyboards/inline_keyboards.py
 +++ b/keyboards/inline_keyboards.py
 @@ -1,38 +1,26 @@
@@ -4531,8 +4540,9 @@ index 1513cfe..113f9eb 100644
              [
                  InlineKeyboardButton(
 -                    text="📢 Entrar no canal" if is_pt else "📢 Join Channel",
+-                    url="https://t.me/SaveVideoDL",
 +                    text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
-                     url="https://t.me/SaveVideoDL",
++                    url="https://t.me/NexoHubDev",
                  )
              ],
              [
@@ -6144,7 +6154,7 @@ index b887739..3e402a9 100644
  
  class UserBannedMiddleware(BaseMiddleware):
 diff --git a/middlewares/channel_subscription.py b/middlewares/channel_subscription.py
-index f100870..34faa48 100644
+index f100870..f1a97ca 100644
 --- a/middlewares/channel_subscription.py
 +++ b/middlewares/channel_subscription.py
 @@ -1,3 +1,4 @@
@@ -6152,6 +6162,15 @@ index f100870..34faa48 100644
  import logging
  import time
  from datetime import datetime, timezone
+@@ -21,7 +22,7 @@ import keyboards as kb
+ import messages as bm
+ from app_context import db
+ 
+-CHANNEL_ID = "@SaveVideoDL"
++CHANNEL_ID = "@NexoHubDev"
+ VERIFY_CALLBACK = "channel_sub:verify"
+ 
+ 
 @@ -37,29 +38,16 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
          self._resuming = resuming_users
  

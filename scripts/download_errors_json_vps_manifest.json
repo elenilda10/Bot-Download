@@ -1,7 +1,11 @@
 {
   "base_commit": "57234221ad7df86a1888b7063f1897c7f71a3271",
-  "patch_sha256": "f04d123fede21d3158aefb1fbf77b28d940b8fe62cd293562db71107ab8fd395",
+  "patch_sha256": "ce0a926df432632f38610a198d9370fdf4fb5bb90e954e99b66fa6307c0ce580",
   "files": {
+    "handlers/channel_membership.py": {
+      "base_sha256": "8f3df93c7db71a93326b246b4e85298142a6cfbdec4f712489bd9e60dcdfc01e",
+      "result_sha256": "3a90be33b08fdae26070f09a50905644267c0905209cf5b65bb9b3c595e7f748"
+    },
     "handlers/telegram_ui_utils.py": {
       "base_sha256": "f5d31bb7fff083b1af803fe8a5a6f5757a9e67453bb0b35f4f67491ec31c6290",
       "result_sha256": "d1bedae47b257b7f97ac42e5c7ce831d2e9112ac1eb9623bf662492c5b8a8195"
@@ -10,9 +14,17 @@
       "base_sha256": "8d7fe2c30f79a7f3f3cc9e909cacbc3b5db9d245e33b7eeb0cd41fa524abc0d4",
       "result_sha256": "26c703d2ee9e6e89a43d712cbd04e71d16bc4fa2ea95dff943a86c761a8d3bd9"
     },
+    "keyboards/inline_keyboards.py": {
+      "base_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a",
+      "result_sha256": "e4e4b8f4b069394ab830b7bef39afb9e894df7eb09aa1e13864fe6fb31c6b06b"
+    },
     "messages/user_messages.py": {
       "base_sha256": "511356f8ac32b9cce5260620896cc162b4c473719a89fce30d4cdda3604a18a2",
       "result_sha256": "5d3b395dbe4e46bb29e354e2d22fac6ad482d723e1d9640aef373171721c88fc"
+    },
+    "middlewares/channel_subscription.py": {
+      "base_sha256": "e56e72402378af3e083e9d34b7efd54fb3f35d33d2356e6dd1234b4814630355",
+      "result_sha256": "e18fa039b993dd31ef7a8fc1b222ff74ab34de35f95f055514e7345f4c3ea380"
     },
     "services/platforms/youtube_media.py": {
       "base_sha256": "1943a287258a4a512f807d091e09cd43ac2487f69caf1c744c623d63d2ac73b0",

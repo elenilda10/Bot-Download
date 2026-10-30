@@ -10,7 +10,7 @@ from services.runtime.channel_subscription_notices import (
     remove_notice,
 )
 
-CHANNEL_USERNAME = "savevideodl"
+CHANNEL_USERNAME = "nexohubdev"
 
 
 def _is_member(member):

@@ -1,3 +1,16 @@
+diff --git a/handlers/channel_membership.py b/handlers/channel_membership.py
+index 6d68edc..ed30331 100644
+--- a/handlers/channel_membership.py
++++ b/handlers/channel_membership.py
+@@ -10,7 +10,7 @@ from services.runtime.channel_subscription_notices import (
+     remove_notice,
+ )
+ 
+-CHANNEL_USERNAME = "savevideodl"
++CHANNEL_USERNAME = "nexohubdev"
+ 
+ 
+ def _is_member(member):
 diff --git a/handlers/deezer.py b/handlers/deezer.py
 index f507ef3..ca40cbc 100644
 --- a/handlers/deezer.py
@@ -544,6 +557,19 @@ index b346421..0604960 100644
 +  "download_error.reason.internal": "Ocorreu uma falha interna ao processar a solicitação.",
 +  "download_error.reason.verification": "Não foi possível confirmar que a mídia pertence à publicação enviada."
  }
+diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
+index 113f9eb..b134310 100644
+--- a/keyboards/inline_keyboards.py
++++ b/keyboards/inline_keyboards.py
+@@ -623,7 +623,7 @@ def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMar
+             [
+                 InlineKeyboardButton(
+                     text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
+-                    url="https://t.me/SaveVideoDL",
++                    url="https://t.me/NexoHubDev",
+                 )
+             ],
+             [
 diff --git a/main.py b/main.py
 index a99e903..59fe1a3 100644
 --- a/main.py
@@ -594,6 +620,19 @@ index 2ecbc39..b2287ff 100644
      "LocalizationMiddleware",
      "AntifloodMiddleware",
      "UserBannedMiddleware",
+diff --git a/middlewares/channel_subscription.py b/middlewares/channel_subscription.py
+index 34faa48..f1a97ca 100644
+--- a/middlewares/channel_subscription.py
++++ b/middlewares/channel_subscription.py
+@@ -22,7 +22,7 @@ import keyboards as kb
+ import messages as bm
+ from app_context import db
+ 
+-CHANNEL_ID = "@SaveVideoDL"
++CHANNEL_ID = "@NexoHubDev"
+ VERIFY_CALLBACK = "channel_sub:verify"
+ 
+ 
 diff --git a/middlewares/download_failure.py b/middlewares/download_failure.py
 new file mode 100644
 index 0000000..9eaaea3

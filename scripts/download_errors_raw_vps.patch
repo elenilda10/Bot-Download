@@ -1,3 +1,29 @@
+diff --git a/handlers/channel_membership.py b/handlers/channel_membership.py
+index 6d68edc..ed30331 100644
+--- a/handlers/channel_membership.py
++++ b/handlers/channel_membership.py
+@@ -10,7 +10,7 @@ from services.runtime.channel_subscription_notices import (
+     remove_notice,
+ )
+ 
+-CHANNEL_USERNAME = "savevideodl"
++CHANNEL_USERNAME = "nexohubdev"
+ 
+ 
+ def _is_member(member):
+diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
+index 113f9eb..b134310 100644
+--- a/keyboards/inline_keyboards.py
++++ b/keyboards/inline_keyboards.py
+@@ -623,7 +623,7 @@ def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMar
+             [
+                 InlineKeyboardButton(
+                     text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
+-                    url="https://t.me/SaveVideoDL",
++                    url="https://t.me/NexoHubDev",
+                 )
+             ],
+             [
 diff --git a/messages/user_messages.py b/messages/user_messages.py
 index d6c585d..3159ede 100644
 --- a/messages/user_messages.py
@@ -33,3 +59,16 @@ index d6c585d..3159ede 100644
      return (_t(header, lang, platform=html.escape(label)) +
 -            '\n\n<pre><code class="language-json">' + rendered + '</code></pre>')
 +            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')
+diff --git a/middlewares/channel_subscription.py b/middlewares/channel_subscription.py
+index 34faa48..f1a97ca 100644
+--- a/middlewares/channel_subscription.py
++++ b/middlewares/channel_subscription.py
+@@ -22,7 +22,7 @@ import keyboards as kb
+ import messages as bm
+ from app_context import db
+ 
+-CHANNEL_ID = "@SaveVideoDL"
++CHANNEL_ID = "@NexoHubDev"
+ VERIFY_CALLBACK = "channel_sub:verify"
+ 
+ 

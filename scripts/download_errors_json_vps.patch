@@ -1,3 +1,16 @@
+diff --git a/handlers/channel_membership.py b/handlers/channel_membership.py
+index 6d68edc..ed30331 100644
+--- a/handlers/channel_membership.py
++++ b/handlers/channel_membership.py
+@@ -10,7 +10,7 @@ from services.runtime.channel_subscription_notices import (
+     remove_notice,
+ )
+ 
+-CHANNEL_USERNAME = "savevideodl"
++CHANNEL_USERNAME = "nexohubdev"
+ 
+ 
+ def _is_member(member):
 diff --git a/handlers/telegram_ui_utils.py b/handlers/telegram_ui_utils.py
 index 3ae602b..bf48c19 100644
 --- a/handlers/telegram_ui_utils.py
@@ -105,6 +118,19 @@ index 542b50e..987d64f 100644
          )
      except Exception as e:
          logging.exception(
+diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
+index 113f9eb..b134310 100644
+--- a/keyboards/inline_keyboards.py
++++ b/keyboards/inline_keyboards.py
+@@ -623,7 +623,7 @@ def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMar
+             [
+                 InlineKeyboardButton(
+                     text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
+-                    url="https://t.me/SaveVideoDL",
++                    url="https://t.me/NexoHubDev",
+                 )
+             ],
+             [
 diff --git a/messages/user_messages.py b/messages/user_messages.py
 index 8251df7..3159ede 100644
 --- a/messages/user_messages.py
@@ -134,6 +160,19 @@ index 8251df7..3159ede 100644
 +    detail = diagnostic.message if diagnostic and diagnostic.message else _t('download_error.reason.' + reason, lang)
 +    return (_t(header, lang, platform=html.escape(label)) +
 +            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')
+diff --git a/middlewares/channel_subscription.py b/middlewares/channel_subscription.py
+index 34faa48..f1a97ca 100644
+--- a/middlewares/channel_subscription.py
++++ b/middlewares/channel_subscription.py
+@@ -22,7 +22,7 @@ import keyboards as kb
+ import messages as bm
+ from app_context import db
+ 
+-CHANNEL_ID = "@SaveVideoDL"
++CHANNEL_ID = "@NexoHubDev"
+ VERIFY_CALLBACK = "channel_sub:verify"
+ 
+ 
 diff --git a/services/platforms/youtube_media.py b/services/platforms/youtube_media.py
 index a6f61e6..2e8494d 100644
 --- a/services/platforms/youtube_media.py

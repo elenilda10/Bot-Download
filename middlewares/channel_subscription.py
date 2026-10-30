@@ -22,7 +22,7 @@ import keyboards as kb
 import messages as bm
 from app_context import db
 
-CHANNEL_ID = "@SaveVideoDL"
+CHANNEL_ID = "@NexoHubDev"
 VERIFY_CALLBACK = "channel_sub:verify"
 
 
