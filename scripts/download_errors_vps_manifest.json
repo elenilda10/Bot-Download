@@ -1,7 +1,11 @@
 {
   "base_commit": "85cf09898b93ccacfd4c19cfd623866494dd1fea",
-  "patch_sha256": "dd76a19ad4548b5ccde9b65fd213334e4e19bb05ab950fb5499c3c7c86eff843",
+  "patch_sha256": "1657df9e572f38a5aa08cc4e577ece7e2b84ebb318653cf6b889e9d35248c6d2",
   "files": {
+    "handlers/channel_membership.py": {
+      "base_sha256": "8f3df93c7db71a93326b246b4e85298142a6cfbdec4f712489bd9e60dcdfc01e",
+      "result_sha256": "3a90be33b08fdae26070f09a50905644267c0905209cf5b65bb9b3c595e7f748"
+    },
     "handlers/deezer.py": {
       "base_sha256": "3b71a66fa78c3466cdebe436484e8f97d018297b306a158ece079951f60a4215",
       "result_sha256": "df6d4c3b2833dcd6f1ad0e00be06c5aa3572757f8524b64636497a20a7ddaefb"
@@ -86,6 +90,10 @@
       "base_sha256": "3414fc1c6b650d5a708eb19213a47cc10390b738ad4f4a5b7bb853fd4eaa3f18",
       "result_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730"
     },
+    "keyboards/inline_keyboards.py": {
+      "base_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a",
+      "result_sha256": "e4e4b8f4b069394ab830b7bef39afb9e894df7eb09aa1e13864fe6fb31c6b06b"
+    },
     "main.py": {
       "base_sha256": "09362a43a5499393bb84cfb9afb6c88c89ca19b0b1ae0b0bd6e4c55b85d025fb",
       "result_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10"
@@ -97,6 +105,10 @@
     "middlewares/__init__.py": {
       "base_sha256": "1b38d2106f79c9de276228ababb5c35d6790ef4b79c19b4ac0c2e2e87470a682",
       "result_sha256": "b55637e304b8c2d65f5105f09c87c9405333f8d9061dca87df6207cd6515ea94"
+    },
+    "middlewares/channel_subscription.py": {
+      "base_sha256": "e56e72402378af3e083e9d34b7efd54fb3f35d33d2356e6dd1234b4814630355",
+      "result_sha256": "e18fa039b993dd31ef7a8fc1b222ff74ab34de35f95f055514e7345f4c3ea380"
     },
     "middlewares/download_failure.py": {
       "base_sha256": null,

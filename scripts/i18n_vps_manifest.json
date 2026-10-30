@@ -1,6 +1,6 @@
 {
   "base_commit": "fc89407d2b44c826da80722a2b3325edba8ccaa3",
-  "patch_sha256": "474c89a4d5398803f9aa5f3c0d99835fb06b0bef44ee500eda3c0df33405d250",
+  "patch_sha256": "776510eba3a5d6545f63e3cd4833485acede25e4ac98b0df3873c961d6715f16",
   "files": {
     "handlers/admin.py": {
       "base_sha256": "3cbf07d99abf37bdaca32d00c1de4fb5f869692e85f0a4d0778e7709ab55102a",
@@ -8,7 +8,7 @@
     },
     "handlers/channel_membership.py": {
       "base_sha256": "ab880f0c223c6a953e64b6f9648c97670c525fbd73950e11bce4cdb1724cba62",
-      "result_sha256": "8f3df93c7db71a93326b246b4e85298142a6cfbdec4f712489bd9e60dcdfc01e"
+      "result_sha256": "3a90be33b08fdae26070f09a50905644267c0905209cf5b65bb9b3c595e7f748"
     },
     "handlers/commands.py": {
       "base_sha256": "5e266553178cedd961d560b10a835a8027af852a6a82729446de26c9cbb22dff",
@@ -156,7 +156,7 @@
     },
     "keyboards/inline_keyboards.py": {
       "base_sha256": "2d694264763f524a24725dc11052aee6043fb82a195950a941d4d71df68a2838",
-      "result_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a"
+      "result_sha256": "e4e4b8f4b069394ab830b7bef39afb9e894df7eb09aa1e13864fe6fb31c6b06b"
     },
     "main.py": {
       "base_sha256": "c46316b85ac562265fbd013e5751dedddb7b966b7ae306bd14eab463de38671f",
@@ -184,7 +184,7 @@
     },
     "middlewares/channel_subscription.py": {
       "base_sha256": "be29c27aeb6f37fa5be3596ea919b3668aa55320db331af4befd818875d70a31",
-      "result_sha256": "e56e72402378af3e083e9d34b7efd54fb3f35d33d2356e6dd1234b4814630355"
+      "result_sha256": "e18fa039b993dd31ef7a8fc1b222ff74ab34de35f95f055514e7345f4c3ea380"
     },
     "middlewares/chat_tracker.py": {
       "base_sha256": "b1d91de9a7a746e71c49dad1b0617db3fbe0a2f217aefd85e21ef1a1a02abab2",

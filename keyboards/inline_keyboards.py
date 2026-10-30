@@ -623,7 +623,7 @@ def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMar
             [
                 InlineKeyboardButton(
                     text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
-                    url="https://t.me/SaveVideoDL",
+                    url="https://t.me/NexoHubDev",
                 )
             ],
             [
