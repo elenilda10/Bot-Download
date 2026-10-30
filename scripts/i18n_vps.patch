@@ -4880,7 +4880,7 @@ index 650de89..332bd2b 100644
          removed_files=removed_files,
          removed_dirs=removed_dirs,
 diff --git a/messages/user_messages.py b/messages/user_messages.py
-index c0a2e8a..d6c585d 100644
+index c0a2e8a..3159ede 100644
 --- a/messages/user_messages.py
 +++ b/messages/user_messages.py
 @@ -1,176 +1,116 @@
@@ -6028,7 +6028,7 @@ index c0a2e8a..d6c585d 100644
      )
  
  
-@@ -1056,7 +850,34 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
+@@ -1056,7 +850,18 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
      platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
      label = html.escape(platform)
      if _normalize_lang(lang) == "pt":
@@ -6041,30 +6041,14 @@ index c0a2e8a..d6c585d 100644
 +
 +
 +def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None, diagnostic=None):
-+    import json
++    """Show the original extractor error as code, without a generated JSON wrapper."""
 +    from utils.download_errors import REASONS
 +    reason = reason if reason in REASONS else 'unknown'
 +    label = str(platform) if platform else _t('download_error.generic_platform', lang)
 +    header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
-+    action = ('support' if reason in {'authentication', 'access_denied', 'redirect_loop', 'region'}
-+              else 'link' if reason in {'not_found', 'unsupported', 'restricted'}
-+              else 'limit' if reason == 'too_large'
-+              else 'delivery' if reason == 'delivery' else 'retry')
-+    payload = {
-+        'platform': label,
-+        'code': reason,
-+        'reason': _t('download_error.reason.' + reason, lang),
-+    }
-+    if diagnostic and diagnostic.message:
-+        payload['error'] = diagnostic.message
-+    if diagnostic and diagnostic.error_type:
-+        payload['error_type'] = diagnostic.error_type
-+    payload['action'] = _t('download_error.action.' + action, lang)
-+    if reference:
-+        payload['reference'] = str(reference)
-+    rendered = html.escape(json.dumps(payload, ensure_ascii=False, indent=2))
++    detail = diagnostic.message if diagnostic and diagnostic.message else _t('download_error.reason.' + reason, lang)
 +    return (_t(header, lang, platform=html.escape(label)) +
-+            '\n\n<pre><code class="language-json">' + rendered + '</code></pre>')
++            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')
 diff --git a/middlewares/__init__.py b/middlewares/__init__.py
 index 1ee9bcb..b2287ff 100644
 --- a/middlewares/__init__.py

@@ -1,6 +1,6 @@
 {
   "base_commit": "85cf09898b93ccacfd4c19cfd623866494dd1fea",
-  "patch_sha256": "4b17ea16c1ea473917605358a590997c7f9a0963b7f035bc283337fd63fcb7ef",
+  "patch_sha256": "dd76a19ad4548b5ccde9b65fd213334e4e19bb05ab950fb5499c3c7c86eff843",
   "files": {
     "handlers/deezer.py": {
       "base_sha256": "3b71a66fa78c3466cdebe436484e8f97d018297b306a158ece079951f60a4215",
@@ -92,7 +92,7 @@
     },
     "messages/user_messages.py": {
       "base_sha256": "80e06b6e0c59afba44a03dd528eff08c05d6d5254e235a90977b96325ae702d7",
-      "result_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d"
+      "result_sha256": "5d3b395dbe4e46bb29e354e2d22fac6ad482d723e1d9640aef373171721c88fc"
     },
     "middlewares/__init__.py": {
       "base_sha256": "1b38d2106f79c9de276228ababb5c35d6790ef4b79c19b4ac0c2e2e87470a682",

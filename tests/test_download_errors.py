@@ -53,10 +53,10 @@ def test_classifies_only_supported_evidence(error, expected):
 @pytest.mark.parametrize('reason', sorted(REASONS))
 def test_every_reason_has_localized_action_without_raw_output(lang, reason):
     text = bm.download_failure_message(reason, lang=lang, platform='Instagram', reference='A1B2C3D4')
-    assert 'Instagram' in text and 'A1B2C3D4' in text
+    assert 'Instagram' in text and 'A1B2C3D4' not in text
     assert 'download_error.' not in text
     assert len(text.split('\n\n')) == 2
-    assert '<pre><code class="language-json">' in text
+    assert '<pre><code>' in text
     assert len(text) < 1200
     assert 'cookie' not in text.lower() and 'traceback' not in text.lower()
 
@@ -64,7 +64,7 @@ def test_every_reason_has_localized_action_without_raw_output(lang, reason):
 def test_escape_and_unknown_fallback():
     text = bm.download_failure_message('SECRET', platform='<x>', reference='<y>', lang='pt')
     assert 'SECRET' not in text
-    assert '&lt;x&gt;' in text and '&lt;y&gt;' in text
+    assert '&lt;x&gt;' in text and '&lt;y&gt;' not in text
     assert 'Não recebemos uma causa específica' in text
 
 
@@ -141,7 +141,7 @@ async def test_handler_formats_cause_and_logs_same_reference_without_secrets():
                  error=Exception('HttpError: TooManyRedirects cookie=SECRET'), business_id='connection')
     text = send.await_args.args[1]
     assert 'Instagram' in text and 'redirecionamentos' in text
-    assert 'A1B2C3D4' in text and 'SECRET' not in text and 'HttpError' not in text
+    assert 'A1B2C3D4' not in text and 'SECRET' not in text and 'HttpError' not in text
     assert 'error' not in send.await_args.kwargs
     assert send.await_args.kwargs['parse_mode'] == 'HTML'
     assert logger.event.call_args.kwargs['error_reference'] == 'A1B2C3D4'
@@ -161,21 +161,18 @@ async def test_handler_retains_collected_cause_and_explicit_text_override():
 
 def parse_diagnostic(text):
     import html
-    import json
-    return json.loads(html.unescape(text.split('<code class="language-json">', 1)[1].split('</code>', 1)[0]))
+    return html.unescape(text.split('<pre><code>', 1)[1].split('</code>', 1)[0])
 
 
-def test_json_contains_actual_geoblock_error_and_reference():
+def test_code_block_contains_only_actual_extractor_error():
     error = type('DownloadError', (Exception,), {})(
         'ERROR: [youtube] GAozEIDKArM: The uploader has not made this video available in your country')
     failure = diagnostic_failure(error)
     assert failure.reason == 'region'
     text = bm.download_failure_message(failure.reason, diagnostic=failure, platform='YouTube', reference='21640B0B', lang='pt')
-    data = parse_diagnostic(text)
-    assert data['error'] == str(error)
-    assert data['code'] == 'region'
-    assert data['error_type'] == 'DownloadError'
-    assert data['reference'] == '21640B0B'
+    assert parse_diagnostic(text) == str(error)
+    assert 'language-json' not in text and '21640B0B' not in text
+    assert 'error_type' not in text and 'action' not in text
 
 
 def test_unknown_error_is_retained_as_diagnostic_without_fabricating_cause():
@@ -184,7 +181,7 @@ def test_unknown_error_is_retained_as_diagnostic_without_fabricating_cause():
     assert failure.reason == 'unknown'
     assert failure.message == 'Extractor returned an unexpected empty response'
     data = parse_diagnostic(bm.download_failure_message('unknown', diagnostic=failure, lang='en'))
-    assert data['error'] == failure.message
+    assert data == failure.message
 
 
 def test_diagnostic_redacts_credentials_paths_urls_and_limits_output():
@@ -199,4 +196,4 @@ def test_diagnostic_redacts_credentials_paths_urls_and_limits_output():
     data = diagnostic_failure(Exception(raw))
     text = bm.download_failure_message(data.reason, diagnostic=data, lang='pt')
     assert len(text) < 4096
-    assert parse_diagnostic(text)['code'] == 'access_denied'
+    assert parse_diagnostic(text) == data.message

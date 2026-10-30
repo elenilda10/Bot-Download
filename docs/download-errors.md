@@ -1,10 +1,13 @@
 # Erros de download
 
-A resposta comum contém um título e um bloco de código JSON com plataforma,
-código, motivo reconhecido, orientação e referência aleatória de oito caracteres.
-Quando disponível, inclui a classe e um trecho do erro real do extrator, com até
-500 caracteres, após remoção de linhas sensíveis, URLs, caminhos e sequências longas. O evento `download_user_failure` registra a mesma
-`error_reference`, o código seguro e a classe da exceção, sem copiar o texto bruto da exceção.
+A resposta comum contém um título e um bloco de código simples com o trecho
+original do erro retornado pelo extrator. Não há um objeto JSON criado pelo bot,
+campos auxiliares ou orientações adicionadas ao bloco. Sem uma mensagem do
+extrator, o bloco usa o motivo conhecido localizado como fallback.
+
+O trecho tem até 500 caracteres, após remoção de linhas sensíveis, URLs, caminhos
+e sequências longas. O evento `download_user_failure` mantém a referência interna
+e o código seguro nos logs, sem copiar o texto bruto da exceção.
 Para localizar uma referência na VPS:
 
 ```bash

@@ -222,7 +222,7 @@ def test_existing_diagnostics_runtime_receives_json_and_keeps_local_reply(tmp_pa
         '                    "receiver_user_id": user_id,\n'
         '                    "reply_parameters": {"message_id": message.message_id},\n', 1))
     changes = installer.prepare(tmp_path)
-    assert b'language-json' in changes['messages/user_messages.py']
+    assert b'<pre><code>' in changes['messages/user_messages.py']
     assert b'"reply_parameters": {"message_id": message.message_id}' in changes['handlers/telegram_ui_utils.py']
     installer.install(tmp_path, changes)
     assert installer.prepare(tmp_path) == {}
@@ -260,3 +260,21 @@ def test_replaced_notice_adapter_refuses_competing_local_text():
         b"handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')")
     local = before.replace(b'message.answer(bm.nothing_found(lang=user_lang)', b'message.reply("LOCAL TEXT"')
     assert installer.preserve_replaced_youtube_notice(before, incoming, local) == (before, incoming)
+
+
+def test_published_json_runtime_gets_display_only_upgrade(tmp_path):
+    full = json.loads((ROOT / 'scripts/i18n_vps_manifest.json').read_text())
+    for name in full['files']:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    subprocess.run(['git', 'apply', '--reverse', str(ROOT / 'scripts/download_errors_raw_vps.patch')],
+                   cwd=tmp_path, check=True, capture_output=True)
+    path = tmp_path / 'messages/user_messages.py'
+    assert 'language-json' in path.read_text()
+    changes = installer.prepare(tmp_path)
+    assert set(changes) == {'messages/user_messages.py'}
+    assert b'<pre><code>' in changes['messages/user_messages.py']
+    assert b'language-json' not in changes['messages/user_messages.py']
+    installer.install(tmp_path, changes)
+    assert installer.prepare(tmp_path) == {}
