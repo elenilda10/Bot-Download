@@ -77,7 +77,7 @@ migração de esquema.
 
 ## Validação
 
-Foram executados 120 testes selecionados: mensagens/teclados anteriores, catálogos,
+Foram executados 122 testes selecionados: mensagens/teclados anteriores, catálogos,
 normalização, fallback, HTML/emojis/placeholders, legendas externas intactas,
 escopos privado/grupo, permissões/erros de gravação, isolamento e cancelamento,
 progresso em background, persistência SQLite e preservação da escolha após refresh
@@ -104,3 +104,14 @@ A revisão do instalador também foi testada com alterações locais que invalid
 o contexto do patch mas permitem merge sem conflito, com mensagens alteradas dos
 dois lados que devem ser recusadas, e com diagnóstico limitado aos blocos em
 conflito. O merge nunca escolhe automaticamente um dos lados de um conflito.
+
+### Respostas locais da VPS
+
+A VPS tinha trocas de `answer` para `reply` e de `answer_audio` para
+`reply_audio` em Eporner, Pornhub e Universal. O instalador identifica essas
+escolhas por função, receptor, ordem das chamadas e igualdade completa dos
+argumentos com a versão base ou traduzida. Transporta somente a escolha de
+reply para as versões temporárias de merge e mantém as traduções. Mudanças
+concorrentes de texto/argumentos e chamadas extras não são resolvidas por essa
+regra; continuam sujeitas à recusa por conflito. O teste reproduz essas trocas
+nos três handlers e verifica que replies e idempotência sejam preservados.

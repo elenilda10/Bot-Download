@@ -114,3 +114,35 @@ def test_diagnostics_contain_only_conflicting_blocks_without_writing_files(basel
     assert 'MY LOCAL TITLE:' in details and '<<<<<<<' in details and '|||||||' in details
     assert 'UNRELATED LOCAL SENTINEL' not in details
     assert not (baseline / 'i18n/locales/es.json').exists()
+
+
+def test_observed_vps_reply_variants_keep_reply_behavior_and_receive_translations(baseline):
+    import ast
+    names = ['handlers/eporner.py', 'handlers/pornhub.py', 'handlers/universal.py']
+    original_calls = {}
+    for name in names:
+        path = baseline / name
+        source = path.read_text()
+        source = source.replace('.answer(', '.reply(').replace('.answer_audio(', '.reply_audio(')
+        path.write_text(source)
+        original_calls[name] = [n.func.attr for n in ast.walk(ast.parse(source))
+                                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                                and n.func.attr in {'answer', 'reply', 'answer_audio', 'reply_audio'}]
+    changes = installer.prepare(baseline)
+    for name in names:
+        source = changes[name].decode()
+        calls = [n.func.attr for n in ast.walk(ast.parse(source))
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr in {'answer', 'reply', 'answer_audio', 'reply_audio'}]
+        assert calls == original_calls[name]
+        assert '_t(' in source
+    installer.install(baseline, changes)
+    assert installer.prepare(baseline) == {}
+
+
+def test_reply_adapter_does_not_resolve_competing_arguments_or_extra_calls():
+    old = b'async def send():\n    await message.answer("Old text")\n'
+    incoming = b'async def send():\n    await message.answer(_t("key"))\n'
+    for local in (b'async def send():\n    await message.reply("LOCAL TEXT")\n',
+                  b'async def send():\n    await message.reply("Old text")\n    await message.reply("Added")\n'):
+        assert installer.preserve_reply_methods(old, incoming, local) == (old, incoming)

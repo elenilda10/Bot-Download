@@ -4,6 +4,7 @@ Only listed runtime files are patched. .env, credentials, database and service
 state are never modified. Unknown conflicting revisions fail before any write.
 """
 import argparse
+import ast
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -41,6 +42,72 @@ def conflict_blocks(content):
     return '\n'.join(result)
 
 
+def preserve_reply_methods(base_source, incoming_source, local_source):
+    """Carry proven answer->reply choices into both merge sides without changing text.
+
+    Scope and send-call order must agree, and the complete local argument AST
+    must equal either the old or translated call. Extra/reordered calls or
+    competing message/argument changes do not get an automatic resolution.
+    """
+    methods = {'answer' + suffix: 'reply' + suffix for suffix in
+               ('', '_audio', '_video', '_photo', '_document', '_media_group')}
+    family = {value: key for key, value in methods.items()}
+    family.update({key: key for key in methods})
+
+    class Calls(ast.NodeVisitor):
+        def __init__(self, source):
+            self.scopes = {}
+            self.scope = ()
+            self.visit(ast.parse(source))
+
+        def visit_FunctionDef(self, node):
+            previous = self.scope
+            self.scope = previous + (node.name,)
+            self.generic_visit(node)
+            self.scope = previous
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+        visit_ClassDef = visit_FunctionDef
+
+        def visit_Call(self, node):
+            if isinstance(node.func, ast.Attribute) and node.func.attr in family:
+                self.scopes.setdefault(self.scope, []).append(node)
+            self.generic_visit(node)
+
+    try:
+        sources = [base_source.decode(), incoming_source.decode(), local_source.decode()]
+        maps = [Calls(source).scopes for source in sources]
+    except (SyntaxError, UnicodeDecodeError):
+        return base_source, incoming_source
+    edits = [[], []]
+    def signature(call):
+        return ast.dump(call.func.value), family[call.func.attr]
+
+    def arguments(call):
+        return ast.dump(ast.Tuple(elts=[*call.args, *call.keywords], ctx=ast.Load()))
+
+    for scope, old_calls in maps[0].items():
+        new_calls = maps[1].get(scope, [])
+        local_calls = maps[2].get(scope, [])
+        expected = [signature(call) for call in old_calls]
+        if expected != [signature(call) for call in new_calls] or expected != [signature(call) for call in local_calls]:
+            continue
+        for old, new, local in zip(old_calls, new_calls, local_calls):
+            if (old.func.attr not in methods or new.func.attr != old.func.attr
+                    or local.func.attr != methods[old.func.attr]
+                    or arguments(local) not in {arguments(old), arguments(new)}):
+                continue
+            for index, call in enumerate((old, new)):
+                lines = sources[index].splitlines(keepends=True)
+                line = lines[call.func.end_lineno - 1]
+                end = sum(map(len, lines[:call.func.end_lineno - 1])) + len(line.encode()[:call.func.end_col_offset].decode())
+                edits[index].append((end - len(call.func.attr), end, local.func.attr))
+    for index in (0, 1):
+        for start, end, value in sorted(edits[index], reverse=True):
+            sources[index] = sources[index][:start] + value + sources[index][end:]
+    return sources[0].encode(), sources[1].encode()
+
+
 def merge_runtime(target, staging, manifest, patch, reference):
     """Three-way merge only in temporary directories; never choose a conflict side."""
     with tempfile.TemporaryDirectory(prefix='bot-i18n-base-') as directory:
@@ -75,11 +142,18 @@ def merge_runtime(target, staging, manifest, patch, reference):
                 elif local == original.read_bytes():
                     content = expected
                 else:
-                    merged = subprocess.run(
-                        ['git', 'merge-file', '--stdout', '--diff3',
-                         str(source.resolve()), str(original), str((incoming / name).resolve())],
-                        capture_output=True,
-                    )
+                    compatible_base, compatible_incoming = preserve_reply_methods(original.read_bytes(), expected, local)
+                    with tempfile.TemporaryDirectory(prefix='bot-i18n-replies-') as reply_directory:
+                        merge_base = Path(reply_directory) / 'base.py'
+                        merge_incoming = Path(reply_directory) / 'incoming.py'
+                        merge_base.write_bytes(compatible_base)
+                        merge_incoming.write_bytes(compatible_incoming)
+                        merged = subprocess.run(
+                            ['git', 'merge-file', '--stdout', '--diff3',
+                             '-L', 'VPS', '-L', 'BASE', '-L', 'TRANSLATED',
+                             str(source.resolve()), str(merge_base), str(merge_incoming)],
+                            capture_output=True,
+                        )
                     if merged.returncode:
                         conflicts.append(name)
                         blocks = conflict_blocks(merged.stdout)
