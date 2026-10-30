@@ -5,6 +5,7 @@ Reuses the verified public Kwai downloader, ffprobe and thumbnail utilities
 from the existing media pipeline without restarting or spawning another bot.
 """
 from __future__ import annotations
+from i18n import t as _t
 
 import asyncio
 import hashlib
@@ -93,10 +94,9 @@ def _kwai_keyboard(url: str, url_hash: str, settings: dict, lang: str | None):
         for row in markup.inline_keyboard for btn in row
     )
     if needs_source and not has_source:
-        is_pt = not str(lang or "pt").lower().startswith("en")
         markup.inline_keyboard.append([
             InlineKeyboardButton(
-                text="🔗 Abrir no Kwai" if is_pt else "🔗 Open Kwai", url=url
+                text=_t('handlers.kwai._kwai_keyboard.3f86cfb3', lang), url=url
             )
         ])
     return markup
@@ -334,9 +334,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
     cached_id = await db.get_file_id(_cache_key(token, kind))
     if not source and not cached_id:
         await call.message.answer(
-            "Envie o link do Kwai novamente para baixar."
-            if not str(lang or "pt").lower().startswith("en")
-            else "Please send the Kwai link again to download.",
+            _t('handlers.kwai._callback_request.c4e9a207', None),
             allow_sending_without_reply=True,
         )
         return
@@ -379,9 +377,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
 
         if not source:
             await call.message.answer(
-                "Envie o link do Kwai novamente."
-                if not str(lang or "pt").lower().startswith("en")
-                else "Please send the Kwai link again.",
+                _t('handlers.kwai._callback_request.8288c2dc', None),
                 allow_sending_without_reply=True,
             )
             return

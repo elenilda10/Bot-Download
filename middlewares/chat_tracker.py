@@ -1,3 +1,5 @@
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional
 import uuid
@@ -11,11 +13,8 @@ from services.logger import logger as logging
 from services.storage.db import DataBase
 
 
-def _normalize_lang(language_code: Optional[str]) -> str:
-    if not language_code:
-        return "en"
-    lang = language_code.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+def _normalize_lang(language_code: str | None) -> str:
+    return _normalize_locale(language_code)
 
 
 class ChatTrackerMiddleware(BaseMiddleware):
@@ -41,7 +40,7 @@ class ChatTrackerMiddleware(BaseMiddleware):
 
             # Injeta o idioma detectado no contexto para fácil acesso aos handlers
             lang_code = event.from_user.language_code if event.from_user else None
-            data["user_lang"] = _normalize_lang(lang_code)
+            data.setdefault("user_lang", _normalize_lang(lang_code))
 
         request_id = str(uuid.uuid4())[:12]
         user_id = getattr(getattr(event, "from_user", None), "id", None)
@@ -111,7 +110,7 @@ class ChatTrackerMiddleware(BaseMiddleware):
                 chat_name = " ".join(name_parts)
 
         if not chat_name:
-            chat_name = f"Chat {chat_id}"
+            chat_name = _t('handlers.admin.admin_send_to_chat.1744850b', None, p0=chat_id)
 
         username = getattr(chat, "username", None)
         language = getattr(chat, "language_code", None)

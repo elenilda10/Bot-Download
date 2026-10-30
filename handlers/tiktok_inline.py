@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import datetime
 import re
@@ -269,9 +270,9 @@ async def send_inline_tiktok_media(
             max_file_size=max_file_size,
             service_name="TikTok",
             cache_key=media_cache_key,
-            channel_caption=f"TikTok Video from {actor_name}",
+            channel_caption=_t('handlers.tiktok_inline._plan.bb84080b', None, p0=actor_name),
             download_fn=_download,
-            progress_label="TikTok video",
+            progress_label=_t('handlers.tiktok.process_tiktok_video.75f3549c', None),
             build_caption=_build_caption,
             reply_markup=reply_markup,
             edit_status=edit_status,

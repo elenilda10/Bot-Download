@@ -1,3 +1,4 @@
+from i18n import t as _t
 import logging
 
 from aiogram.enums import ChatType
@@ -26,15 +27,11 @@ def _is_member(member):
 def _confirmation(lang):
     if str(lang).lower().startswith("pt"):
         return (
-            '✅ '
-            '<b>Inscrição confirmada!</b>\n\n'
-            'Seu acesso ao Save Vídeo DL Bot foi liberado.'
+            _t('handlers.channel_membership._confirmation.8c3f1c28', lang)
         )
 
     return (
-        '✅ '
-        '<b>Subscription confirmed!</b>\n\n'
-        'Your access to Save Vídeo DL Bot has been unlocked.'
+        _t('handlers.channel_membership._confirmation.8c3f1c28', lang)
     )
 
 
@@ -133,7 +130,6 @@ async def handle_channel_membership(event: ChatMemberUpdated, bot):
             import keyboards as kb
 
             lang = notices[-1].lang if notices else "pt"
-            is_pt = str(lang).lower().startswith("pt")
             chat_id = pending.source_chat_id or user_id
 
             kwargs = {}
@@ -147,11 +143,7 @@ async def handle_channel_membership(event: ChatMemberUpdated, bot):
             if result == "dm_required":
                 bot_info = await bot.get_me()
                 text = (
-                    "✅ Inscrição confirmada! Abra o privado do bot "
-                    "para continuar seu download."
-                    if is_pt else
-                    "✅ Subscription confirmed! Open the bot's "
-                    "private chat to continue your download."
+                    _t('handlers.channel_membership.handle_channel_membership.9d218ae6', None)
                 )
                 keyboard = kb.start_private_chat_keyboard(
                     bot_info.username,
@@ -159,9 +151,7 @@ async def handle_channel_membership(event: ChatMemberUpdated, bot):
                 )
             else:
                 text = (
-                    "✅ Inscrição confirmada! Envie o link novamente."
-                    if is_pt else
-                    "✅ Subscription confirmed! Please send the link again."
+                    _t('handlers.channel_membership.handle_channel_membership.0179218d', None)
                 )
                 keyboard = None
 

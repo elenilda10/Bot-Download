@@ -1,38 +1,26 @@
+from i18n import get_locale as _get_locale
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 from urllib.parse import quote
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-DEFAULT_LANG = "pt"
+DEFAULT_LANG = None
 
 
 def _normalize_lang(lang: str | None) -> str:
-    if not lang:
-        return DEFAULT_LANG
-    lang = lang.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+    return _normalize_locale(lang if lang is not None else _get_locale())
 
 
-def language_keyboard(
-    current_lang: str = DEFAULT_LANG,
-) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(current_lang) == "pt"
-    txt_pt = "✅ 🇧🇷 Português" if is_pt else "🇧🇷 Português"
-    txt_en = "🇺🇸 English" if is_pt else "✅ 🇺🇸 English"
-    txt_back = "⬅️ Voltar às Configurações" if is_pt else "⬅️ Back to Settings"
-
-    buttons = [
-        [
-            InlineKeyboardButton(text=txt_pt, callback_data="set_lang:pt"),
-            InlineKeyboardButton(text=txt_en, callback_data="set_lang:en"),
-        ],
-        [
-            InlineKeyboardButton(
-                text=txt_back,
-                callback_data="back_to_settings",
-            )
-        ],
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+def language_keyboard(current_lang: str | None = DEFAULT_LANG) -> InlineKeyboardMarkup:
+    from i18n import LOCALE_NAMES, SUPPORTED_LOCALES
+    locale = _normalize_lang(current_lang)
+    rows = [[InlineKeyboardButton(
+        text=("✅ " if code == locale else "") + LOCALE_NAMES[code],
+        callback_data="set_lang:" + code,
+    )] for code in SUPPORTED_LOCALES]
+    rows.append([InlineKeyboardButton(text=_t('language.back', locale), callback_data='back_to_settings')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def start_keyboard(
@@ -43,19 +31,16 @@ def start_keyboard(
     username = bot_username or "SaveVidDLBot"
     base_link = f"https://t.me/{username}"
 
-    is_pt = _normalize_lang(lang) == "pt"
     share_text = (
-        "Bot rápido para baixar vídeos do Instagram, TikTok, YouTube e mais!"
-        if is_pt
-        else "Fast downloader bot for Instagram, TikTok, YouTube & more!"
+        _t('keyboards.inline_keyboards.start_keyboard.4f709810', lang)
     )
     share_url = f"https://t.me/share/url?url={quote(base_link)}&text={quote(share_text)}"
     add_to_group_url = f"https://t.me/{username}?startgroup=true"
 
-    txt_inline = "⚡ Modo inline" if is_pt else "⚡ Try inline"
-    txt_settings = "⚙️ Configurações" if is_pt else "⚙️ Settings"
-    txt_share = "🚀 Compartilhar bot" if is_pt else "🚀 Share bot"
-    txt_add = "➕ Adicionar a grupo" if is_pt else "➕ Add to group"
+    txt_inline = _t('keyboards.inline_keyboards.start_keyboard.27958719', lang)
+    txt_settings = _t('keyboards.inline_keyboards.start_keyboard.ed2a3ac4', lang)
+    txt_share = _t('keyboards.inline_keyboards.start_keyboard.14a43343', lang)
+    txt_add = _t('keyboards.inline_keyboards.start_keyboard.1ead3001', lang)
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -76,10 +61,9 @@ def start_keyboard(
 
 
 def cancel_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(lang) == "pt"
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="❌ Cancelar" if is_pt else "❌ Cancel",
+        text=_t('keyboards.inline_keyboards.cancel_keyboard.5387009b', lang),
         callback_data="cancel_action",
     )
     return builder.as_markup()
@@ -114,31 +98,28 @@ FIELD_CATEGORY_MAP = {
 def return_settings_categories_keyboard(
     lang: str = DEFAULT_LANG,
 ) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(lang) == "pt"
     buttons = [
         [
             InlineKeyboardButton(
-                text="🎬 Mídia & Qualidade" if is_pt else "🎬 Media & Quality",
+                text=_t('keyboards.inline_keyboards.return_settings_categories_keyboard.8a25df2a', lang),
                 callback_data="settings_cat:media",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🎨 Aparência & Botões"
-                if is_pt
-                else "🎨 Appearance & Buttons",
+                text=_t('keyboards.inline_keyboards.return_settings_categories_keyboard.3488f6e3', lang),
                 callback_data="settings_cat:appearance",
             )
         ],
         [
             InlineKeyboardButton(
-                text="💬 Chat & Limpeza" if is_pt else "💬 Chat & Cleanup",
+                text=_t('keyboards.inline_keyboards.return_settings_categories_keyboard.321c8d6b', lang),
                 callback_data="settings_cat:chat",
             )
         ],
         [
             InlineKeyboardButton(
-                text="🌐 Idioma / Language",
+                text=_t('keyboards.inline_keyboards.return_settings_categories_keyboard.fd617ec9', lang),
                 callback_data="settings_lang",
             )
         ],
@@ -149,36 +130,35 @@ def return_settings_categories_keyboard(
 def return_category_settings_keyboard(
     category: str, lang: str = DEFAULT_LANG
 ) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(lang) == "pt"
 
     if category == "media":
         fields = [
             (
-                "🎬 Qualidade do Vídeo" if is_pt else "🎬 Video Quality",
+                _t('keyboards.inline_keyboards.return_category_settings_keyboard.212dd6c3', lang),
                 "video_quality",
             ),
             (
-                "📄 Enviar como Arquivo" if is_pt else "📄 Send as File",
+                _t('keyboards.inline_keyboards.return_category_settings_keyboard.61d6b99f', lang),
                 "as_document",
             ),
             (
-                "🎵 Formato de Áudio" if is_pt else "🎵 Audio Format",
+                _t('keyboards.inline_keyboards.return_category_settings_keyboard.c35ace5e', lang),
                 "audio_format",
             ),
         ]
     elif category == "appearance":
         fields = [
-            ("📝 Legendas" if is_pt else "📝 Captions", "captions"),
-            ("ℹ️ Botões de Info" if is_pt else "ℹ️ Info Buttons", "info_buttons"),
-            ("🎧 Botão MP3" if is_pt else "🎧 MP3 Button", "audio_button"),
-            ("🎵 Botão Shazam" if is_pt else "🎵 Shazam Button", "music_button"),
-            ("📄 Botão de Arquivo" if is_pt else "📄 File Button", "file_button"),
-            ("🔗 Botão de URL" if is_pt else "🔗 URL Button", "url_button"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.c1a8466f', lang), "captions"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.1fade508', lang), "info_buttons"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.6d4e17cf', lang), "audio_button"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.2270c082', lang), "music_button"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.ae6c66c0', lang), "file_button"),
+            (_t('keyboards.inline_keyboards.return_category_settings_keyboard.225133b6', lang), "url_button"),
         ]
     else:
         fields = [
             (
-                "🗑️ Apagar Mensagens" if is_pt else "🗑️ Delete Messages",
+                _t('keyboards.inline_keyboards.return_category_settings_keyboard.72a83146', lang),
                 "delete_message",
             ),
         ]
@@ -190,9 +170,7 @@ def return_category_settings_keyboard(
     buttons.append(
         [
             InlineKeyboardButton(
-                text="⬅️ Voltar às Categorias"
-                if is_pt
-                else "⬅️ Back to Categories",
+                text=_t('keyboards.inline_keyboards.return_category_settings_keyboard.d3a31fe9', lang),
                 callback_data="back_to_settings",
             )
         ]
@@ -207,13 +185,13 @@ def return_field_keyboard(
     cat = FIELD_CATEGORY_MAP.get(field, "media")
     back_cb = f"settings_cat:{cat}"
     is_pt = _normalize_lang(lang) == "pt"
-    back_text = "⬅️ Voltar" if is_pt else "⬅️ Back"
+    back_text = _t('keyboards.inline_keyboards.return_field_keyboard.5dd22918', lang)
 
     if field == "video_quality":
         current = val or "best"
-        lbl_best = "Melhor (1080p+)" if is_pt else "Best (1080p+)"
-        lbl_bal = "Equilibrada (720p)" if is_pt else "Balanced (720p)"
-        lbl_sav = "Econômica (480p)" if is_pt else "Data Saver (480p)"
+        lbl_best = _t('keyboards.inline_keyboards.return_field_keyboard.0de92430', lang)
+        lbl_bal = _t('keyboards.inline_keyboards.return_field_keyboard.4ec9edf5', lang)
+        lbl_sav = _t('keyboards.inline_keyboards.return_field_keyboard.62d289e2', lang)
 
         opt_best = f"✅ 🏆 {lbl_best}" if current == "best" else f"🏆 {lbl_best}"
         opt_bal = f"✅ ⚖️ {lbl_bal}" if current == "balanced" else f"⚖️ {lbl_bal}"
@@ -241,9 +219,9 @@ def return_field_keyboard(
 
     if field == "audio_format":
         current = val or "mp3"
-        lbl_mp3 = "Áudio MP3" if is_pt else "MP3 Audio"
-        lbl_m4a = "M4A (AAC)"
-        lbl_flac = "FLAC / Original"
+        lbl_mp3 = _t('keyboards.inline_keyboards.return_field_keyboard.33f3d5ca', lang)
+        lbl_m4a = _t('keyboards.inline_keyboards.return_field_keyboard.122722ab', lang)
+        lbl_flac = _t('keyboards.inline_keyboards.return_field_keyboard.6a6947ff', lang)
 
         opt_mp3 = f"✅ 🎧 {lbl_mp3}" if current == "mp3" else f"🎧 {lbl_mp3}"
         opt_m4a = f"✅ 📱 {lbl_m4a}" if current == "m4a" else f"📱 {lbl_m4a}"
@@ -272,14 +250,14 @@ def return_field_keyboard(
     is_enabled = val == "on"
     if is_pt:
         status_text = (
-            "🟢 Atualmente ATIVADO" if is_enabled else "🔴 Atualmente DESATIVADO"
+            _t('keyboards.inline_keyboards.return_field_keyboard.0eddd19c', lang) if is_enabled else _t('keyboards.inline_keyboards.return_field_keyboard.72f0ee85', lang)
         )
-        action_text = "🔴 DESATIVAR" if is_enabled else "🟢 ATIVAR"
+        action_text = _t('keyboards.inline_keyboards.return_field_keyboard.0b5bc6d9', lang) if is_enabled else _t('keyboards.inline_keyboards.return_field_keyboard.aae5cba9', lang)
     else:
         status_text = (
-            "🟢 Currently ON" if is_enabled else "🔴 Currently OFF"
+            _t('keyboards.inline_keyboards.return_field_keyboard.0eddd19c', lang) if is_enabled else _t('keyboards.inline_keyboards.return_field_keyboard.72f0ee85', lang)
         )
-        action_text = "🔴 Turn OFF" if is_enabled else "🟢 Turn ON"
+        action_text = _t('keyboards.inline_keyboards.return_field_keyboard.0b5bc6d9', lang) if is_enabled else _t('keyboards.inline_keyboards.return_field_keyboard.aae5cba9', lang)
 
     next_value = "off" if is_enabled else "on"
     buttons = [
@@ -303,9 +281,9 @@ def stats_keyboard(
 ):
     is_pt = _normalize_lang(lang) == "pt"
     periods_data = [
-        ("Semana" if is_pt else "Week", "Week"),
-        ("Mês" if is_pt else "Month", "Month"),
-        ("Ano" if is_pt else "Year", "Year"),
+        (_t("stats.period.Week", lang), "Week"),
+        (_t("stats.period.Month", lang), "Month"),
+        (_t("stats.period.Year", lang), "Year"),
     ]
     period_buttons = [
         InlineKeyboardButton(
@@ -318,10 +296,10 @@ def stats_keyboard(
     toggle_target = "split" if mode == "total" else "total"
     if is_pt:
         toggle_label = (
-            "Ver: Por plataforma" if mode == "total" else "Ver: Visão Geral"
+            _t('keyboards.inline_keyboards.stats_keyboard.5413cca6', lang) if mode == "total" else _t('keyboards.inline_keyboards.stats_keyboard.3563ec14', lang)
         )
     else:
-        toggle_label = "View: By platform" if mode == "total" else "View: Overall"
+        toggle_label = _t('keyboards.inline_keyboards.stats_keyboard.5413cca6', lang) if mode == "total" else _t('keyboards.inline_keyboards.stats_keyboard.3563ec14', lang)
 
     buttons = [
         period_buttons,
@@ -336,15 +314,14 @@ def stats_keyboard(
 
 
 def admin_keyboard(lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
-    txt_health = "🩺 Saúde" if is_pt else "🩺 Health"
-    txt_runtime = "📦 Armazenamento" if is_pt else "📦 Runtime"
-    txt_refresh = "🔄 Atualizar" if is_pt else "🔄 Refresh"
-    txt_active_users = "👥 Checar Usuários Ativos" if is_pt else "👥 Check Active Users"
-    txt_mailing = "📬 Envio em Massa" if is_pt else "📬 Mailing"
-    txt_msg_chat = "✉️ Mensagem por ID do Chat" if is_pt else "✉️ Message by Chat ID"
-    txt_view_log = "📄 Ver Log" if is_pt else "📄 View Log"
-    txt_del_log = "🗑️ Apagar Log" if is_pt else "🗑️ Delete Log"
+    txt_health = _t('keyboards.inline_keyboards.admin_keyboard.8b7c5961', lang)
+    txt_runtime = _t('keyboards.inline_keyboards.admin_keyboard.aba430a5', lang)
+    txt_refresh = _t('keyboards.inline_keyboards.admin_keyboard.d58ef935', lang)
+    txt_active_users = _t('keyboards.inline_keyboards.admin_keyboard.12fcc45b', lang)
+    txt_mailing = _t('keyboards.inline_keyboards.admin_keyboard.da65b090', lang)
+    txt_msg_chat = _t('keyboards.inline_keyboards.admin_keyboard.2a590dea', lang)
+    txt_view_log = _t('keyboards.inline_keyboards.admin_keyboard.8327ef78', lang)
+    txt_del_log = _t('keyboards.inline_keyboards.admin_keyboard.b46312b3', lang)
 
     buttons = [
         [
@@ -370,18 +347,17 @@ def admin_keyboard(lang: str = DEFAULT_LANG):
 
 
 def admin_detail_keyboard(refresh_callback: str, lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🔄 Atualizar" if is_pt else "🔄 Refresh",
+                    text=_t('keyboards.inline_keyboards.admin_keyboard.d58ef935', lang),
                     callback_data=refresh_callback,
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="⬅️ Voltar" if is_pt else "⬅️ Back",
+                    text=_t('keyboards.inline_keyboards.return_field_keyboard.5dd22918', lang),
                     callback_data="back_to_admin",
                 )
             ],
@@ -394,11 +370,10 @@ def downloads_admin_keyboard(
     refresh_callback: str = "admin_downloads",
     lang: str = DEFAULT_LANG,
 ):
-    is_pt = _normalize_lang(lang) == "pt"
     buttons = [
         [
             InlineKeyboardButton(
-                text="🔄 Atualizar" if is_pt else "🔄 Refresh",
+                text=_t('keyboards.inline_keyboards.admin_keyboard.d58ef935', lang),
                 callback_data=refresh_callback,
             )
         ]
@@ -407,7 +382,7 @@ def downloads_admin_keyboard(
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text="🧹 Limpar downloads" if is_pt else "🧹 Clean downloads",
+                    text=_t('keyboards.inline_keyboards.downloads_admin_keyboard.2d1ff93c', lang),
                     callback_data="admin_cleanup_downloads",
                 )
             ]
@@ -415,7 +390,7 @@ def downloads_admin_keyboard(
     buttons.append(
         [
             InlineKeyboardButton(
-                text="⬅️ Voltar" if is_pt else "⬅️ Back",
+                text=_t('keyboards.inline_keyboards.return_field_keyboard.5dd22918', lang),
                 callback_data="back_to_admin",
             )
         ]
@@ -424,11 +399,10 @@ def downloads_admin_keyboard(
 
 
 def return_back_to_admin_keyboard(lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
     back_button = [
         [
             InlineKeyboardButton(
-                text="⬅️ Voltar" if is_pt else "⬅️ Back",
+                text=_t('keyboards.inline_keyboards.return_field_keyboard.5dd22918', lang),
                 callback_data="back_to_admin",
             )
         ]
@@ -437,14 +411,11 @@ def return_back_to_admin_keyboard(lang: str = DEFAULT_LANG):
 
 
 def start_private_chat_keyboard(bot_username: str, lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
     url = f"https://t.me/{bot_username}?start=from_group"
     button = [
         [
             InlineKeyboardButton(
-                text="💬 Abrir conversa com o bot"
-                if is_pt
-                else "💬 Open bot chat",
+                text=_t('keyboards.inline_keyboards.start_private_chat_keyboard.da1fac2e', lang),
                 url=url,
             )
         ]
@@ -453,11 +424,10 @@ def start_private_chat_keyboard(bot_username: str, lang: str = DEFAULT_LANG):
 
 
 def return_audio_download_keyboard(platform, url, lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
     audio_button = [
         [
             InlineKeyboardButton(
-                text="🎧 Baixar MP3" if is_pt else "🎧 Download MP3",
+                text=_t('handlers.facebook._facebook_keyboard.2432fa18', lang),
                 callback_data=f"{platform}_audio_{url}",
             )
         ]
@@ -468,12 +438,11 @@ def return_audio_download_keyboard(platform, url, lang: str = DEFAULT_LANG):
 def inline_send_video_keyboard(
     token: str, lang: str = DEFAULT_LANG
 ) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(lang) == "pt"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Enviar vídeo inline" if is_pt else "Send video inline",
+                    text=_t('keyboards.inline_keyboards.inline_send_video_keyboard.3375997f', lang),
                     callback_data=f"inline:tiktok:{token}",
                 )
             ]
@@ -536,7 +505,6 @@ def return_video_info_keyboard(
     platform: str | None = None,
 ):
     builder = InlineKeyboardBuilder()
-    is_pt = _normalize_lang(lang) == "pt"
 
     if user_settings.get("info_buttons") == "on":
         row1 = []
@@ -582,7 +550,7 @@ def return_video_info_keyboard(
     if has_video and music_supported and user_settings.get("music_button", "off") == "on":
         builder.row(
             InlineKeyboardButton(
-                text="🎵 Identificar Música" if is_pt else "🎵 Identify Music",
+                text=_t('keyboards.inline_keyboards.return_video_info_keyboard.44d7f8be', lang),
                 callback_data="identify_music",
             )
         )
@@ -590,7 +558,7 @@ def return_video_info_keyboard(
     if user_settings.get("audio_button") == "on" and audio_callback_data:
         builder.row(
             InlineKeyboardButton(
-                text="🎧 Baixar MP3" if is_pt else "🎧 Download MP3",
+                text=_t('handlers.facebook._facebook_keyboard.2432fa18', lang),
                 callback_data=audio_callback_data,
             )
         )
@@ -602,13 +570,13 @@ def return_video_info_keyboard(
     ):
         builder.row(
             InlineKeyboardButton(
-                text="📄 Baixar Arquivo" if is_pt else "📄 Download File",
+                text=_t('handlers.facebook._facebook_keyboard.d7fd5aab', lang),
                 callback_data=file_callback_data,
             )
         )
 
     if user_settings.get("url_button") == "on" and video_url:
-        builder.row(InlineKeyboardButton(text="🔗 URL", url=video_url))
+        builder.row(InlineKeyboardButton(text=_t('keyboards.inline_keyboards.return_video_info_keyboard.e1a659b6', lang), url=video_url))
 
     return builder.as_markup()
 
@@ -618,9 +586,9 @@ def _stats_keyboard_legacy_bottom(
 ):
     is_pt = _normalize_lang(lang) == "pt"
     periods_data = [
-        ("Semana" if is_pt else "Week", "Week"),
-        ("Mês" if is_pt else "Month", "Month"),
-        ("Ano" if is_pt else "Year", "Year"),
+        (_t("stats.period.Week", lang), "Week"),
+        (_t("stats.period.Month", lang), "Month"),
+        (_t("stats.period.Year", lang), "Year"),
     ]
     period_buttons = [
         InlineKeyboardButton(
@@ -632,9 +600,9 @@ def _stats_keyboard_legacy_bottom(
 
     toggle_target = "split" if mode == "total" else "total"
     if is_pt:
-        toggle_label = f"Divisão por plataforma: {'Ativada' if mode == 'split' else 'Desativada'}"
+        toggle_label = _t('keyboards.inline_keyboards._stats_keyboard_legacy_bottom.f91511a7', lang, p0='Ativada' if mode == 'split' else 'Desativada')
     else:
-        toggle_label = f"Split view: {'On' if mode == 'split' else 'Off'}"
+        toggle_label = _t('keyboards.inline_keyboards._stats_keyboard_legacy_bottom.f91511a7', lang, p0='On' if mode == 'split' else 'Off')
 
     buttons = [
         period_buttons,
@@ -649,19 +617,18 @@ def _stats_keyboard_legacy_bottom(
 
 
 def channel_subscription_keyboard(lang: str = DEFAULT_LANG) -> InlineKeyboardMarkup:
-    is_pt = _normalize_lang(lang) == "pt"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📢 Entrar no canal" if is_pt else "📢 Join Channel",
+                    text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f', lang),
                     url="https://t.me/SaveVideoDL",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="✅ Verificar inscrição" if is_pt else "✅ Verify Subscription",
+                    text=_t('keyboards.inline_keyboards.channel_subscription_keyboard.dfd4cbcf', lang),
                     callback_data="channel_sub:verify",
                 )
             ],

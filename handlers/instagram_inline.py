@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import datetime
 import os
@@ -230,7 +231,7 @@ async def send_inline_instagram_media(
                 service_name="Instagram",
                 cache_key=f"{source_url}#photo",
                 photo_url=first_item.url,
-                channel_caption=f"Instagram Photo from {actor_name}",
+                channel_caption=_t('handlers.instagram_inline._plan.27ca66c6', None, p0=actor_name),
                 build_caption=_build_caption,
                 reply_markup=reply_markup,
                 edit_status=edit_status,
@@ -258,9 +259,9 @@ async def send_inline_instagram_media(
             max_file_size=max_file_size,
             service_name="Instagram",
             cache_key=source_url,
-            channel_caption=f"Instagram Video from {actor_name}",
+            channel_caption=_t('handlers.instagram_inline._plan.c2ca559e', None, p0=actor_name),
             download_fn=_download,
-            progress_label="Instagram video",
+            progress_label=_t('handlers.instagram_inline._plan.f36408e5', None),
             build_caption=_build_caption,
             reply_markup=reply_markup,
             edit_status=edit_status,

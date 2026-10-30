@@ -1,4 +1,5 @@
 """Handle public MediaFire links in Telegram messages."""
+from i18n import t as _t
 import asyncio
 import hashlib
 import re
@@ -61,9 +62,7 @@ async def handle_mediafire(message: types.Message):
         lang = await db.get_language(message.from_user.id) or "pt"
 
         descricao = (
-            "Arquivo baixado do MediaFire"
-            if str(lang).lower().startswith("pt")
-            else "File downloaded from MediaFire"
+            _t('handlers.mediafire.handle_mediafire.932a21e6', None)
         )
 
         caption = bm.captions(
@@ -145,8 +144,7 @@ async def handle_mediafire(message: types.Message):
         if status is not None:
             try:
                 await status.edit_text(
-                    "❌ Não foi possível baixar ou enviar "
-                    "esse arquivo do MediaFire."
+                    _t('handlers.mediafire.handle_mediafire.212e6641', None)
                 )
             except Exception:
                 pass

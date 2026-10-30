@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import html
 import os
@@ -99,7 +100,7 @@ async def handle_deezer_inline_query(
             return
 
         track_id = _extract_track_id(raw_query)
-        title = "Deezer Music"
+        title = _t('handlers.deezer_inline.handle_deezer_inline_query.bf687d7a', None)
         artist_name = "Deezer"
         duration_str = ""
         album_cover = get_inline_service_icon("deezer")
@@ -171,7 +172,7 @@ async def handle_deezer_inline_query(
 
                     for track in tracks:
                         track_id = str(track.get("id"))
-                        title = track.get("title", "Música")
+                        title = track.get("title", _t('handlers.deezer_inline.handle_deezer_inline_query.0e0cc1a9', None))
                         artist_name = track.get("artist", {}).get("name", "Deezer")
                         duration_sec = track.get("duration", 0)
                         duration_str = f"{duration_sec // 60}:{duration_sec % 60:02d}"
@@ -301,7 +302,7 @@ async def send_inline_deezer_music(
                 if (meta and getattr(meta, "thumb_path", None) and os.path.exists(meta.thumb_path))
                 else bot_avatar
             )
-            title = getattr(meta, "title", "Deezer Track")
+            title = getattr(meta, "title", _t('handlers.deezer_inline.send_inline_deezer_music.41ae01c9', None))
             performer = getattr(meta, "artist", "Deezer")
             duration = coerce_audio_duration_seconds(getattr(meta, "duration", 0))
 
@@ -311,7 +312,7 @@ async def send_inline_deezer_music(
                 audio=FSInputFile(path, filename=build_audio_filename(title)),
                 title=title,
                 performer=performer,
-                caption=f"Deezer Music from {actor_name}",
+                caption=_t('handlers.deezer_inline._send_downloaded.dc8b7b36', None, p0=actor_name),
                 audio_path=path,
                 bot_avatar=audio_thumbnail,
                 bot_url=bot_url,
@@ -341,7 +342,7 @@ async def send_inline_deezer_music(
         if result is None:
             return
 
-        title = getattr(downloaded_track, "title", "Deezer Track")
+        title = getattr(downloaded_track, "title", _t('handlers.deezer_inline.send_inline_deezer_music.41ae01c9', None))
         performer = getattr(downloaded_track, "artist", build_bot_audio_performer(bot_url))
         duration = coerce_audio_duration_seconds(getattr(downloaded_track, "duration", 0))
 

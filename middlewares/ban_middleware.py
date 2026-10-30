@@ -1,5 +1,6 @@
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 import time
-from typing import Optional
 
 from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, InlineQuery, Message
@@ -9,23 +10,20 @@ from app_context import db
 DEFAULT_LANG = "en"
 
 
-def _normalize_lang(language_code: Optional[str]) -> str:
-    if not language_code:
-        return DEFAULT_LANG
-    lang = language_code.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+def _normalize_lang(language_code: str | None) -> str:
+    return _normalize_locale(language_code)
 
 
 def _ban_message(lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
-        return "Você está banido. Entre em contato com o suporte para mais informações."
-    return "You are banned. Please contact support for more information!"
+        return _t('middlewares.ban_middleware._ban_message.5f711a17', lang)
+    return _t('middlewares.ban_middleware._ban_message.5f711a17', lang)
 
 
 def _service_unavailable_message(lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
-        return "O serviço está temporariamente indisponível. Tente novamente mais tarde."
-    return "Service is temporarily unavailable. Please try again later."
+        return _t('middlewares.ban_middleware._service_unavailable_message.1d4c98d3', lang)
+    return _t('middlewares.ban_middleware._service_unavailable_message.1d4c98d3', lang)
 
 
 class UserBannedMiddleware(BaseMiddleware):

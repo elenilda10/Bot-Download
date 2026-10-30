@@ -1,176 +1,116 @@
+from i18n import get_locale as _get_locale
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 import html
 
-DEFAULT_LANG = "pt"
+DEFAULT_LANG = None
 
 
 def _normalize_lang(lang: str | None) -> str:
-    if not lang:
-        return DEFAULT_LANG
-    lang = lang.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+    return _normalize_locale(lang if lang is not None else _get_locale())
 
 
 def cancel(lang: str = DEFAULT_LANG):
-    return "✖️ Cancelar" if _normalize_lang(lang) == "pt" else "✖️ Cancel"
+    return _t('messages.user_messages.cancel.80f1a33f', lang)
 
 
 def welcome_message(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            '<b>Bem-vindo ao Save Vídeo DL Bot <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
-            "Envie um link ou cole vários links em uma única mensagem e eu baixarei o que puder.\n\n"
-            "<b>Plataformas suportadas</b>\n"
-            '<tg-emoji emoji-id="5233671414023753035">📷</tg-emoji> Instagram\n'
-            '<tg-emoji emoji-id="5370693953236539466">🧵</tg-emoji> Threads\n'
-            '<tg-emoji emoji-id="5233597424622144804">🎵</tg-emoji> TikTok\n'
-            '<tg-emoji emoji-id="5233311027612913110">▶️</tg-emoji> YouTube\n'
-            '<tg-emoji emoji-id="5231309843435919433">🐦</tg-emoji> X / Twitter\n'
-            '<tg-emoji emoji-id="5233448977667492819">🎧</tg-emoji> SoundCloud\n'
-            '<tg-emoji emoji-id="5391001065418172193">🟢</tg-emoji> Spotify\n'
-            '<tg-emoji emoji-id="5233210422298974231">📌</tg-emoji> Pinterest\n\n'
-            "Use os botões abaixo para testar o modo inline, ajustar configurações ou compartilhar o bot."
+            _t('messages.user_messages.welcome_message.3a38a165', lang)
         )
     return (
-        '<b>Welcome to Save Vídeo DL Bot <tg-emoji emoji-id="5420141555233071341">❤️</tg-emoji></b>\n\n'
-        "Send one link, or paste several links in one message, and I'll download what I can.\n\n"
-        "<b>Supported sites</b>\n"
-        '<tg-emoji emoji-id="5233671414023753035">📷</tg-emoji> Instagram\n'
-        '<tg-emoji emoji-id="5370693953236539466">🧵</tg-emoji> Threads\n'
-        '<tg-emoji emoji-id="5233597424622144804">🎵</tg-emoji> TikTok\n'
-        '<tg-emoji emoji-id="5233311027612913110">▶️</tg-emoji> YouTube\n'
-        '<tg-emoji emoji-id="5231309843435919433">🐦</tg-emoji> X / Twitter\n'
-        '<tg-emoji emoji-id="5233448977667492819">🎧</tg-emoji> SoundCloud\n'
-        '<tg-emoji emoji-id="5391001065418172193">🟢</tg-emoji> Spotify\n'
-        '<tg-emoji emoji-id="5233210422298974231">📌</tg-emoji> Pinterest\n\n'
-        "Use the buttons below to try inline mode, tune settings, or share the bot."
+        _t('messages.user_messages.welcome_message.3a38a165', lang)
     )
 
 
 def settings(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            "<b>⚙️ Configurações</b>\n"
-            "Use os botões abaixo para personalizar como os downloads são enviados. "
-            "Essas alterações se aplicam apenas à sua conta."
+            _t('messages.user_messages.settings.918d2a64', lang)
         )
     return (
-        "<b>⚙️ Settings</b>\n"
-        "Use the buttons below to customize how downloads are sent. "
-        "These changes apply only to your account."
+        _t('messages.user_messages.settings.918d2a64', lang)
     )
 
 
 def settings_private_only(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "As configurações estão disponíveis apenas no chat privado. Abra uma conversa direta com o bot para alterar suas preferências."
-    return "Settings are available only in private chat. Open DM with the bot to change preferences."
+        return _t('messages.user_messages.settings_private_only.8f9b59fe', lang)
+    return _t('messages.user_messages.settings_private_only.8f9b59fe', lang)
 
 
 def get_field_text(field: str, lang: str = DEFAULT_LANG):
     lang_code = _normalize_lang(lang)
     texts_pt = {
         "captions": (
-            "<b>📝 Legendas</b>\n"
-            "Mostrar ou ocultar legendas da publicação na mídia baixada. "
-            "Algumas fontes podem não fornecer legendas."
+            _t('messages.user_messages.get_field_text.feb36852', lang)
         ),
         "delete_message": (
-            "<b>🗑️ Apagar Mensagens</b>\n"
-            "Excluir automaticamente o seu link após o download ser processado."
+            _t('messages.user_messages.get_field_text.7f94496f', lang)
         ),
         "info_buttons": (
-            "<b>ℹ️ Botões de Informação</b>\n"
-            "Ativar ou desativar botões extras de informação abaixo da mídia baixada."
+            _t('messages.user_messages.get_field_text.7f6129d4', lang)
         ),
         "url_button": (
-            "<b>🔗 Botão do Link</b>\n"
-            "Mostrar ou ocultar um botão com o link original da publicação."
+            _t('messages.user_messages.get_field_text.4e1f9b46', lang)
         ),
         "audio_button": (
-            "<b>🎧 Botão MP3</b>\n"
-            "Ativar ou desativar o botão 'Baixar MP3' quando o áudio estiver disponível."
+            _t('messages.user_messages.get_field_text.d03f091c', lang)
         ),
         "music_button": (
-            "<b>🎵 Botão Shazam</b>\n"
-            "Ativar ou desativar o botão 'Identificar Música' em vídeos do Instagram e TikTok para reconhecer a faixa via Shazam."
+            _t('messages.user_messages.get_field_text.88c9daba', lang)
         ),
         "file_button": (
-            "<b>📄 Botão de Arquivo</b>\n"
-            "Mostrar ou ocultar o botão 'Baixar Arquivo' abaixo dos vídeos para obter o arquivo original sem compressão sob demanda."
+            _t('messages.user_messages.get_field_text.9a258f03', lang)
         ),
         "video_quality": (
-            "<b>🎬 Qualidade do Vídeo</b>\n"
-            "Selecione a resolução de download de vídeo de sua preferência:\n\n"
-            "• <b>Melhor (1080p+)</b>: Resolução máxima possível.\n"
-            "• <b>Equilibrada (720p)</b>: Ótimo equilíbrio entre qualidade e velocidade.\n"
-            "• <b>Econômica (480p)</b>: Downloads mais rápidos com menor consumo de dados."
+            _t('messages.user_messages.get_field_text.8accbb18', lang)
         ),
         "as_document": (
-            "<b>📄 Enviar como Arquivo</b>\n"
-            "Quando ativado, vídeos e fotos serão enviados como documentos (.mp4 / .jpg) sem compressão, preservando 100% da qualidade original."
+            _t('messages.user_messages.get_field_text.3589a96c', lang)
         ),
         "audio_format": (
-            "<b>🎵 Formato de Áudio</b>\n"
-            "Escolha o formato de áudio padrão para downloads de música:\n\n"
-            "• <b>MP3</b>: Formato de áudio universal padrão.\n"
-            "• <b>M4A (AAC)</b>: Formato compacto de alta qualidade para iOS e Mac.\n"
-            "• <b>FLAC / Original</b>: Áudio sem perdas (lossless) quando disponível."
+            _t('messages.user_messages.get_field_text.5b27c1b3', lang)
         ),
     }
 
     texts_en = {
         "captions": (
-            "<b>📝 Descriptions</b>\n"
-            "Show or hide post captions in downloaded media. "
-            "Some sources may not provide captions."
+            _t('messages.user_messages.get_field_text.feb36852', lang)
         ),
         "delete_message": (
-            "<b>🗑️ Delete Messages</b>\n"
-            "Automatically remove your link once the download is handled."
+            _t('messages.user_messages.get_field_text.7f94496f', lang)
         ),
         "info_buttons": (
-            "<b>ℹ️ Info Buttons</b>\n"
-            "Toggle additional info buttons under downloaded media."
+            _t('messages.user_messages.get_field_text.7f6129d4', lang)
         ),
         "url_button": (
-            "<b>🔗 URL Button</b>\n"
-            "Show or hide a button with the original post link."
+            _t('messages.user_messages.get_field_text.4e1f9b46', lang)
         ),
         "audio_button": (
-            "<b>🎧 MP3 Button</b>\n"
-            "Toggle the Download MP3 button when audio is available."
+            _t('messages.user_messages.get_field_text.d03f091c', lang)
         ),
         "music_button": (
-            "<b>🎵 Shazam Button</b>\n"
-            "Toggle the 'Identify Music' button for Instagram and TikTok videos to recognize tracks via Shazam."
+            _t('messages.user_messages.get_field_text.88c9daba', lang)
         ),
         "file_button": (
-            "<b>📄 File Button</b>\n"
-            "Show or hide the Download File button under videos to get original uncompressed files on demand."
+            _t('messages.user_messages.get_field_text.9a258f03', lang)
         ),
         "video_quality": (
-            "<b>🎬 Video Quality</b>\n"
-            "Select your preferred video download resolution:\n\n"
-            "• <b>Best (1080p+)</b>: Maximum possible resolution.\n"
-            "• <b>Balanced (720p)</b>: Great balance of quality and speed.\n"
-            "• <b>Data Saver (480p)</b>: Faster downloads with minimal data usage."
+            _t('messages.user_messages.get_field_text.8accbb18', lang)
         ),
         "as_document": (
-            "<b>📄 Send as File</b>\n"
-            "When enabled, videos and photos will be sent as uncompressed documents (.mp4 / .jpg) preserving 100% original quality."
+            _t('messages.user_messages.get_field_text.3589a96c', lang)
         ),
         "audio_format": (
-            "<b>🎵 Audio Format</b>\n"
-            "Choose default audio format for music downloads:\n\n"
-            "• <b>MP3</b>: Standard universal audio format.\n"
-            "• <b>M4A (AAC)</b>: High quality compact format for iOS & Mac.\n"
-            "• <b>FLAC / Original</b>: Uncompressed lossless audio where available."
+            _t('messages.user_messages.get_field_text.5b27c1b3', lang)
         ),
     }
 
     if lang_code == "pt":
-        return texts_pt.get(field, "<b>Configurações</b>\nEsta opção ainda não possui uma descrição.")
-    return texts_en.get(field, "<b>Settings</b>\nThis option doesn't have a description yet.")
+        return texts_pt.get(field, _t('messages.user_messages.get_field_text.074f52d4', lang))
+    return texts_en.get(field, _t('messages.user_messages.get_field_text.074f52d4', lang))
 
 
 def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
@@ -187,7 +127,7 @@ def captions(user_captions, post_caption, bot_url, *, limit: int = 1024):
         return cut
 
     escaped_url = html.escape(bot_url or "")
-    footer = f'<tg-emoji emoji-id="5283080528818360566">🚀</tg-emoji> Powered by <a href="{escaped_url}">Save Vídeo DL Bot</a>'
+    footer = _t('caption.footer', url=escaped_url)
 
     if user_captions == "on" and post_caption:
         body = html.escape(str(post_caption))
@@ -210,9 +150,7 @@ def downloading_file_status(lang: str = DEFAULT_LANG, *, platform: str | None = 
         return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="5854908544712707500">📦</tg-emoji>'
     return (
-        f"{emoji} Baixando arquivo..."
-        if _normalize_lang(lang) == "pt"
-        else f"{emoji} Downloading file..."
+        _t('messages.user_messages.downloading_file_status.8b01351d', lang, p0=emoji)
     )
 
 
@@ -221,18 +159,14 @@ def uploading_file_status(lang: str = DEFAULT_LANG, *, platform: str | None = No
         return media_transfer_status(platform, uploading=True, lang=lang)
     emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
     return (
-        f"{emoji} Enviando arquivo para o Telegram..."
-        if _normalize_lang(lang) == "pt"
-        else f"{emoji} Uploading file to Telegram..."
+        _t('messages.user_messages.uploading_file_status.82c4258f', lang, p0=emoji)
     )
 
 
 def mediafire_document_caption(lang: str = DEFAULT_LANG):
     emoji = '<tg-emoji emoji-id="5431420628978641216">📄</tg-emoji>'
     return (
-        f"{emoji} Arquivo baixado do MediaFire"
-        if _normalize_lang(lang) == "pt"
-        else f"{emoji} File downloaded from MediaFire"
+        _t('messages.user_messages.mediafire_document_caption.5c39bac9', lang, p0=emoji)
     )
 
 
@@ -240,7 +174,7 @@ def downloading_audio_status(lang: str = DEFAULT_LANG, *, platform: str | None =
     if platform is not None:
         return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="6024055893111345718">😄</tg-emoji>'
-    return f"{emoji} Baixando áudio..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading audio..."
+    return _t('messages.user_messages.downloading_audio_status.541f28ad', lang, p0=emoji)
 
 
 def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "video", count: int = 1, platform: str | None = None):
@@ -248,207 +182,203 @@ def downloading_video_status(lang: str = DEFAULT_LANG, *, media_kind: str = "vid
         return media_transfer_status(platform, uploading=False, lang=lang)
     emoji = '<tg-emoji emoji-id="5375464961822695044">🎬</tg-emoji>'
     if media_kind == "unknown":
-        return f"{emoji} Baixando..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading..."
+        return _t('messages.user_messages.downloading_video_status.89e178d6', lang, p0=emoji)
     if media_kind == "photo":
         if _normalize_lang(lang) == "pt":
-            return f"{emoji} Baixando imagens..." if count > 1 else f"{emoji} Baixando imagem..."
-        return f"{emoji} Downloading images..." if count > 1 else f"{emoji} Downloading image..."
-    return f"{emoji} Baixando vídeo..." if _normalize_lang(lang) == "pt" else f"{emoji} Downloading video..."
+            return _t('messages.user_messages.downloading_video_status.810ef308', lang, p0=emoji) if count > 1 else _t('messages.user_messages.downloading_video_status.5628b1df', lang, p0=emoji)
+        return _t('messages.user_messages.downloading_video_status.810ef308', lang, p0=emoji) if count > 1 else _t('messages.user_messages.downloading_video_status.5628b1df', lang, p0=emoji)
+    return _t('messages.user_messages.downloading_video_status.8efb7c69', lang, p0=emoji)
 
 
 def uploading_status(lang: str = DEFAULT_LANG, *, platform: str | None = None):
     if platform is not None:
         return media_transfer_status(platform, uploading=True, lang=lang)
     emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
-    return f"{emoji} Enviando arquivo para o Telegram..." if _normalize_lang(lang) == "pt" else f"{emoji} Uploading file to Telegram..."
+    return _t('messages.user_messages.uploading_file_status.82c4258f', lang, p0=emoji)
 
 
 def retrying_again_status(next_attempt: int, total_attempts: int, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"Erro, tentando novamente... ({next_attempt}/{total_attempts})"
-    return f"Error, trying again... ({next_attempt}/{total_attempts})"
+        return _t('messages.user_messages.retrying_again_status.d71e3176', lang, p0=next_attempt, p1=total_attempts)
+    return _t('messages.user_messages.retrying_again_status.d71e3176', lang, p0=next_attempt, p1=total_attempts)
 
 
 def dm_start_required(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "<tg-emoji emoji-id='5472308992514464048'>🔒</tg-emoji> Configuração inicial necessária: abra o chat privado, envie /start e reenvie o link."
-    return "<tg-emoji emoji-id='5472308992514464048'>🔒</tg-emoji> First-time setup needed: open DM, press Start, and resend the link."
+        return _t('messages.user_messages.dm_start_required.696ff0fc', lang)
+    return _t('messages.user_messages.dm_start_required.696ff0fc', lang)
 
 
 def duplicate_link_processing(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Este link já está sendo processado. Aguarde alguns segundos."
-    return "This link is already being processed. Wait a few seconds."
+        return _t('messages.user_messages.duplicate_link_processing.17e7b36b', lang)
+    return _t('messages.user_messages.duplicate_link_processing.17e7b36b', lang)
 
 
 def duplicate_link_recently_processed(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Este link acabou de ser processado. Se ainda precisar dele, tente novamente em alguns segundos."
-    return "This link was just handled. If you still need it, try again in a few seconds."
+        return _t('messages.user_messages.duplicate_link_recently_processed.4a226f59', lang)
+    return _t('messages.user_messages.duplicate_link_recently_processed.4a226f59', lang)
 
 
 def settings_admin_only(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Apenas administradores podem usar /settings em grupos."
-    return "Only group admins can open /settings in group chats."
+        return _t('messages.user_messages.settings_admin_only.a65eb7a7', lang)
+    return _t('messages.user_messages.settings_admin_only.a65eb7a7', lang)
 
 
 def invalid_settings_option(lang: str = DEFAULT_LANG):
-    return "Opção de configuração inválida." if _normalize_lang(lang) == "pt" else "Invalid settings option."
+    return _t('messages.user_messages.invalid_settings_option.b9659ef8', lang)
 
 
 def join_group(chat_title: str, lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
         return (
-            "Obrigado por me adicionar ao <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n"
-            "Por favor, conceda-me <b>permissões de administrador</b> para liberar todas as funções 🔓"
+            _t('messages.user_messages.join_group.2f22e10f', lang)
         ).format(chat_title=chat_title)
     return (
-        "Thanks for adding me to <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n"
-        "Please grant me <b>admin rights</b> to unlock full functionality 🔓"
+        _t('messages.user_messages.join_group.2f22e10f', lang)
     ).format(chat_title=chat_title)
 
 
 def admin_rights_granted(chat_title: str, lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
         return (
-            "Obrigado por conceder permissões de administrador no <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n"
-            "💻 Manterei os downloads funcionando com rapidez e estabilidade."
+            _t('messages.user_messages.admin_rights_granted.937753ca', lang)
         ).format(chat_title=chat_title)
     return (
-        "Thanks for granting admin rights in <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n"
-        "💻 I'll keep downloads running smoothly."
+        _t('messages.user_messages.admin_rights_granted.937753ca', lang)
     ).format(chat_title=chat_title)
 
 
 def keyboard_removed(lang: str = DEFAULT_LANG):
-    return "Teclado removido." if _normalize_lang(lang) == "pt" else "Reply keyboard removed."
+    return _t('messages.user_messages.keyboard_removed.6ad6a688', lang)
 
 
 def tiktok_live_not_supported(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Transmissões ao vivo (LIVE) do TikTok ainda não são suportadas. Envie o link de um post regular."
-    return "TikTok LIVE streams aren't supported yet. Send a regular TikTok post link."
+        return _t('messages.user_messages.tiktok_live_not_supported.8bc518aa', lang)
+    return _t('messages.user_messages.tiktok_live_not_supported.8bc518aa', lang)
 
 
 def delete_permission_warning(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Falha ao apagar mensagem: sem permissão para excluir mensagens neste chat. Conceda permissão de administrador ou desative a exclusão automática nas configurações."
-    return "Auto-delete failed: missing permission to delete messages in this chat. Please grant delete permissions or turn off auto-delete in settings."
+        return _t('messages.user_messages.delete_permission_warning.2ecbc803', lang)
+    return _t('messages.user_messages.delete_permission_warning.2ecbc803', lang)
 
 
 def stats_temporarily_unavailable(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Não foi possível gerar as estatísticas agora. Tente novamente mais tarde."
-    return "Couldn't generate stats right now. Please try again later."
+        return _t('messages.user_messages.stats_temporarily_unavailable.195d4b5b', lang)
+    return _t('messages.user_messages.stats_temporarily_unavailable.195d4b5b', lang)
 
 
 def no_queue_metrics_yet(lang: str = DEFAULT_LANG):
-    return "Nenhuma métrica de fila disponível no momento." if _normalize_lang(lang) == "pt" else "No queue metrics yet."
+    return _t('messages.user_messages.no_queue_metrics_yet.694604d3', lang)
 
 
 def open_bot_for_audio(lang: str = DEFAULT_LANG):
-    return "Abra o bot no privado para baixar o áudio." if _normalize_lang(lang) == "pt" else "Open the bot in private chat to download audio."
+    return _t('messages.user_messages.open_bot_for_audio.1fae42ac', lang)
 
 
 def audio_fetch_failed(lang: str = DEFAULT_LANG):
-    return "Falha ao obter informações do áudio. Tente novamente mais tarde." if _normalize_lang(lang) == "pt" else "Failed to get audio info. Please try again later."
+    return _t('messages.user_messages.audio_fetch_failed.54a50e5e', lang)
 
 
 def audio_download_failed(lang: str = DEFAULT_LANG):
-    return "Falha no download do áudio. Tente novamente mais tarde." if _normalize_lang(lang) == "pt" else "Audio download failed. Please try again later."
+    return _t('messages.user_messages.audio_download_failed.ff719ff2', lang)
 
 
 def spotify_metadata_failed(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Não foi possível ler esta faixa do Spotify. Verifique o link e tente novamente."
-    return "Couldn't read this Spotify track. Please check the link and try again."
+        return _t('messages.user_messages.spotify_metadata_failed.480184fd', lang)
+    return _t('messages.user_messages.spotify_metadata_failed.480184fd', lang)
 
 
 def spotify_source_not_found(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Não foi possível encontrar uma fonte de áudio correspondente para esta música do Spotify."
-    return "Couldn't find a matching audio source for this Spotify track."
+        return _t('messages.user_messages.spotify_source_not_found.8b705fec', lang)
+    return _t('messages.user_messages.spotify_source_not_found.8b705fec', lang)
 
 
 def inline_album_link_invalid(lang: str = DEFAULT_LANG):
-    return "Este link de álbum expirou ou é inválido." if _normalize_lang(lang) == "pt" else "This album link is expired or invalid."
+    return _t('messages.user_messages.inline_album_link_invalid.8d2d8799', lang)
 
 
 def inline_photo_title(service_name: str, lang: str = DEFAULT_LANG):
-    return f"Foto do {service_name}" if _normalize_lang(lang) == "pt" else f"{service_name} Photo"
+    return _t('messages.user_messages.inline_photo_title.714f2b56', lang, p0=service_name)
 
 
 def inline_photo_description(lang: str = DEFAULT_LANG):
-    return "Foto individual" if _normalize_lang(lang) == "pt" else "Single photo"
+    return _t('messages.user_messages.inline_photo_description.bb7bd65f', lang)
 
 
 def inline_album_title(service_name: str, lang: str = DEFAULT_LANG):
-    return f"Álbum do {service_name}" if _normalize_lang(lang) == "pt" else f"{service_name} Album"
+    return _t('messages.user_messages.inline_album_title.44a7cb63', lang, p0=service_name)
 
 
 def inline_album_description(lang: str = DEFAULT_LANG):
-    return "Abrir álbum completo no bot" if _normalize_lang(lang) == "pt" else "Open full album in bot"
+    return _t('messages.user_messages.inline_album_description.504ad33c', lang)
 
 
 def inline_open_full_album_button(lang: str = DEFAULT_LANG):
-    return "Abrir Álbum Completo" if _normalize_lang(lang) == "pt" else "Open Full Album"
+    return _t('messages.user_messages.inline_open_full_album_button.f5ce3ba7', lang)
 
 
 def inline_photos_title(service_name: str, lang: str = DEFAULT_LANG):
-    return f"Fotos do {service_name}" if _normalize_lang(lang) == "pt" else f"{service_name} Photos"
+    return _t('messages.user_messages.inline_photos_title.2af6816f', lang, p0=service_name)
 
 
 def inline_photos_not_supported(service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"Fotos do {service_name} não são suportadas no modo inline."
-    return f"{service_name} photos are not supported inline."
+        return _t('messages.user_messages.inline_photos_not_supported.f84f3b40', lang, p0=service_name)
+    return _t('messages.user_messages.inline_photos_not_supported.f84f3b40', lang, p0=service_name)
 
 
 def inline_send_video_button(lang: str = DEFAULT_LANG):
-    return "Enviar vídeo inline" if _normalize_lang(lang) == "pt" else "Send video inline"
+    return _t('keyboards.inline_keyboards.inline_send_video_keyboard.3375997f', lang)
 
 
 def inline_video_title(service_name: str, lang: str = DEFAULT_LANG):
-    return f"{service_name} Vídeo" if _normalize_lang(lang) == "pt" else f"{service_name} Video"
+    return _t('messages.user_messages.inline_video_title.cc2d0fd3', lang, p0=service_name)
 
 
 def inline_send_video_description(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Toque no botão para enviar este vídeo inline."
-    return "Tap the button to send this video inline."
+        return _t('messages.user_messages.inline_send_video_description.bbccdc63', lang)
+    return _t('messages.user_messages.inline_send_video_description.bbccdc63', lang)
 
 
 def inline_send_photo_description(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Toque no botão para enviar esta foto inline."
-    return "Tap the button to send this photo inline."
+        return _t('messages.user_messages.inline_send_photo_description.89b2b9d5', lang)
+    return _t('messages.user_messages.inline_send_photo_description.89b2b9d5', lang)
 
 
 def inline_send_photo_prompt(service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"A foto do {service_name} está sendo preparada...\nSe não iniciar automaticamente, toque no botão abaixo."
-    return f"{service_name} photo is being prepared...\nIf it does not start automatically, tap the button below."
+        return _t('messages.user_messages.inline_send_photo_prompt.eae8529e', lang, p0=service_name)
+    return _t('messages.user_messages.inline_send_photo_prompt.eae8529e', lang, p0=service_name)
 
 
 def inline_send_video_prompt(service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"O vídeo do {service_name} está sendo preparado...\nSe o envio não iniciar automaticamente, toque no botão abaixo."
-    return f"{service_name} video is being prepared...\nIf it does not start automatically, tap the button below."
+        return _t('messages.user_messages.inline_send_video_prompt.87cdb267', lang, p0=service_name)
+    return _t('messages.user_messages.inline_send_video_prompt.87cdb267', lang, p0=service_name)
 
 
 def inline_send_audio_prompt(service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"O áudio do {service_name} está sendo preparado...\nSe o envio não iniciar automaticamente, toque no botão abaixo."
-    return f"{service_name} audio is being prepared...\nIf it does not start automatically, tap the button below."
+        return _t('messages.user_messages.inline_send_audio_prompt.5a1ea930', lang, p0=service_name)
+    return _t('messages.user_messages.inline_send_audio_prompt.5a1ea930', lang, p0=service_name)
 
 
 def inline_video_already_processing(lang: str = DEFAULT_LANG):
-    return "Este vídeo inline já está sendo preparado." if _normalize_lang(lang) == "pt" else "This inline video is already being prepared."
+    return _t('messages.user_messages.inline_video_already_processing.31db6958', lang)
 
 
 def inline_video_already_sent(lang: str = DEFAULT_LANG):
-    return "Este vídeo inline já foi enviado." if _normalize_lang(lang) == "pt" else "This inline video was already sent."
+    return _t('messages.user_messages.inline_video_already_sent.68262216', lang)
 
 
 def supported_sites_message(bot_username: str | None = None, lang: str = DEFAULT_LANG):
@@ -460,32 +390,26 @@ def category_settings_text(category: str, lang: str = DEFAULT_LANG) -> str:
     if category == "media":
         if lang_code == "pt":
             return (
-                "<b>🎬 Mídia & Configurações de Qualidade</b>\n\n"
-                "Configure a resolução de vídeo, formato de arquivo e opções de áudio:"
+                _t('messages.user_messages.category_settings_text.3e5e3eee', lang)
             )
         return (
-            "<b>🎬 Media & Quality Settings</b>\n\n"
-            "Configure video resolution, file format, and audio options:"
+            _t('messages.user_messages.category_settings_text.3e5e3eee', lang)
         )
     if category == "appearance":
         if lang_code == "pt":
             return (
-                "<b>🎨 Aparência & Botões</b>\n\n"
-                "Personalize descrições de posts, links originais e botões de ação:"
+                _t('messages.user_messages.category_settings_text.cb64f58b', lang)
             )
         return (
-            "<b>🎨 Appearance & Buttons</b>\n\n"
-            "Customize post descriptions, original URL links, and action buttons:"
+            _t('messages.user_messages.category_settings_text.cb64f58b', lang)
         )
     if category == "chat":
         if lang_code == "pt":
             return (
-                "<b>💬 Chat & Limpeza</b>\n\n"
-                "Gerencie o comportamento do bot em grupos e a exclusão automática de mensagens:"
+                _t('messages.user_messages.category_settings_text.d1cf9a94', lang)
             )
         return (
-            "<b>💬 Chat & Cleanup</b>\n\n"
-            "Manage group chat behavior and message cleanup settings:"
+            _t('messages.user_messages.category_settings_text.d1cf9a94', lang)
         )
     return settings(lang=lang)
 
@@ -494,60 +418,10 @@ def help_message(bot_username: str | None = None, lang: str = DEFAULT_LANG) -> s
     username = bot_username or "SaveVidDLBot"
     if _normalize_lang(lang) == "pt":
         return (
-            "<b>📖 Guia & Ajuda do Save Vídeo DL Bot</b>\n\n"
-            "Envie um link ou cole vários links na mesma mensagem. O bot extrairá e entregará a mídia automaticamente.\n\n"
-            "<blockquote expandable><b>📷 Instagram & Threads</b>\n"
-            "• Download de Posts, Reels, IGTV & Stories\n"
-            "• Carrosséis de fotos e álbuns multimídia\n"
-            "• Copie o link via Compartilhar → Copiar link</blockquote>\n\n"
-            "<blockquote expandable><b>🎵 TikTok</b>\n"
-            "• Downloads de vídeo sem marca d'água\n"
-            "• Carrosséis de fotos e apresentações\n"
-            "• Extração de áudio MP3 suportada</blockquote>\n\n"
-            "<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n"
-            "• YouTube Shorts e Vídeos convencionais\n"
-            "• Áudio e vídeo em alta definição\n"
-            "• Toque no botão MP3 para baixar o áudio</blockquote>\n\n"
-            "<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n"
-            "• Vídeos, GIFs e imagens do X / Twitter\n"
-            "• Pins de vídeo e imagem do Pinterest</blockquote>\n\n"
-            "<blockquote expandable><b>🎧 SoundCloud &  🟢 Spotify</b>\n"
-            "• Faixas de áudio do SoundCloud em alta qualidade\n"
-            "• Identificação de faixas e download do Spotify</blockquote>\n\n"
-            f"<blockquote expandable><b>⚡ Inline Mode</b>\n"
-            f"• Digite <code>@{username} [link]</code> em qualquer chat\n"
-            "• Prévia instantânea e envio direto de mídia</blockquote>\n\n"
-            "<blockquote expandable><b>📦 Download em Lote (Batch)</b>\n"
-            "• Envie até 6 links em uma única mensagem\n"
-            "• Entregues um a um para manter o chat organizado</blockquote>"
+            _t('messages.user_messages.help_message.9640b060', lang, p0=username)
         )
     return (
-        "<b>📖 Save Vídeo DL Bot Help & Guide</b>\n\n"
-        "Send one link or paste multiple links in one message. The bot will automatically extract and deliver the media.\n\n"
-        "<blockquote expandable><b>📷 Instagram & Threads</b>\n"
-        "• Download Posts, Reels, IGTV & Stories\n"
-        "• Photo carousels & multi-media albums\n"
-        "• Copy link via Share → Copy link</blockquote>\n\n"
-        "<blockquote expandable><b>🎵 TikTok</b>\n"
-        "• Watermark-free video downloads\n"
-        "• Photo carousels & slideshows\n"
-        "• MP3 audio extraction supported</blockquote>\n\n"
-        "<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n"
-        "• YouTube Shorts & regular Videos\n"
-        "• High quality audio & video streams\n"
-        "• Tap MP3 button to download audio</blockquote>\n\n"
-        "<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n"
-        "• X / Twitter videos, GIFs & images\n"
-        "• Pinterest video and image Pins</blockquote>\n\n"
-        "<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n"
-        "• High quality SoundCloud audio tracks\n"
-        "• Spotify track matching & audio download</blockquote>\n\n"
-        f"<blockquote expandable><b>⚡ Inline Mode</b>\n"
-        f"• Type <code>@{username} [link]</code> in any chat\n"
-        "• Instant preview and direct media sharing</blockquote>\n\n"
-        "<blockquote expandable><b>📦 Batch Downloading</b>\n"
-        "• Paste up to 6 links in a single message\n"
-        "• Delivered one by one to keep chat clean</blockquote>"
+        _t('messages.user_messages.help_message.9640b060', lang, p0=username)
     )
 
 
@@ -556,16 +430,10 @@ def referral_message(bot_username: str, user_id: int, invited_count: int, lang: 
     ref_link = f"https://t.me/{username}?start=ref_{user_id}"
     if _normalize_lang(lang) == "pt":
         return (
-            "<b>👥 Programa de Indicação</b>\n\n"
-            "Convide amigos para usar o Save Vídeo DL Bot! Compartilhe seu link pessoal:\n"
-            f"<code>{ref_link}</code>\n\n"
-            f"Usuários convidados: <b>{invited_count}</b>"
+            _t('messages.user_messages.referral_message.9012a5e9', lang, p0=ref_link, p1=invited_count)
         )
     return (
-        "<b>👥 Your Referral Program</b>\n\n"
-        "Invite friends to use Save Vídeo DL Bot! Share your personal referral link:\n"
-        f"<code>{ref_link}</code>\n\n"
-        f"Users invited: <b>{invited_count}</b>"
+        _t('messages.user_messages.referral_message.9012a5e9', lang, p0=ref_link, p1=invited_count)
     )
 
 
@@ -573,128 +441,121 @@ def batch_links_started(processed_total: int, detected_total: int | None = None,
     if _normalize_lang(lang) == "pt":
         if detected_total is not None and detected_total > processed_total:
             return (
-                f"Encontrados {detected_total} links suportados. "
-                f"Processarei os primeiros {processed_total} um por um para manter o chat organizado."
+                _t('messages.user_messages.batch_links_started.9ca42ef8', lang, p0=detected_total, p1=processed_total)
             )
-        return f"Encontrados {processed_total} links suportados. Processarei um por um para manter o chat organizado."
+        return _t('messages.user_messages.batch_links_started.202f1982', lang, p0=processed_total)
     if detected_total is not None and detected_total > processed_total:
         return (
-            f"Found {detected_total} supported links. "
-            f"I'll process the first {processed_total} one by one so the chat stays readable."
+            _t('messages.user_messages.batch_links_started.a75f7fec', lang, p0=detected_total, p1=processed_total)
         )
-    return f"Found {processed_total} supported links. I'll process them one by one so the chat stays readable."
+    return _t('messages.user_messages.batch_links_started.f44054ae', lang, p0=processed_total)
 
 
 def batch_link_progress(current: int, total: int, service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"Processando link {current}/{total}: {service_name}..."
-    return f"Processing link {current}/{total}: {service_name}..."
+        return _t('messages.user_messages.batch_link_progress.0fc96f97', lang, p0=current, p1=total, p2=service_name)
+    return _t('messages.user_messages.batch_link_progress.0fc96f97', lang, p0=current, p1=total, p2=service_name)
 
 
 def batch_links_finished(total: int, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"Processamento em lote concluído para {total} links."
-    return f"Finished batch processing for {total} links."
+        return _t('messages.user_messages.batch_links_finished.7d94657d', lang, p0=total)
+    return _t('messages.user_messages.batch_links_finished.7d94657d', lang, p0=total)
 
 
 def timeout_error(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Tempo limite esgotado. O servidor de origem pode estar lento no momento. Tente novamente mais tarde."
-    return "Request timed out. The source may be slow right now. Please try again later."
+        return _t('messages.user_messages.timeout_error.727ad602', lang)
+    return _t('messages.user_messages.timeout_error.727ad602', lang)
 
 
 def something_went_wrong(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            "Não foi possível processar este link no momento.\n"
-            "O conteúdo pode ser privado, ter sido apagado, ter restrição de região ou estar temporariamente bloqueado pela plataforma de origem. "
-            "Tente novamente mais tarde."
+            _t('messages.user_messages.something_went_wrong.d2e288ca', lang)
         )
     return (
-        "Couldn't process this link right now.\n"
-        "It may be private, deleted, region-limited, or temporarily blocked by the source. "
-        "Please try again later."
+        _t('messages.user_messages.something_went_wrong.d2e288ca', lang)
     )
 
 
 def video_too_large(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "O vídeo é muito grande para o Telegram. Tente um vídeo mais curto ou a opção de áudio/MP3 se disponível."
-    return "The video is too large for Telegram. Try a shorter video or an MP3/audio option if available."
+        return _t('messages.user_messages.video_too_large.1fbef359', lang)
+    return _t('messages.user_messages.video_too_large.1fbef359', lang)
 
 
 def audio_too_large(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "O áudio é muito grande para o Telegram. Tente uma faixa mais curta ou outro link de origem."
-    return "The audio is too large for Telegram. Try a shorter track or another source link."
+        return _t('messages.user_messages.audio_too_large.e963ea5a', lang)
+    return _t('messages.user_messages.audio_too_large.e963ea5a', lang)
 
 
 def nothing_found(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Nenhuma mídia encontrada. Verifique se o link é público, não expirou e aponta diretamente para um post ou vídeo."
-    return "No media found. Check that the link is public, not expired, and points directly to a post or video."
+        return _t('messages.user_messages.nothing_found.ac1e1f92', lang)
+    return _t('messages.user_messages.nothing_found.ac1e1f92', lang)
 
 
 def inline_open_result(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Abra este resultado no bot."
-    return "Open this result in the bot."
+        return _t('messages.user_messages.inline_open_result.ddf133ea', lang)
+    return _t('messages.user_messages.inline_open_result.ddf133ea', lang)
 
 
 def inline_media_title(lang: str = DEFAULT_LANG):
-    return "Mídia" if _normalize_lang(lang) == "pt" else "Media"
+    return _t('messages.user_messages.inline_media_title.d357175c', lang)
 
 
 def inline_only_button_warning(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Este botão funciona apenas no modo inline."
-    return "This button works only in inline mode."
+        return _t('messages.user_messages.inline_only_button_warning.dc3040b2', lang)
+    return _t('messages.user_messages.inline_only_button_warning.dc3040b2', lang)
 
 
 def inline_send_photo_button(lang: str = DEFAULT_LANG):
-    return "Enviar foto inline" if _normalize_lang(lang) == "pt" else "Send photo inline"
+    return _t('messages.user_messages.inline_send_photo_button.1855ed29', lang)
 
 
 def inline_send_audio_button(lang: str = DEFAULT_LANG):
-    return "Enviar áudio inline" if _normalize_lang(lang) == "pt" else "Send audio inline"
+    return _t('messages.user_messages.inline_send_audio_button.eaf6404b', lang)
 
 
 def inline_send_audio_description(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Toque no botão para enviar este áudio inline."
-    return "Tap the button to send this audio inline."
+        return _t('messages.user_messages.inline_send_audio_description.e4313522', lang)
+    return _t('messages.user_messages.inline_send_audio_description.e4313522', lang)
 
 
 def inline_single_video_only(service_name: str, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"Apenas vídeos individuais do {service_name} são suportados no modo inline."
-    return f"Only single {service_name} videos are supported inline."
+        return _t('messages.user_messages.inline_single_video_only.a8e0a14e', lang, p0=service_name)
+    return _t('messages.user_messages.inline_single_video_only.a8e0a14e', lang, p0=service_name)
 
 
 def open_bot_to_download_mp3(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Abra o bot para baixar o MP3."
-    return "Open the bot to download MP3."
+        return _t('messages.user_messages.open_bot_to_download_mp3.a09899db', lang)
+    return _t('messages.user_messages.open_bot_to_download_mp3.a09899db', lang)
 
 def unknown_data(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Dados desconhecidos."
-    return "Unknown data."
+        return _t('messages.user_messages.unknown_data.709e425b', lang)
+    return _t('messages.user_messages.unknown_data.709e425b', lang)
 
 def callback_processing_error(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "Erro ao processar a ação."
-    return "Error processing callback."
+        return _t('messages.user_messages.callback_processing_error.577ed7a7', lang)
+    return _t('messages.user_messages.callback_processing_error.577ed7a7', lang)
 
 def tiktok_stat_label(stat: str, lang: str = DEFAULT_LANG):
-    is_pt = _normalize_lang(lang) == "pt"
     labels = {
-        "followers": "Seguidores" if is_pt else "Followers",
-        "videos": "Vídeos" if is_pt else "Videos",
-        "likes": "Curtidas" if is_pt else "Likes",
-        "views": "Visualizações" if is_pt else "Views",
-        "comments": "Comentários" if is_pt else "Comments",
-        "shares": "Compartilhamentos" if is_pt else "Shares",
+        "followers": _t('messages.user_messages.tiktok_stat_label.a145ab34', lang),
+        "videos": _t('messages.user_messages.tiktok_stat_label.c9a96394', lang),
+        "likes": _t('messages.user_messages.tiktok_stat_label.cca0662f', lang),
+        "views": _t('messages.user_messages.tiktok_stat_label.69c40459', lang),
+        "comments": _t('messages.user_messages.tiktok_stat_label.355f79f2', lang),
+        "shares": _t('messages.user_messages.tiktok_stat_label.d4ea333d', lang),
     }
     return labels.get(stat, stat)
 
@@ -707,66 +568,52 @@ def tiktok_stat_label(stat: str, lang: str = DEFAULT_LANG):
 def translation_usage(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            "🌐 <b>Tradutor</b>\n\n"
-            "Envie:\n"
-            "<code>/trad pt-BR Hello, how are you?</code>\n\n"
-            "Ou responda a uma mensagem com:\n"
-            "<code>/trad es</code>\n\n"
-            "O idioma original é detectado automaticamente."
+            _t('messages.user_messages.translation_usage.de61c325', lang)
         )
 
     return (
-        "🌐 <b>Translator</b>\n\n"
-        "Send:\n"
-        "<code>/trad pt-BR Hello, how are you?</code>\n\n"
-        "Or reply to a message with:\n"
-        "<code>/trad es</code>\n\n"
-        "The source language is detected automatically."
+        _t('messages.user_messages.translation_usage.de61c325', lang)
     )
 
 
 def translation_invalid_language(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
         return (
-            "❌ Código de idioma inválido.\n\n"
-            "Exemplos: <code>pt-BR</code>, <code>en</code>, "
-            "<code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>"
+            _t('messages.user_messages.translation_invalid_language.db2baa18', lang)
         )
     return (
-        "❌ Invalid language code.\n\n"
-        "Examples: <code>pt-BR</code>, <code>en</code>, "
-        "<code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>"
+        _t('messages.user_messages.translation_invalid_language.db2baa18', lang)
     )
 
 
 def translation_text_too_long(limit: int, lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return f"❌ Texto muito grande para tradução.\nLimite: {limit} caracteres."
-    return f"❌ Text is too long for translation.\nLimit: {limit} characters."
+        return _t('messages.user_messages.translation_text_too_long.ec745c0c', lang, p0=limit)
+    return _t('messages.user_messages.translation_text_too_long.ec745c0c', lang, p0=limit)
 
 
 def translation_service_unavailable(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "❌ O serviço de tradução não está disponível no momento."
-    return "❌ Translation service is currently unavailable."
+        return _t('messages.user_messages.translation_service_unavailable.37e7194a', lang)
+    return _t('messages.user_messages.translation_service_unavailable.37e7194a', lang)
 
 
 def translation_timeout(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "⏳ A tradução demorou demais. Tente novamente."
-    return "⏳ Translation timed out. Please try again."
+        return _t('messages.user_messages.translation_timeout.43852865', lang)
+    return _t('messages.user_messages.translation_timeout.43852865', lang)
 
 
 def translation_failed(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "❌ Não consegui traduzir esse texto agora."
-    return "❌ I couldn't translate this text right now."
+        return _t('messages.user_messages.translation_failed.89834e7d', lang)
+    return _t('messages.user_messages.translation_failed.89834e7d', lang)
 
 
 def translation_error(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "❌ Ocorreu um erro durante a tradução."
-    return "❌ An error occurred while translating."
+        return _t('messages.user_messages.translation_error.25624904', lang)
+    return _t('messages.user_messages.translation_error.25624904', lang)
 
 
 
@@ -798,13 +645,11 @@ def translation_result(
     if username:
         safe_username = html.escape(username, quote=True)
         footer = (
-            f'{rocket_icon} Powered by '
-            f'<a href="https://t.me/{safe_username}">'
-            f'Save Vídeo DL Bot</a>'
+            _t('messages.user_messages.translation_result.098e3e47', None, p0=rocket_icon, p1=safe_username)
         )
     else:
         footer = (
-            f"{rocket_icon} Powered by Save Vídeo DL Bot"
+            _t('messages.user_messages.translation_result.5385fea9', None, p0=rocket_icon)
         )
 
     return (
@@ -854,107 +699,81 @@ def ping_message(
 
     if status == "good":
         status_emoji = green_icon
-        status_text = "Bom" if is_pt else "Good"
+        status_text = _t('messages.user_messages.ping_message.c939327c', lang)
 
     elif status == "fair":
         status_emoji = "🟡"
-        status_text = "Regular" if is_pt else "Fair"
+        status_text = _t('messages.user_messages.ping_message.f7b19afc', lang)
 
     else:
         status_emoji = "🔴"
-        status_text = "Lento" if is_pt else "Slow"
+        status_text = _t('messages.user_messages.ping_message.4b2bebbf', lang)
 
     if is_pt:
         note_text = (
-            "Este ping mede o tempo de resposta entre "
-            "o bot e a API do Telegram."
+            _t('messages.user_messages.ping_message.4bf7ae0f', lang)
         )
         delete_text = (
-            "Esta mensagem e seu comando serão apagados "
-            "após 5 minutos."
+            _t('messages.user_messages.ping_message.6df83bbf', lang)
         )
-        status_label = "Status"
+        status_label = _t('messages.user_messages.ping_message.920e413c', lang)
     else:
         note_text = (
-            "This ping measures the response time between "
-            "the bot and the Telegram API."
+            _t('messages.user_messages.ping_message.4bf7ae0f', lang)
         )
         delete_text = (
-            "This message and your command will be deleted "
-            "after 5 minutes."
+            _t('messages.user_messages.ping_message.6df83bbf', lang)
         )
-        status_label = "Status"
+        status_label = _t('messages.user_messages.ping_message.920e413c', lang)
 
     username = (bot_username or "").lstrip("@").strip()
 
     if username:
         safe_username = html.escape(username, quote=True)
         footer = (
-            f'{rocket_icon} Powered by '
-            f'<a href="https://t.me/{safe_username}">'
-            f'Save Vídeo DL Bot</a>'
+            _t('messages.user_messages.translation_result.098e3e47', lang, p0=rocket_icon, p1=safe_username)
         )
     else:
         footer = (
-            f"{rocket_icon} Powered by Save Vídeo DL Bot"
+            _t('messages.user_messages.translation_result.5385fea9', lang, p0=rocket_icon)
         )
 
     return (
-        f"{pong_icon} <b>Pong!</b>\n\n"
-        f"{ping_icon} <b>Ping:</b> "
-        f"<code>{int(latency_ms)} ms</code>\n\n"
-        f"{status_icon} <b>{status_label}:</b> "
-        f"{status_emoji} {status_text}\n\n"
-        f"<blockquote>"
-        f"{note_icon} <i><b>{'Nota' if is_pt else 'Note'}:</b> "
-        f"{html.escape(note_text)}</i>"
-        f"</blockquote>\n"
-        f"{delete_icon} <i>{html.escape(delete_text)}</i>\n\n"
-        f"{footer}"
+        _t('messages.user_messages.ping_message.5f0c2aa6', lang, p0=pong_icon, p1=ping_icon, p2=int(latency_ms), p3=status_icon, p4=status_label, p5=status_emoji, p6=status_text, p7=note_icon, p8='Nota' if is_pt else 'Note', p9=html.escape(note_text), p10=delete_icon, p11=html.escape(delete_text), p12=footer)
     )
 
 
 def ping_unavailable(lang: str = DEFAULT_LANG):
     if _normalize_lang(lang) == "pt":
-        return "❌ Não foi possível medir o ping agora."
-    return "❌ Couldn't measure the ping right now."
+        return _t('messages.user_messages.ping_unavailable.8196132a', lang)
+    return _t('messages.user_messages.ping_unavailable.8196132a', lang)
 
 
 def guest_no_link_title(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Link não encontrado"
-        if _normalize_lang(lang) == "pt"
-        else "No link found"
+        _t('messages.user_messages.guest_no_link_title.46f00e42', lang)
     )
 
 
 def guest_no_link_description(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Envie ou responda uma mensagem com um link compatível."
-        if _normalize_lang(lang) == "pt"
-        else "Send or reply to a message with a supported link."
+        _t('messages.user_messages.guest_no_link_description.2a8613ae', lang)
     )
 
 
 def guest_no_link_message(lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
         return (
-            "❌ <b>Não encontrei um link compatível.</b>\n\n"
-            "Chame o bot junto com um link ou responda a uma mensagem "
-            "que contenha o link."
+            _t('messages.user_messages.guest_no_link_message.c98f3840', lang)
         )
     return (
-        "❌ <b>I couldn't find a supported link.</b>\n\n"
-        "Call the bot together with a link, or reply to a message "
-        "that contains the link."
+        _t('messages.user_messages.guest_no_link_message.c98f3840', lang)
     )
 
 
 def guest_open_private_button(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Abrir no privado"
-        if _normalize_lang(lang) == "pt"
-        else "Open private chat"
+        _t('messages.user_messages.guest_open_private_button.4c9393ea', lang)
     )
 
 
@@ -962,17 +781,15 @@ def guest_unavailable_title(
     service_name: str,
     lang: str = DEFAULT_LANG,
 ) -> str:
-    service = service_name or "Guest Mode"
+    service = service_name or _t('messages.user_messages.guest_unavailable_title.e33214d1', lang)
     if _normalize_lang(lang) == "pt":
-        return f"{service} no modo convidado"
-    return f"{service} in Guest Mode"
+        return _t('messages.user_messages.guest_unavailable_title.44aaa969', lang, p0=service)
+    return _t('messages.user_messages.guest_unavailable_title.44aaa969', lang, p0=service)
 
 
 def guest_unavailable_description(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Abra o bot no privado para continuar."
-        if _normalize_lang(lang) == "pt"
-        else "Open the bot in private chat to continue."
+        _t('messages.user_messages.guest_unavailable_description.a9ad5227', lang)
     )
 
 
@@ -980,71 +797,48 @@ def guest_unavailable_message(
     service_name: str,
     lang: str = DEFAULT_LANG,
 ) -> str:
-    service = service_name or "este serviço"
+    service = service_name or _t('messages.user_messages.guest_unavailable_message.cf3bfbe9', lang)
     if _normalize_lang(lang) == "pt":
         return (
-            f"ℹ️ <b>{service}</b> ainda não pode concluir este pedido "
-            "diretamente pelo modo convidado.\n\n"
-            "Abra o bot no privado e envie o link por lá."
+            _t('messages.user_messages.guest_unavailable_message.72f01872', lang, p0=service)
         )
     return (
-        f"ℹ️ <b>{service}</b> can't complete this request directly "
-        "through Guest Mode yet.\n\n"
-        "Open the bot in private chat and send the link there."
+        _t('messages.user_messages.guest_unavailable_message.72f01872', lang, p0=service)
     )
 
 
 def guest_slow_down_title(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Muitas solicitações"
-        if _normalize_lang(lang) == "pt"
-        else "Too many requests"
+        _t('messages.user_messages.guest_slow_down_title.802600d1', lang)
     )
 
 
 def guest_slow_down_description(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Aguarde um instante antes de tentar novamente."
-        if _normalize_lang(lang) == "pt"
-        else "Wait a moment before trying again."
+        _t('messages.user_messages.guest_slow_down_description.ce2d7955', lang)
     )
 
 
 def guest_slow_down_message(lang: str = DEFAULT_LANG) -> str:
     return (
-        "⏳ Aguarde um instante e tente novamente."
-        if _normalize_lang(lang) == "pt"
-        else "⏳ Wait a moment and try again."
+        _t('messages.user_messages.guest_slow_down_message.7c65c576', lang)
     )
 
 
 def guest_restricted_service_name(lang: str = DEFAULT_LANG) -> str:
     return (
-        "Serviço indisponível"
-        if _normalize_lang(lang) == "pt"
-        else "Service unavailable"
+        _t('messages.user_messages.guest_restricted_service_name.60bbf043', lang)
     )
 
 
 def channel_subscription_required(lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
         return (
-            '<tg-emoji emoji-id="5816448972297866361">🔴</tg-emoji> '
-            '<b>Inscrição obrigatória</b>\n\n'
-            '<tg-emoji emoji-id="5303106526800524582">🔠</tg-emoji> '
-            'Para utilizar o Save Vídeo DL Bot, você precisa entrar '
-            'no nosso canal oficial.\n\n'
-            '<tg-emoji emoji-id="5866185097312474258">👇</tg-emoji> '
-            'Entre no canal e confirme sua inscrição para liberar o acesso.'
+            _t('messages.user_messages.channel_subscription_required.c5f0e4af', lang)
         )
 
     return (
-        '<tg-emoji emoji-id="5816448972297866361">🔴</tg-emoji> '
-        '<b>Subscription Required</b>\n\n'
-        '<tg-emoji emoji-id="5303106526800524582">🔠</tg-emoji> '
-        'To use Save Vídeo DL Bot, you must join our official channel.\n\n'
-        '<tg-emoji emoji-id="5866185097312474258">👇</tg-emoji> '
-        'Join the channel and verify your subscription to unlock access.'
+        _t('messages.user_messages.channel_subscription_required.c5f0e4af', lang)
     )
 
 
@@ -1056,7 +850,7 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
     platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
     label = html.escape(platform)
     if _normalize_lang(lang) == "pt":
-        action = "Enviando para o Telegram…" if uploading else "Baixando conteúdo…"
+        action = _t('messages.user_messages.media_transfer_status.2eabdcaf', lang) if uploading else _t('messages.user_messages.media_transfer_status.cc5d009a', lang)
     else:
-        action = "Sending to Telegram…" if uploading else "Downloading content…"
+        action = _t('messages.user_messages.media_transfer_status.2eabdcaf', lang) if uploading else _t('messages.user_messages.media_transfer_status.cc5d009a', lang)
     return f"{emoji} {label}: {action}"

@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import logging as py_logging
 import os
@@ -55,13 +56,13 @@ async def _get_admin_lang(event) -> str:
 async def _ensure_admin_callback(call: types.CallbackQuery) -> bool:
     if _is_admin_user(getattr(getattr(call, 'from_user', None), 'id', None)):
         return True
-    await call.answer(_ADMIN_ACCESS_REQUIRED.get(await _get_admin_lang(call), _ADMIN_ACCESS_REQUIRED['pt']), show_alert=True)
+    await call.answer(_t('admin.access_required', await _get_admin_lang(call)), show_alert=True)
     return False
 
 async def _ensure_admin_message(message: types.Message) -> bool:
     if _is_admin_user(getattr(getattr(message, 'from_user', None), 'id', None)):
         return True
-    await message.answer(_ADMIN_ACCESS_REQUIRED, reply_markup=types.ReplyKeyboardRemove())
+    await message.answer(_t('admin.access_required', await _get_admin_lang(message)), reply_markup=types.ReplyKeyboardRemove())
     return False
 
 async def _run_bounded(items, *, limit: int, worker):
@@ -77,7 +78,7 @@ def _format_age(seconds: float | None, lang: str='pt') -> str:
     if seconds is None:
         return 'n/d' if is_pt else 'n/a'
     seconds = max(0, int(seconds))
-    suffix = ' atrás' if is_pt else ' ago'
+    suffix = _t('handlers.admin._format_age.eb04b447', lang)
     if seconds < 60:
         return f'{seconds}s{suffix}'
     minutes, sec = divmod(seconds, 60)
@@ -271,16 +272,16 @@ def _render_session_text(lang: str='pt') -> str:
     uptime = str(timedelta(seconds=int(snapshot.uptime_seconds)))
     downloads_per_hour = snapshot.total_downloads / (snapshot.uptime_seconds / 3600.0) if snapshot.uptime_seconds > 0 and snapshot.total_downloads > 0 else 0.0
     if is_pt:
-        lines = ['<b>Estatísticas da sessão</b>', f'Tempo ativo: <b>{uptime}</b>', f'Total de downloads: <b>{snapshot.total_downloads}</b> ({downloads_per_hour:.1f}/h)', f'Vídeos: <b>{snapshot.total_videos}</b>', f'Áudios: <b>{snapshot.total_audio}</b>', f'Outros: <b>{snapshot.total_other}</b>', f'Tráfego: <b>{_format_bytes(snapshot.total_bytes)}</b>', f'Tamanho médio: <b>{_format_average_bytes(snapshot.total_bytes, snapshot.total_downloads)}</b>', f'Último download: <b>{_format_age(time.monotonic() - snapshot.last_download_monotonic if snapshot.last_download_monotonic is not None else None, lang)}</b>']
+        lines = [_t('handlers.admin._render_session_text.14f1a46a', lang), _t('handlers.admin._render_session_text.83740664', lang, p0=uptime), _t('handlers.admin._render_session_text.63627479', lang, p0=snapshot.total_downloads, p1=f'{downloads_per_hour:.1f}'), _t('handlers.admin._render_session_text.22ffb113', lang, p0=snapshot.total_videos), _t('handlers.admin._render_session_text.ca9549b8', lang, p0=snapshot.total_audio), _t('handlers.admin._render_session_text.68b2f2a9', lang, p0=snapshot.total_other), _t('handlers.admin._render_session_text.4bb414c0', lang, p0=_format_bytes(snapshot.total_bytes)), _t('handlers.admin._render_session_text.d4208cbc', lang, p0=_format_average_bytes(snapshot.total_bytes, snapshot.total_downloads)), _t('handlers.admin._render_session_text.45d43d42', lang, p0=_format_age(time.monotonic() - snapshot.last_download_monotonic if snapshot.last_download_monotonic is not None else None, lang))]
     else:
-        lines = ['<b>Runtime Session Stats</b>', f'Uptime: <b>{uptime}</b>', f'Total downloads: <b>{snapshot.total_downloads}</b> ({downloads_per_hour:.1f}/h)', f'Videos: <b>{snapshot.total_videos}</b>', f'Audio: <b>{snapshot.total_audio}</b>', f'Other: <b>{snapshot.total_other}</b>', f'Traffic: <b>{_format_bytes(snapshot.total_bytes)}</b>', f'Avg download size: <b>{_format_average_bytes(snapshot.total_bytes, snapshot.total_downloads)}</b>', f'Last download: <b>{_format_age(time.monotonic() - snapshot.last_download_monotonic if snapshot.last_download_monotonic is not None else None, lang)}</b>']
+        lines = [_t('handlers.admin._render_session_text.14f1a46a', lang), _t('handlers.admin._render_session_text.83740664', lang, p0=uptime), _t('handlers.admin._render_session_text.63627479', lang, p0=snapshot.total_downloads, p1=f'{downloads_per_hour:.1f}'), _t('handlers.admin._render_session_text.22ffb113', lang, p0=snapshot.total_videos), _t('handlers.admin._render_session_text.ca9549b8', lang, p0=snapshot.total_audio), _t('handlers.admin._render_session_text.68b2f2a9', lang, p0=snapshot.total_other), _t('handlers.admin._render_session_text.4bb414c0', lang, p0=_format_bytes(snapshot.total_bytes)), _t('handlers.admin._render_session_text.d4208cbc', lang, p0=_format_average_bytes(snapshot.total_bytes, snapshot.total_downloads)), _t('handlers.admin._render_session_text.45d43d42', lang, p0=_format_age(time.monotonic() - snapshot.last_download_monotonic if snapshot.last_download_monotonic is not None else None, lang))]
     if snapshot.by_source:
-        lines.extend(['', '<b>Por fonte:</b>' if is_pt else '<b>By source:</b>'])
+        lines.extend(['', _t('handlers.admin._render_session_text.5e939b43', lang)])
         for source, payload in sorted(snapshot.by_source.items(), key=lambda item: (-int(item[1].get('count', 0) or 0), item[0])):
             count = int(payload.get('count', 0) or 0)
             size_bytes = int(payload.get('bytes', 0) or 0)
             share = count / snapshot.total_downloads * 100.0 if snapshot.total_downloads else 0.0
-            avg_label = 'média' if is_pt else 'avg'
+            avg_label = _t('handlers.admin._render_session_text.ca5c8585', lang)
             lines.append(f'{source}: {count} ({share:.0f}%) | {_format_bytes(size_bytes)} | {avg_label} {_format_average_bytes(size_bytes, count)}')
     return '\n'.join(lines)
 
@@ -290,30 +291,30 @@ async def _render_perf_text(*, include_load: bool=True, lang: str='pt') -> str:
     snapshot = await queue.metrics_snapshot()
     if not snapshot:
         return bm.no_queue_metrics_yet(lang=lang)
-    lines = ['<b>Desempenho da fila</b>' if is_pt else '<b>Queue Performance</b>']
+    lines = [_t('handlers.admin._render_perf_text.3f2bd673', lang)]
     if include_load:
         load = queue.load_snapshot()
         if is_pt:
-            lines.extend([f'Na fila: <b>{load.queued_jobs}</b>', f'Ativos: <b>{load.active_jobs}</b>', f'Workers: <b>{load.active_workers}</b>'])
+            lines.extend([_t('handlers.admin._render_perf_text.ac9f2c78', lang, p0=load.queued_jobs), _t('handlers.admin._render_perf_text.e172193f', lang, p0=load.active_jobs), _t('handlers.admin._render_perf_text.460f7372', lang, p0=load.active_workers)])
         else:
-            lines.extend([f'Queued jobs: <b>{load.queued_jobs}</b>', f'Active jobs: <b>{load.active_jobs}</b>', f'Workers: <b>{load.active_workers}</b>'])
+            lines.extend([_t('handlers.admin._render_perf_text.ac9f2c78', lang, p0=load.queued_jobs), _t('handlers.admin._render_perf_text.e172193f', lang, p0=load.active_jobs), _t('handlers.admin._render_perf_text.460f7372', lang, p0=load.active_workers)])
     try:
         cache_stats = db.get_file_cache_stats()
         if is_pt:
-            lines.append(f'Cache de arquivos: acertos=<b>{cache_stats['hits']}</b>, falhas=<b>{cache_stats['misses']}</b> (taxa de acerto: <b>{cache_stats['hit_rate_pct']:.1f}%</b>)')
+            lines.append(_t('handlers.admin._render_perf_text.f362761a', lang, p0=cache_stats['hits'], p1=cache_stats['misses'], p2=f"{cache_stats['hit_rate_pct']:.1f}"))
         else:
-            lines.append(f'File Cache: hits=<b>{cache_stats['hits']}</b>, misses=<b>{cache_stats['misses']}</b> (hit rate: <b>{cache_stats['hit_rate_pct']:.1f}%</b>)')
+            lines.append(_t('handlers.admin._render_perf_text.f362761a', lang, p0=cache_stats['hits'], p1=cache_stats['misses'], p2=f"{cache_stats['hit_rate_pct']:.1f}"))
     except Exception:
         pass
-    lines.append(f'Fontes monitoradas: <b>{len(snapshot)}</b>' if is_pt else f'Tracked sources: <b>{len(snapshot)}</b>')
+    lines.append(_t('handlers.admin._render_perf_text.bcf82d18', lang, p0=len(snapshot)))
     sorted_sources = sorted(snapshot.items(), key=lambda item: max(item[1].queue_wait_p95_ms, item[1].processing_p95_ms), reverse=True)
-    bottleneck_pt = {'queue-bound': 'limitado pela fila', 'download-bound': 'limitado pelo download', 'balanced': 'equilibrado'}
+    bottleneck_pt = {'queue-bound': _t('handlers.admin._render_perf_text.8b8340a7', lang), 'download-bound': _t('handlers.admin._render_perf_text.0e7b7190', lang), 'balanced': _t('admin.bound.balanced', lang)}
     for source, item in sorted_sources:
         bottleneck = _classify_perf_bottleneck(item.queue_wait_p95_ms, item.processing_p95_ms)
         if is_pt:
-            lines.append(f'\n<b>{source}</b>\nTarefas: {item.count}\nEspera na fila p50/p95: {item.queue_wait_p50_ms:.0f}/{item.queue_wait_p95_ms:.0f} ms\nProcessamento p50/p95: {item.processing_p50_ms:.0f}/{item.processing_p95_ms:.0f} ms\nGargalo: <b>{bottleneck_pt.get(bottleneck, bottleneck)}</b>')
+            lines.append(_t('handlers.admin._render_perf_text.73b1aab0', lang, p0=source, p1=item.count, p2=f'{item.queue_wait_p50_ms:.0f}', p3=f'{item.queue_wait_p95_ms:.0f}', p4=f'{item.processing_p50_ms:.0f}', p5=f'{item.processing_p95_ms:.0f}', p6=bottleneck_pt.get(bottleneck, bottleneck)))
         else:
-            lines.append(f'\n<b>{source}</b>\nJobs: {item.count}\nQueue wait p50/p95: {item.queue_wait_p50_ms:.0f}/{item.queue_wait_p95_ms:.0f} ms\nProcessing p50/p95: {item.processing_p50_ms:.0f}/{item.processing_p95_ms:.0f} ms\nBottleneck: <b>{bottleneck}</b>')
+            lines.append(_t('handlers.admin._render_perf_text.73b1aab0', lang, p0=source, p1=item.count, p2=f'{item.queue_wait_p50_ms:.0f}', p3=f'{item.queue_wait_p95_ms:.0f}', p4=f'{item.processing_p50_ms:.0f}', p5=f'{item.processing_p95_ms:.0f}', p6=bottleneck_pt.get(bottleneck, bottleneck)))
     return '\n'.join(lines)
 
 async def _render_health_text(*, include_queue: bool=True, include_runtime_downloads: bool=True, lang: str='pt') -> str:
@@ -323,16 +324,16 @@ async def _render_health_text(*, include_queue: bool=True, include_runtime_downl
     analytics_snapshot = get_analytics_runtime_snapshot()
     uptime = str(timedelta(seconds=int(runtime_snapshot.uptime_seconds)))
     if is_pt:
-        lines = ['<b>Saúde do bot</b>', f'Tempo ativo: <b>{uptime}</b>', f'Último download: <b>{_format_age(time.monotonic() - runtime_snapshot.last_download_monotonic if runtime_snapshot.last_download_monotonic is not None else None, lang)}</b>', f'Eventos de analytics descartados: <b>{analytics_snapshot.dropped_events}</b>', f'Último descarte de analytics: <b>{_format_age(time.monotonic() - analytics_snapshot.last_drop_monotonic if analytics_snapshot.last_drop_monotonic is not None else None, lang)}</b>', '', '<b>Logs</b>', *_build_log_size_lines()]
+        lines = [_t('handlers.admin._render_health_text.7d27a2e7', lang), _t('handlers.admin._render_session_text.83740664', lang, p0=uptime), _t('handlers.admin._render_session_text.45d43d42', lang, p0=_format_age(time.monotonic() - runtime_snapshot.last_download_monotonic if runtime_snapshot.last_download_monotonic is not None else None, lang)), _t('handlers.admin._render_health_text.22456ec5', lang, p0=analytics_snapshot.dropped_events), _t('handlers.admin._render_health_text.5e1c2135', lang, p0=_format_age(time.monotonic() - analytics_snapshot.last_drop_monotonic if analytics_snapshot.last_drop_monotonic is not None else None, lang)), '', _t('handlers.admin._render_health_text.51eaa53a', lang), *_build_log_size_lines()]
     else:
-        lines = ['<b>Bot Health</b>', f'Uptime: <b>{uptime}</b>', f'Last download: <b>{_format_age(time.monotonic() - runtime_snapshot.last_download_monotonic if runtime_snapshot.last_download_monotonic is not None else None, lang)}</b>', f'Analytics drops: <b>{analytics_snapshot.dropped_events}</b>', f'Last analytics drop: <b>{_format_age(time.monotonic() - analytics_snapshot.last_drop_monotonic if analytics_snapshot.last_drop_monotonic is not None else None, lang)}</b>', '', '<b>Logs</b>', *_build_log_size_lines()]
+        lines = [_t('handlers.admin._render_health_text.7d27a2e7', lang), _t('handlers.admin._render_session_text.83740664', lang, p0=uptime), _t('handlers.admin._render_session_text.45d43d42', lang, p0=_format_age(time.monotonic() - runtime_snapshot.last_download_monotonic if runtime_snapshot.last_download_monotonic is not None else None, lang)), _t('handlers.admin._render_health_text.22456ec5', lang, p0=analytics_snapshot.dropped_events), _t('handlers.admin._render_health_text.5e1c2135', lang, p0=_format_age(time.monotonic() - analytics_snapshot.last_drop_monotonic if analytics_snapshot.last_drop_monotonic is not None else None, lang)), '', _t('handlers.admin._render_health_text.51eaa53a', lang), *_build_log_size_lines()]
     if include_runtime_downloads:
-        lines.insert(2, f'Downloads nesta execução: <b>{runtime_snapshot.total_downloads}</b>' if is_pt else f'Runtime downloads: <b>{runtime_snapshot.total_downloads}</b>')
+        lines.insert(2, _t('handlers.admin._render_health_text.044f58fa', lang, p0=runtime_snapshot.total_downloads))
     if include_queue:
         if is_pt:
-            queue_line = f'Fila: <b>{queue_snapshot.queued_jobs}</b> aguardando / <b>{queue_snapshot.active_jobs}</b> ativos / <b>{queue_snapshot.active_workers}</b> workers'
+            queue_line = _t('handlers.admin._render_health_text.0ab68c6d', lang, p0=queue_snapshot.queued_jobs, p1=queue_snapshot.active_jobs, p2=queue_snapshot.active_workers)
         else:
-            queue_line = f'Queue: <b>{queue_snapshot.queued_jobs}</b> queued / <b>{queue_snapshot.active_jobs}</b> active / <b>{queue_snapshot.active_workers}</b> workers'
+            queue_line = _t('handlers.admin._render_health_text.0ab68c6d', lang, p0=queue_snapshot.queued_jobs, p1=queue_snapshot.active_jobs, p2=queue_snapshot.active_workers)
         lines.insert(2, queue_line)
     return '\n'.join(lines)
 
@@ -341,17 +342,17 @@ async def _render_downloads_text(*, footer: str | None=None, include_cleanup_loa
     queue_snapshot = get_download_queue().load_snapshot()
     snapshot = await asyncio.to_thread(_build_directory_snapshot, OUTPUT_DIR)
     cleanup_ready = queue_snapshot.active_jobs == 0 and queue_snapshot.queued_jobs == 0
-    yes = 'sim' if is_pt else 'yes'
-    no = 'não' if is_pt else 'no'
+    yes = _t('handlers.admin._render_downloads_text.8a798890', lang)
+    no = _t('handlers.admin._render_downloads_text.76daee16', lang) if is_pt else 'no'
     if is_pt:
-        lines = ['<b>Armazenamento de downloads</b>', f'Caminho: <code>{OUTPUT_DIR}</code>', f'Existe: <b>{(yes if snapshot.exists else no)}</b>', f'Arquivos: <b>{snapshot.file_count}</b>', f'Diretórios: <b>{snapshot.dir_count}</b>', f'Tamanho total: <b>{_format_bytes(snapshot.total_bytes)}</b>', f'Arquivo mais antigo: <b>{_format_age(snapshot.oldest_file_age_seconds, lang)}</b>', f'Arquivo mais recente: <b>{_format_age(snapshot.newest_file_age_seconds, lang)}</b>', '', '<b>Status da limpeza</b>', f'Pronto para limpeza: <b>{(yes if cleanup_ready else no)}</b>']
+        lines = [_t('handlers.admin._render_downloads_text.b2c5bf40', lang), _t('handlers.admin._render_downloads_text.14679791', lang, p0=OUTPUT_DIR), _t('handlers.admin._render_downloads_text.bc90fe3a', lang, p0=yes if snapshot.exists else no), _t('handlers.admin._render_downloads_text.7757f2b4', lang, p0=snapshot.file_count), _t('handlers.admin._render_downloads_text.a40e0507', lang, p0=snapshot.dir_count), _t('handlers.admin._render_downloads_text.5efcbc66', lang, p0=_format_bytes(snapshot.total_bytes)), _t('handlers.admin._render_downloads_text.d05a4609', lang, p0=_format_age(snapshot.oldest_file_age_seconds, lang)), _t('handlers.admin._render_downloads_text.96876281', lang, p0=_format_age(snapshot.newest_file_age_seconds, lang)), '', _t('handlers.admin._render_downloads_text.c7489a74', lang), _t('handlers.admin._render_downloads_text.254080f9', lang, p0=yes if cleanup_ready else no)]
     else:
-        lines = ['<b>Downloads Storage</b>', f'Path: <code>{OUTPUT_DIR}</code>', f'Exists: <b>{(yes if snapshot.exists else no)}</b>', f'Files: <b>{snapshot.file_count}</b>', f'Dirs: <b>{snapshot.dir_count}</b>', f'Total size: <b>{_format_bytes(snapshot.total_bytes)}</b>', f'Oldest file: <b>{_format_age(snapshot.oldest_file_age_seconds, lang)}</b>', f'Newest file: <b>{_format_age(snapshot.newest_file_age_seconds, lang)}</b>', '', '<b>Cleanup status</b>', f'Cleanup ready: <b>{(yes if cleanup_ready else no)}</b>']
+        lines = [_t('handlers.admin._render_downloads_text.b2c5bf40', lang), _t('handlers.admin._render_downloads_text.14679791', lang, p0=OUTPUT_DIR), _t('handlers.admin._render_downloads_text.bc90fe3a', lang, p0=yes if snapshot.exists else no), _t('handlers.admin._render_downloads_text.7757f2b4', lang, p0=snapshot.file_count), _t('handlers.admin._render_downloads_text.a40e0507', lang, p0=snapshot.dir_count), _t('handlers.admin._render_downloads_text.5efcbc66', lang, p0=_format_bytes(snapshot.total_bytes)), _t('handlers.admin._render_downloads_text.d05a4609', lang, p0=_format_age(snapshot.oldest_file_age_seconds, lang)), _t('handlers.admin._render_downloads_text.96876281', lang, p0=_format_age(snapshot.newest_file_age_seconds, lang)), '', _t('handlers.admin._render_downloads_text.c7489a74', lang), _t('handlers.admin._render_downloads_text.254080f9', lang, p0=yes if cleanup_ready else no)]
     if include_cleanup_load:
         if is_pt:
-            queue_line = f'Carga da fila: <b>{queue_snapshot.queued_jobs}</b> aguardando / <b>{queue_snapshot.active_jobs}</b> ativos'
+            queue_line = _t('handlers.admin._render_downloads_text.9a394b1f', lang, p0=queue_snapshot.queued_jobs, p1=queue_snapshot.active_jobs)
         else:
-            queue_line = f'Queue load: <b>{queue_snapshot.queued_jobs}</b> queued / <b>{queue_snapshot.active_jobs}</b> active'
+            queue_line = _t('handlers.admin._render_downloads_text.9a394b1f', lang, p0=queue_snapshot.queued_jobs, p1=queue_snapshot.active_jobs)
         lines.insert(-1, queue_line)
     if footer:
         lines.extend(['', footer])
@@ -371,17 +372,16 @@ async def _render_admin_panel(message: types.Message, *, edit: bool, lang: str |
     if lang is None:
         user_id = getattr(getattr(message, 'from_user', None), 'id', None)
         lang = await db.get_language(user_id) if user_id is not None else 'pt'
-    is_pt = str(lang).lower().startswith('pt')
     counts = await _get_admin_counts()
     queue_snapshot = get_download_queue().load_snapshot()
     runtime_snapshot = get_runtime_snapshot()
-    runtime_title = 'Execução atual' if is_pt else 'Runtime now'
-    queue_label = 'Fila' if is_pt else 'Queue'
-    queued_label = 'aguardando' if is_pt else 'queued'
-    active_label = 'ativos' if is_pt else 'active'
-    downloads_label = 'Downloads nesta execução' if is_pt else 'Downloads this runtime'
+    runtime_title = _t('handlers.admin._render_admin_panel.1ca3fe3a', lang)
+    queue_label = _t('handlers.admin._render_admin_panel.3b2fe03e', lang)
+    queued_label = _t('handlers.admin._render_admin_panel.d36be649', lang)
+    active_label = _t('handlers.admin._render_admin_panel.96879611', lang)
+    downloads_label = _t('handlers.admin._render_admin_panel.a0b7e373', lang)
     panel_text = bm.admin_panel(counts['user_count'], counts['private_chat_count'], counts['group_chat_count'], counts['active_user_count'], counts['inactive_user_count'], lang=lang)
-    text = f'{panel_text}\n\n<b>{runtime_title}</b>\n{queue_label}: <b>{queue_snapshot.queued_jobs}</b> {queued_label} / <b>{queue_snapshot.active_jobs}</b> {active_label} / <b>{queue_snapshot.active_workers}</b> workers\n{downloads_label}: <b>{runtime_snapshot.total_downloads}</b>'
+    text = _t('handlers.admin._render_admin_panel.85f37ec1', lang, p0=panel_text, p1=runtime_title, p2=queue_label, p3=queue_snapshot.queued_jobs, p4=queued_label, p5=queue_snapshot.active_jobs, p6=active_label, p7=queue_snapshot.active_workers, p8=downloads_label, p9=runtime_snapshot.total_downloads)
     markup = kb.admin_keyboard(lang=lang)
     if edit:
         await message.edit_text(text=text, reply_markup=markup, parse_mode='HTML')
@@ -394,9 +394,7 @@ async def _cleanup_downloads_once(lang: str = "pt") -> str:
         return bm.downloads_cleanup_blocked(queue_snapshot.active_jobs, queue_snapshot.queued_jobs, lang=lang)
     if not os.path.exists(OUTPUT_DIR):
         return (
-            f"A pasta '{OUTPUT_DIR}' não existe."
-            if str(lang).lower().startswith("pt")
-            else f"The folder '{OUTPUT_DIR}' does not exist."
+            _t('handlers.admin._cleanup_downloads_once.f00056e1', lang, p0=OUTPUT_DIR)
         )
     removed_files, skipped_recent_files, removed_dirs = await asyncio.to_thread(_cleanup_download_tree)
     return bm.downloads_cleanup_finished(removed_files, removed_dirs, skipped_recent_files, lang=lang)
@@ -485,17 +483,9 @@ async def admin_cleanup_downloads(call: types.CallbackQuery):
         return
     status_text = await _cleanup_downloads_once(lang=user_lang)
     await call.answer(
-        (
-            'Limpeza concluída'
-            if 'concluída' in status_text.lower()
-            else 'Limpeza ignorada'
-        )
-        if str(user_lang).lower().startswith('pt')
-        else (
-            'Cleanup finished'
-            if 'finished' in status_text.lower()
-            else 'Cleanup skipped'
-        )
+        _t('handlers.admin.admin_cleanup_downloads.03c5eef4', None)
+            if any(word in status_text.lower() for word in ('concluída', 'finished', 'terminada'))
+            else _t('handlers.admin.admin_cleanup_downloads.73297ab5', None)
     )
     queue_snapshot = get_download_queue().load_snapshot()
     await call.message.edit_text(text=await _render_runtime_storage_text(footer=status_text, lang=user_lang), reply_markup=kb.downloads_admin_keyboard(can_cleanup=queue_snapshot.active_jobs == 0 and queue_snapshot.queued_jobs == 0, refresh_callback='admin_runtime_storage', lang=user_lang), parse_mode='HTML')
@@ -556,16 +546,12 @@ async def cancel_action(call: types.CallbackQuery, state: FSMContext):
     current_state = await state.get_state()
     if current_state is None:
         await call.answer(
-        'Nada para cancelar.'
-        if str(user_lang).lower().startswith('pt')
-        else 'Nothing to cancel.'
+        _t('handlers.admin.cancel_action.0380268e', None)
     )
         return
     await state.clear()
     await call.answer(
-        "Cancelado"
-        if not str(user_lang).lower().startswith("en")
-        else "Canceled"
+        _t('handlers.admin.cancel_action.13ca2ee2', None)
     )
     try:
         await call.message.edit_text(bm.canceled(lang=user_lang), reply_markup=kb.return_back_to_admin_keyboard(lang=user_lang))
@@ -664,7 +650,7 @@ async def admin_send_to_chat(message: types.Message, state: FSMContext):
             if name_parts:
                 chat_name = ' '.join(name_parts)
         if not chat_name:
-            chat_name = f'Chat {chat_id}'
+            chat_name = _t('handlers.admin.admin_send_to_chat.1744850b', None, p0=chat_id)
         chat_username = getattr(chat_obj, 'username', None)
         language_code = getattr(chat_obj, 'language_code', None)
         await db.upsert_chat(user_id=chat_id, user_name=chat_name, user_username=chat_username, chat_type=chat_type_value, language=language_code, status='active')
@@ -751,12 +737,12 @@ async def clear_downloads_and_notify():
     try:
         message = await _cleanup_downloads_once(lang='en')
     except Exception as e:
-        message = f'An error occurred while clearing the folder: {e}'
+        message = _t('handlers.admin.clear_downloads_and_notify.51d62c73', None, p0=e)
     try:
         deleted_files = await db.cleanup_expired_files()
         if deleted_files > 0:
             logging.event('file_cache_cleanup', deleted=deleted_files)
-            message += f'\nCleaned up {deleted_files} expired file cache entries.'
+            message += _t('handlers.admin.clear_downloads_and_notify.8d5fe0cc', None, p0=deleted_files)
     except Exception as e:
         logging.error('Failed to clean up expired file cache entries: %s', e)
     for admin_id in ADMINS_UID:

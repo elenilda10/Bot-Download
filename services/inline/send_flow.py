@@ -12,6 +12,7 @@ module and those modules import this one.
 """
 
 from __future__ import annotations
+from i18n import t as _t
 import os
 import subprocess
 from aiogram.types import FSInputFile
@@ -286,7 +287,7 @@ async def deliver_inline_video(
             return
 
         await edit_status(bm.uploading_status(lang=lang, platform=service_name))
-        
+
         # Otimiza o container de vídeo para streaming instantâneo
         _optimize_video_for_streaming(metrics.path)
 
@@ -370,7 +371,7 @@ async def ensure_album_preview_file_id(
         sent = await deps.bot.send_photo(
             chat_id=channel_id,
             photo=photo_url,
-            caption=f"{service_name} Album Preview",
+            caption=_t('services.inline.send_flow.ensure_album_preview_file_id.6776f7f2', None, p0=service_name),
         )
         if sent.photo:
             preview_file_id = sent.photo[-1].file_id
@@ -431,8 +432,8 @@ async def handle_post_inline_query(
             results = [
                 types.InlineQueryResultArticle(
                     id=f"{service_key}_text_{post.id}",
-                    title=f"{service_name} Post",
-                    description=post.description or f"Text post from {service_name}.",
+                    title=_t('services.inline.send_flow.handle_post_inline_query.2cf95b13', None, p0=service_name),
+                    description=post.description or _t('services.inline.send_flow.handle_post_inline_query.b25984f6', None, p0=service_name),
                     thumbnail_url=get_inline_service_icon(service_key),
                     input_message_content=types.InputTextMessageContent(
                         message_text=bm.captions("on", post.description, bot_url, limit=4096),
@@ -532,7 +533,7 @@ async def handle_post_inline_query(
             results = [
                 types.InlineQueryResultArticle(
                     id=f"unsupported_{service_key}_content",
-                    title=f"{service_name} Content",
+                    title=_t('services.inline.send_flow.handle_post_inline_query.d8cd02a9', None, p0=service_name),
                     description=bm.inline_single_video_only(service_name, lang=user_lang),
                     input_message_content=types.InputTextMessageContent(
                         message_text=bm.inline_single_video_only(service_name, lang=user_lang),
@@ -632,7 +633,7 @@ async def send_inline_post_media(
                 service_name=service_name,
                 cache_key=f"{request.source_url}#photo",
                 photo_url=first_item.url,
-                channel_caption=f"{service_name} Photo from {actor_name}",
+                channel_caption=_t('services.inline.send_flow._plan.422ec3bf', None, p0=service_name, p1=actor_name),
                 build_caption=_build_caption,
                 reply_markup=reply_markup,
                 edit_status=edit_status,
@@ -667,9 +668,9 @@ async def send_inline_post_media(
             max_file_size=max_file_size,
             service_name=service_name,
             cache_key=request.source_url,
-            channel_caption=f"{service_name} Video from {actor_name}",
+            channel_caption=_t('services.inline.send_flow._plan.6a9c386c', None, p0=service_name, p1=actor_name),
             download_fn=_download,
-            progress_label=f"{service_name} video",
+            progress_label=_t('services.inline.send_flow._plan.ca2a0427', None, p0=service_name),
             build_caption=_build_caption,
             reply_markup=reply_markup,
             edit_status=edit_status,

@@ -19,7 +19,6 @@ from handlers.settings_menu import (
     handle_language_category,
     handle_language_selection,
     handle_back_to_settings,
-    show_language_view,
 )
 
 router = Router(name=__name__)
@@ -64,9 +63,7 @@ router.callback_query(F.data == "start_supported_sites")(media_mod.show_supporte
 async def cmd_lang(message: types.Message):
     if await cmd_mod.is_banned(message.from_user.id if message.from_user else None, message.chat.id):
         return
-    user_id = message.from_user.id
-    current_lang = await db.get_language(user_id)
-    await show_language_view(message, user_id, current_lang)
+    await settings_mod.open_language_menu(message)
 
 router.callback_query.register(handle_language_category, F.data.in_(["settings_cat:lang", "settings_lang"]))
 router.callback_query.register(handle_language_selection, F.data.startswith("set_lang:"))
@@ -87,6 +84,7 @@ update_info = cmd_mod.update_info
 _extract_start_payload = cmd_mod._extract_start_payload
 _build_pending_private_message = cmd_mod._build_pending_private_message
 
+show_language_view = settings_mod.show_language_view
 settings_menu = settings_mod.settings_menu
 back_to_settings = settings_mod.back_to_settings
 open_setting = settings_mod.open_setting

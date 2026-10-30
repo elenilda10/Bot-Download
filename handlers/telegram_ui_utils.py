@@ -1,3 +1,5 @@
+from i18n import bind_locale as _bind_locale
+from i18n import t as _t
 import httpx
 from app_context import db
 import asyncio
@@ -394,7 +396,7 @@ def make_status_text_progress_updater(
         state["last"] = now
         await update_text(build_progress_status(label, progress))
 
-    return _on_progress
+    return _bind_locale(_on_progress)
 
 
 def make_retry_status_notifier(
@@ -518,13 +520,13 @@ def _format_bytes(num_bytes: int) -> str:
 
 def _format_eta(seconds: Optional[float]) -> str:
     if seconds is None:
-        return "ETA: --:--"
+        return _t('handlers.telegram_ui_utils._format_eta.70b946e2', None)
     total = max(0, int(seconds))
     minutes, sec = divmod(total, 60)
     hours, minutes = divmod(minutes, 60)
     if hours > 0:
-        return f"ETA: {hours:02d}:{minutes:02d}:{sec:02d}"
-    return f"ETA: {minutes:02d}:{sec:02d}"
+        return _t('handlers.telegram_ui_utils._format_eta.66a39415', None, p0=f'{hours:02d}', p1=f'{minutes:02d}', p2=f'{sec:02d}')
+    return _t('handlers.telegram_ui_utils._format_eta.e46022fc', None, p0=f'{minutes:02d}', p1=f'{sec:02d}')
 
 
 def _format_eta_short(seconds: Optional[float]) -> str:
@@ -540,9 +542,7 @@ def _format_eta_short(seconds: Optional[float]) -> str:
 
 def build_queue_status(label: str, ticket: QueueTicket) -> str:
     return (
-        f"Queueing {label}...\n"
-        f"Position: {ticket.position}\n"
-        f"Workers: {ticket.active_workers}"
+        _t('handlers.telegram_ui_utils.build_queue_status.c9303366', None, p0=label, p1=ticket.position, p2=ticket.active_workers)
     )
 
 
@@ -574,15 +574,13 @@ def build_progress_status(label: str, progress: DownloadProgress) -> str:
 def build_rate_limit_text(retry_after: float) -> str:
     wait = max(1, int(round(retry_after)))
     return (
-        "Too many requests from your account right now.\n"
-        f"Please wait {wait}s and try again."
+        _t('handlers.telegram_ui_utils.build_rate_limit_text.57dca92e', None, p0=wait)
     )
 
 
 def build_queue_busy_text(position: int) -> str:
     return (
-        "The download queue is busy right now.\n"
-        f"Your next request position would be around #{position}."
+        _t('handlers.telegram_ui_utils.build_queue_busy_text.106a7b91', None, p0=position)
     )
 
 

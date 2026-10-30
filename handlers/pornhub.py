@@ -4,6 +4,7 @@ All yt-dlp and helper processes run within ph-proton, which has only a VPN
 interface, DNS 10.2.0.1 and no eth0 route. Tunnel failure never uses Contabo.
 The bot's other handlers continue to run in the original host namespace.
 """
+from i18n import t as _t
 import asyncio
 import json
 import logging
@@ -181,9 +182,7 @@ async def show_pornhub_test_vpn(message: types.Message):
     if not message.from_user or message.from_user.id != ADMIN_ID:
         return
     await message.answer(
-        "🔒 Router Pornhub: VPN fixa no namespace ph-proton.\n"
-        "DNS Proton 10.2.0.1. Este comando é apenas informativo; "
-        "/phvpn on e /phvpn off não alteram a conexão."
+        _t('handlers.pornhub.show_pornhub_test_vpn.964cea95', None)
     )
 
 
@@ -394,7 +393,7 @@ async def _reply_with_cached_file(
 async def handle_pornhub_media_button(call: types.CallbackQuery):
     """Respect per-chat switches; all source downloads stay in ph-proton."""
     if not call.from_user or call.from_user.id != ADMIN_ID:
-        await call.answer("Indisponível.", show_alert=True)
+        await call.answer(_t('handlers.eporner.handle_eporner_media_button.7d9b04e9', None), show_alert=True)
         return
     if not isinstance(call.message, types.Message) or not call.data:
         await call.answer()
@@ -423,9 +422,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
         permitted = user_settings.get("audio_button") == "on"
     if not permitted:
         await call.answer(
-            "Ative o botão nas configurações do bot."
-            if str(lang).lower().startswith("pt") else
-            "Enable this button in bot settings.",
+            _t('handlers.eporner.handle_eporner_media_button.c3b5bf03', None),
             show_alert=True,
         )
         return
@@ -502,7 +499,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
                             )
                     else:
                         mp3 = await _convert_video_to_mp3(media.path, directory)
-                        title = (media.description or "Audio").splitlines()[0][:100]
+                        title = (media.description or _t('handlers.eporner.handle_eporner_media_button.bc1b8890', None)).splitlines()[0][:100]
                         sent = await message.answer_audio(
                             audio=FSInputFile(mp3, filename=f"{viewkey}.mp3"),
                             title=title,

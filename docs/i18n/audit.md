@@ -1,5 +1,8 @@
 # Varredura para ampliar os idiomas do Bot-Download
 
+Este documento registra a base anterior à migração. A implementação e instalação
+estão descritas em [migration.md](migration.md).
+
 ## Escopo e resultado
 
 Base examinada: `fc89407d2b44c826da80722a2b3325edba8ccaa3`, branch

@@ -1,0 +1,16 @@
+name: Interface languages
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  catalogs-and-locale-routing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'pytest>=8,<10' 'pytest-asyncio>=0.24,<2' 'aiogram>=3,<4' 'sqlalchemy[asyncio]>=2,<3' aiosqlite
+      - run: python -m pytest --noconftest -q tests/test_i18n.py tests/test_messages.py tests/test_keyboards.py tests/test_i18n_installer.py

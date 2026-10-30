@@ -1,5 +1,6 @@
 """Dedicated Reddit messages, albums, scoped cache and media actions."""
 from __future__ import annotations
+from i18n import t as _t
 
 import asyncio
 import hashlib
@@ -71,7 +72,7 @@ def _keyboard(url, settings, lang, is_video):
     )
     # Keep callback recovery working after a process restart.
     if not any(button.url == url for row in markup.inline_keyboard for button in row):
-        markup.inline_keyboard.append([types.InlineKeyboardButton(text='🔗 Reddit', url=url)])
+        markup.inline_keyboard.append([types.InlineKeyboardButton(text=_t('handlers.reddit._keyboard.0c341d06', lang), url=url)])
     return markup
 
 
