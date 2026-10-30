@@ -1,0 +1,122 @@
+{
+  "base_commit": "85cf09898b93ccacfd4c19cfd623866494dd1fea",
+  "patch_sha256": "b82d5cafb267a96b6c6abb1ffc0aceadad186ef8ae0ee2d893846c5a275874fd",
+  "files": {
+    "handlers/deezer.py": {
+      "base_sha256": "3b71a66fa78c3466cdebe436484e8f97d018297b306a158ece079951f60a4215",
+      "result_sha256": "df6d4c3b2833dcd6f1ad0e00be06c5aa3572757f8524b64636497a20a7ddaefb"
+    },
+    "handlers/eporner.py": {
+      "base_sha256": "658639ab69a105996eb563522c4a8e3d48d65466fbf2622bb37a7b2674d1da47",
+      "result_sha256": "01cd293fa4c7daa80e6d5cec5498926a94803d301490b954e8ddc326407aab52"
+    },
+    "handlers/facebook.py": {
+      "base_sha256": "e1d31299cb40758f40dcfdcfd4446bf31e733065cbe553702d77fbea07f05714",
+      "result_sha256": "eb132ff45dfe1bcc0d651b7f6bfa93d3dfd82b1b363cd7f5268a1ce18d230e18"
+    },
+    "handlers/instagram.py": {
+      "base_sha256": "a581a7b17ee539b624d545b8c486b282889e362b9b1e34daec658a73528f02f9",
+      "result_sha256": "038eb5ac101066291194b58dd94f6d13107251c55dda5d7c17beb80100ee8937"
+    },
+    "handlers/kwai.py": {
+      "base_sha256": "00ad1ef744d569fb461bb4616d49c6673f5ea21365085aa32e028549f6b9f3d9",
+      "result_sha256": "95be6a44a2faabf34fc37d8f0c12d8cad4102671bdb0ff3b40158ac471a22542"
+    },
+    "handlers/pinterest.py": {
+      "base_sha256": "f4e2742a4832ba9ea1111a6f23ce354905739c197b05399d60410c8b6777fd84",
+      "result_sha256": "a5e46b0cb3881cc13fe4cff2ca852af237b34a776ee6485881ae4a8e228929fa"
+    },
+    "handlers/pornhub.py": {
+      "base_sha256": "9588ce15d00b227d41374a44d969f3e18af6729e5c3af97c79ded5195cb7340b",
+      "result_sha256": "c9ff2f9850a8ecbf93ca47c20c1111ce06076ab3ee04407e329b74aaa01715bd"
+    },
+    "handlers/reddit.py": {
+      "base_sha256": "0f8a4bf60d1c82b252726b947602ddb8ad156c57603c843bf8f80abf329a03a6",
+      "result_sha256": "f1cd001f2744af467acad6e12c60230652c6b8372390c9618c46556663760c13"
+    },
+    "handlers/request_dedupe.py": {
+      "base_sha256": "2a160f7fc7a9953663217a9e73da2dcec7968c053fa4c863c6e6d93d0141ff5c",
+      "result_sha256": "ef5102d144a056caac39e5783d04f69fadda3ad390d233f106e201a33b6b3604"
+    },
+    "handlers/soundcloud.py": {
+      "base_sha256": "bf657e76711000714746ffd3ff26af41e6a444d7048e590696cf95092772f2cf",
+      "result_sha256": "ec6b54812b2637cb7f6936f9e18d3d7b506342a6920925aa8f7c9794e8e804eb"
+    },
+    "handlers/spotify.py": {
+      "base_sha256": "33c61b945d1cbed0d65da44e398630a18e15f152f58e1399c7a49ff5c5a10eaa",
+      "result_sha256": "7480bd7d4097836867c1d00743286c989dc44024c84697475d011623acc43cbd"
+    },
+    "handlers/telegram_ui_utils.py": {
+      "base_sha256": "46a2193108a37e96162dc3d1cf8fc6c470cbb3fb509faf60436e4e26e5577add",
+      "result_sha256": "f5d31bb7fff083b1af803fe8a5a6f5757a9e67453bb0b35f4f67491ec31c6290"
+    },
+    "handlers/threads.py": {
+      "base_sha256": "9e8c681c6ae05d6fb672065fe6431f3423ed181bf8e81f51caceeaa5b6d40991",
+      "result_sha256": "42c886cc045494683acff278b055e1a758aee4be166ed0cd5b6bf349cd8be825"
+    },
+    "handlers/tiktok.py": {
+      "base_sha256": "b5a431f85a3e6ecbd886665f7ea3b0b2840a0680abeb81aa1b6cc885d37dfa48",
+      "result_sha256": "66b38a7a5640097d4e4ceb3b94849c9cf48ce2bdd4f8e88268ff8f4f8af8861c"
+    },
+    "handlers/twitter.py": {
+      "base_sha256": "7ba0bf6b13525275e2bb7dd2f523d9528c88a2994d929db3ed49bb69b446821f",
+      "result_sha256": "2d8fb08ea3631c711de2eaef5bc21a0b6745213d3e27bcc7e3d60004c89619cb"
+    },
+    "handlers/universal.py": {
+      "base_sha256": "4a97d83542bcac369991306de97292cf0a09003623e216a951198347a243a2e7",
+      "result_sha256": "15c155e009fd6f7ac4e3b18f431a4f2a7cc4d2105cadd60af7f4d48f5184ef9b"
+    },
+    "handlers/xvideos.py": {
+      "base_sha256": "5f19931dbaeda5f5c144aaf23c7c66c273d22abf3f6f1c8705644271f4e4e425",
+      "result_sha256": "00a557e212b426ea34a5850589ff5747096fb877ba0051958684ce745b74f7d0"
+    },
+    "handlers/youtube.py": {
+      "base_sha256": "a113192051b473ad75a3663c13df1f82190ed486822cbcf85d54c9062abd5b15",
+      "result_sha256": "8d7fe2c30f79a7f3f3cc9e909cacbc3b5db9d245e33b7eeb0cd41fa524abc0d4"
+    },
+    "i18n/locales/en.json": {
+      "base_sha256": "ef55798a1acf86009ca86d6ec67d661fe15237c761e08ba219c2261c78048fb2",
+      "result_sha256": "14dd711fa5c77bce5030b3ba1457f49eca6e946cc6d92e24b18152dd1439ef45"
+    },
+    "i18n/locales/es.json": {
+      "base_sha256": "b34260aa47e6a0c8413e560e48b536fe2ae91dfea1ffe8bc9897ce3862e547e9",
+      "result_sha256": "d901d7776e31edaba8087dda293aeb812d4c16238ec56a8b6260e4b89b298ad4"
+    },
+    "i18n/locales/pt.json": {
+      "base_sha256": "3414fc1c6b650d5a708eb19213a47cc10390b738ad4f4a5b7bb853fd4eaa3f18",
+      "result_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730"
+    },
+    "main.py": {
+      "base_sha256": "09362a43a5499393bb84cfb9afb6c88c89ca19b0b1ae0b0bd6e4c55b85d025fb",
+      "result_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10"
+    },
+    "messages/user_messages.py": {
+      "base_sha256": "80e06b6e0c59afba44a03dd528eff08c05d6d5254e235a90977b96325ae702d7",
+      "result_sha256": "511356f8ac32b9cce5260620896cc162b4c473719a89fce30d4cdda3604a18a2"
+    },
+    "middlewares/__init__.py": {
+      "base_sha256": "1b38d2106f79c9de276228ababb5c35d6790ef4b79c19b4ac0c2e2e87470a682",
+      "result_sha256": "b55637e304b8c2d65f5105f09c87c9405333f8d9061dca87df6207cd6515ea94"
+    },
+    "middlewares/download_failure.py": {
+      "base_sha256": null,
+      "result_sha256": "be4934f84688f452642e3884eacf69aeb337bc2a8fa4309ea3f05d980893ecf0"
+    },
+    "services/platforms/instagram_media.py": {
+      "base_sha256": "88000548aca50aa4f7e9c250c27ddeb1d02db664ccd7b867dd7aeb35a726fe7a",
+      "result_sha256": "6d6b8be4ca9c3ff58461aaa86953e0d282e5717171d0ce1d8a0477b74b818e2a"
+    },
+    "services/platforms/reddit_download.py": {
+      "base_sha256": "83950ec61d9f115421f583583f3749545156c16a0868814829661bb3e043eea6",
+      "result_sha256": "5b81f77a47d68bbc037c0301ffeb4451fc650bc0a6785120941453f1a55fc0e4"
+    },
+    "services/platforms/universal_extractor.py": {
+      "base_sha256": "0efcd32b0520e046bb83b95ddfe1566b3c89763cc5e0c6143758c12a09b88714",
+      "result_sha256": "45e219c84f26b081a6207a1dfd3e4d4ddc995da9934064aa34f310d85f94a346"
+    },
+    "utils/download_errors.py": {
+      "base_sha256": null,
+      "result_sha256": "1db27d610ceb77b9f6e391d3958fa6831143701556c2a9e6b83213732248827e"
+    }
+  }
+}

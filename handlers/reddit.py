@@ -218,7 +218,7 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
             await handle_download_error(message, business_id=business_id, lang=lang)
     except Exception as exc:
         logging.exception('Reddit request failed: %s', type(exc).__name__)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         await safe_delete_message(status)
         if directory:
@@ -310,7 +310,7 @@ async def reddit_media_action(call: types.CallbackQuery):
             await db.add_file(_cache_key(url, scope, 'audio'), sent.audio.file_id, 'audio')
     except Exception as exc:
         logging.exception('Reddit action failed: %s', type(exc).__name__)
-        await handle_download_error(call.message)
+        await handle_download_error(call.message, error=exc)
     finally:
         await safe_delete_message(status)
         if directory:

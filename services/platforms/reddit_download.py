@@ -1,6 +1,8 @@
 """Local Reddit download adapter; independent of Telegram's universal handler."""
 from __future__ import annotations
 
+from utils.download_errors import download_attempt, note_failure
+
 import asyncio
 import time
 from urllib.parse import urlparse
@@ -25,6 +27,7 @@ async def _notify_kind(callback, kind, count):
             logging.warning('Reddit status update skipped: %s', type(exc).__name__)
 
 
+@download_attempt
 async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int, on_kind=None):
     if not is_reddit_media_url(url):
         return None
@@ -42,6 +45,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
             try:
                 result = await download_reddit_gallery(info['post'], sources, output_dir, max_file_size)
             except Exception as exc:
+                note_failure(exc)
                 logging.warning('Reddit gallery failed: %s', exc.code if isinstance(exc, RedditImageError) else type(exc).__name__)
                 return None
             logging.info('Reddit gallery: items=%s seconds=%.2f', len(result.media_list), time.monotonic() - started)
@@ -50,21 +54,32 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
             try:
                 result = await download_native_video(info['post'], video, output_dir, max_file_size)
             except Exception as exc:
+                note_failure(exc)
                 logging.warning('Reddit native video failed: %s', exc.code if isinstance(exc, RedditVideoError) else type(exc).__name__)
                 return None
             logging.info('Reddit native video: seconds=%.2f audio=%s',
                          time.monotonic() - started, result.media_list[0].has_audio)
         else:
             # External or unsupported post types keep the legacy fallback.
-            result = await asyncio.wait_for(download_universal_media(
-                info['canonical'], output_dir=output_dir, post_id='reddit_post'
-            ), timeout=420)
+            async with asyncio.timeout(420):
+                result = await download_universal_media(
+                    info['canonical'], output_dir=output_dir, post_id='reddit_post'
+                )
     elif info['status'] == 'direct':
         await _notify_kind(on_kind, 'video' if urlparse(url).hostname == 'v.redd.it' else 'photo', 1)
-        result = await asyncio.wait_for(download_universal_media(
-            normalize_reddit_url(url), output_dir=output_dir, post_id='reddit_post'
-        ), timeout=420)
+        async with asyncio.timeout(420):
+            result = await download_universal_media(
+                normalize_reddit_url(url), output_dir=output_dir, post_id='reddit_post'
+            )
     else:
+        if info.get('http') in {401, 403, 404, 410, 429}:
+            note_failure(f"HTTP {info['http']}")
+        elif info['status'] == 'blocked':
+            note_failure('access_denied')
+        elif info['status'] == 'timeout':
+            note_failure('timeout')
+        elif info.get('http'):
+            note_failure(f"HTTP {info['http']}")
         # Do not turn a known JSON rejection into several 90-second retries.
         return None
     if not result or not result.media_list:

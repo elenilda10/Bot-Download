@@ -310,7 +310,7 @@ async def process_kwai_link(
 
     except Exception as exc:
         logging.exception("Kwai message delivery failed: %s", type(exc).__name__)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         await safe_delete_message(status_message)
         await _cleanup(result)
@@ -445,7 +445,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
             )
     except Exception as exc:
         logging.exception("Kwai %s callback failed: %s", kind, type(exc).__name__)
-        await handle_download_error(call.message, lang=lang)
+        await handle_download_error(call.message, error=exc, lang=lang)
     finally:
         await safe_delete_message(status_message)
         await _cleanup(result)

@@ -145,7 +145,7 @@ async def process_pinterest(message: types.Message, direct_url: Optional[str] = 
             summarize_text_for_log(get_message_text(message)),
             exc,
         )
-        await handle_download_error(message)
+        await handle_download_error(message, error=exc)
     finally:
         if request_lease is not None:
             request_lease.finish()

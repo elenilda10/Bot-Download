@@ -271,7 +271,7 @@ async def process_tiktok(message: types.Message, direct_url: Optional[str] = Non
             summarize_text_for_log(get_message_text(message)),
             e,
         )
-        await handle_download_error(message)
+        await handle_download_error(message, error=e)
     finally:
         if request_lease is not None:
             request_lease.finish()

@@ -170,8 +170,14 @@ def merge_runtime(target, staging, manifest, patch, reference):
 
 
 def prepare(target, *, reference=REFERENCE):
-    manifest = json.loads((reference / 'i18n_vps_manifest.json').read_text())
-    patch = (reference / 'i18n_vps.patch').resolve()
+    # Already migrated runtimes need a base that includes their existing catalogs.
+    # Older runtimes still use the complete migration and its reply-preserving merge.
+    marker = target / 'i18n/__init__.py'
+    upgrade = reference / 'download_errors_vps_manifest.json'
+    use_upgrade = marker.is_file() and upgrade.is_file()
+    bundle = 'download_errors_vps' if use_upgrade else 'i18n_vps'
+    manifest = json.loads((reference / (bundle + '_manifest.json')).read_text())
+    patch = (reference / (bundle + '.patch')).resolve()
     if digest(patch.read_bytes()) != manifest['patch_sha256']:
         raise ValueError('The migration patch failed its integrity check.')
     names = list(manifest['files'])

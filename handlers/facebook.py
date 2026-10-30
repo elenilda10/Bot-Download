@@ -728,7 +728,7 @@ async def process_facebook_link(
                             type(exc).__name__)
     except Exception as exc:
         logging.exception("Facebook delivery failed: %s", type(exc).__name__)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
         await react_to_message(message, "👎", business_id=business_id)
     finally:
         if status:

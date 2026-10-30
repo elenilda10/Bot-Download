@@ -854,3 +854,20 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
     else:
         action = _t('messages.user_messages.media_transfer_status.2eabdcaf', lang) if uploading else _t('messages.user_messages.media_transfer_status.cc5d009a', lang)
     return f"{emoji} {label}: {action}"
+
+
+def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None):
+    from utils.download_errors import REASONS
+    reason = reason if reason in REASONS else 'unknown'
+    platform = html.escape(str(platform)) if platform else _t('download_error.generic_platform', lang)
+    header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
+    action = ('support' if reason in {'authentication', 'access_denied', 'redirect_loop', 'region'}
+              else 'link' if reason in {'not_found', 'unsupported', 'restricted'}
+              else 'limit' if reason == 'too_large'
+              else 'delivery' if reason == 'delivery' else 'retry')
+    parts = [_t(header, lang, platform=platform),
+             _t('download_error.reason_label', lang, reason=_t('download_error.reason.' + reason, lang)),
+             _t('download_error.action_label', lang, action=_t('download_error.action.' + action, lang))]
+    if reference:
+        parts.append(_t('download_error.reference', lang, reference=html.escape(str(reference))))
+    return '\n\n'.join(parts)

@@ -523,7 +523,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         )
     except Exception as e:
         logging.error("Video download error: %s", e)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=e, business_id=business_id)
     finally:
         if video_id and video_id in YOUTUBE_PROGRESS:
             YOUTUBE_PROGRESS.pop(video_id, None)
@@ -706,7 +706,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
         )
     except Exception as e:
         logging.error("Audio download error: %s", e)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=e, business_id=business_id)
     finally:
         if request_lease is not None:
             request_lease.finish()
@@ -864,7 +864,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
             summarize_url_for_log(url),
             e,
         )
-        await handle_download_error(call.message, business_id=business_id)
+        await handle_download_error(call.message, error=e, business_id=business_id)
     finally:
         await safe_delete_message(status_message)
 

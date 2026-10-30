@@ -352,7 +352,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
         if status_message:
             await safe_delete_message(status_message)
         await react_to_message(message, "👎", business_id=business_id)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         await safe_delete_message(status_message)
         for path in set(local_files_to_clean):

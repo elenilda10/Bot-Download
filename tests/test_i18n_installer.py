@@ -146,3 +146,28 @@ def test_reply_adapter_does_not_resolve_competing_arguments_or_extra_calls():
     for local in (b'async def send():\n    await message.reply("LOCAL TEXT")\n',
                   b'async def send():\n    await message.reply("Old text")\n    await message.reply("Added")\n'):
         assert installer.preserve_reply_methods(old, incoming, local) == (old, incoming)
+
+
+def test_existing_i18n_runtime_receives_error_upgrade_with_local_replies(tmp_path):
+    """Reconstruct the published i18n release without requiring git history on VPS."""
+    full = json.loads((ROOT / 'scripts/i18n_vps_manifest.json').read_text())
+    upgrade = json.loads((ROOT / 'scripts/download_errors_vps_manifest.json').read_text())
+    for name in full['files']:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    subprocess.run(['git', 'apply', '--reverse', str(ROOT / 'scripts/download_errors_vps.patch')],
+                   cwd=tmp_path, check=True, capture_output=True)
+    for name, info in upgrade['files'].items():
+        path = tmp_path / name
+        if info['base_sha256'] is None:
+            assert not path.exists()
+        else:
+            assert installer.digest(path.read_bytes()) == info['base_sha256']
+    reply = tmp_path / 'handlers/universal.py'
+    reply.write_text(reply.read_text().replace('.answer(', '.reply('))
+    changes = installer.prepare(tmp_path)
+    assert b'download_failure_message' in changes['handlers/telegram_ui_utils.py']
+    assert b'.reply(' in changes['handlers/universal.py']
+    installer.install(tmp_path, changes)
+    assert installer.prepare(tmp_path) == {}

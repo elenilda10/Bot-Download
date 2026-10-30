@@ -136,3 +136,33 @@ async def test_status_callback_failure_does_not_abort_download(monkeypatch, tmp_
         'https://redd.it/abc123', output_dir=str(tmp_path),
         max_file_size=100, on_kind=on_kind) is result
     on_kind.assert_awaited_once_with('photo', 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status,expected', [('blocked', 'access_denied'), ('timeout', 'timeout')])
+async def test_json_failure_preserves_reason_for_user_message(monkeypatch, tmp_path, status, expected):
+    from utils.download_errors import best_failure, failure_context, close_failure_context
+    module, _ = service(monkeypatch, None)
+    module.fetch_reddit_post.return_value = {'status': status}
+    token = failure_context()
+    try:
+        assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is None
+        assert best_failure().reason == expected
+    finally:
+        close_failure_context(token)
+
+
+@pytest.mark.asyncio
+async def test_fallback_failure_crosses_timeout_boundary(monkeypatch, tmp_path):
+    from utils.download_errors import best_failure, note_failure, failure_context, close_failure_context
+    module, _ = service(monkeypatch, None)
+    async def failed(*args, **kwargs):
+        note_failure('authentication')
+        return None
+    module.download_universal_media = failed
+    token = failure_context()
+    try:
+        assert await module.download_reddit_media('https://redd.it/abc123', output_dir=str(tmp_path), max_file_size=100) is None
+        assert best_failure().reason == 'authentication'
+    finally:
+        close_failure_context(token)

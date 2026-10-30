@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.download_errors import reset_failures
 
 from dataclasses import dataclass
 
@@ -42,6 +43,7 @@ async def claim_message_request(
     service: str,
     url: str,
 ) -> MessageRequestLease | None:
+    reset_failures()
     chat_id = getattr(getattr(message, "chat", None), "id", None)
     scope_id = getattr(message, "business_connection_id", None)
     status = claim_request(message.from_user.id, chat_id, service, url, scope_id=scope_id)
