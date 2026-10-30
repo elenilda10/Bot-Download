@@ -21,6 +21,80 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+class RuntimeConflict(ValueError):
+    def __init__(self, message, details):
+        super().__init__(message)
+        self.details = details
+
+
+def conflict_blocks(content):
+    """Return only conflicting code blocks, not the complete live handlers."""
+    result = []
+    inside = False
+    for line in content.decode('utf-8', errors='replace').splitlines():
+        if line.startswith('<<<<<<<'):
+            inside = True
+        if inside:
+            result.append(line)
+        if line.startswith('>>>>>>>'):
+            inside = False
+    return '\n'.join(result)
+
+
+def merge_runtime(target, staging, manifest, patch, reference):
+    """Three-way merge only in temporary directories; never choose a conflict side."""
+    with tempfile.TemporaryDirectory(prefix='bot-i18n-base-') as directory:
+        base = Path(directory)
+        incoming = reference.parent
+        for name, info in manifest['files'].items():
+            content = (incoming / name).read_bytes()
+            if digest(content) != info['result_sha256']:
+                raise ValueError('Reference runtime failed its integrity check: ' + name)
+            destination = base / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+        subprocess.run(['git', 'apply', '--reverse', '--whitespace=nowarn', str(patch)],
+                       cwd=base, check=True, capture_output=True)
+        conflicts = []
+        details = []
+        for name, info in manifest['files'].items():
+            source = target / name
+            expected = (incoming / name).read_bytes()
+            original = base / name
+            if info['base_sha256'] is None:
+                if source.exists() and source.read_bytes() != expected:
+                    conflicts.append(name + ' (new path already has local contents)')
+                    continue
+                content = expected
+            else:
+                if digest(original.read_bytes()) != info['base_sha256']:
+                    raise ValueError('Reconstructed base failed its integrity check: ' + name)
+                local = source.read_bytes()
+                if local == expected:
+                    content = local
+                elif local == original.read_bytes():
+                    content = expected
+                else:
+                    merged = subprocess.run(
+                        ['git', 'merge-file', '--stdout', '--diff3',
+                         str(source.resolve()), str(original), str((incoming / name).resolve())],
+                        capture_output=True,
+                    )
+                    if merged.returncode:
+                        conflicts.append(name)
+                        blocks = conflict_blocks(merged.stdout)
+                        if blocks:
+                            details.append('=== ' + name + ' ===\n' + blocks)
+                        continue
+                    content = merged.stdout
+            destination = staging / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+        if conflicts:
+            raise RuntimeConflict('Local changes conflict with the migration; no files changed.\n'
+                                  + '\n'.join('CONFLICT ' + name for name in conflicts), '\n\n'.join(details))
+
+
 def prepare(target, *, reference=REFERENCE):
     manifest = json.loads((reference / 'i18n_vps_manifest.json').read_text())
     patch = (reference / 'i18n_vps.patch').resolve()
@@ -47,8 +121,9 @@ def prepare(target, *, reference=REFERENCE):
         check = subprocess.run(['git', 'apply', '--check', '--whitespace=nowarn', str(patch)],
                                cwd=staging, capture_output=True, text=True)
         if check.returncode:
-            raise ValueError('Runtime changes conflict with this migration; no files changed.\n' + check.stderr.strip())
-        subprocess.run(['git', 'apply', '--whitespace=nowarn', str(patch)], cwd=staging, check=True, capture_output=True)
+            merge_runtime(target, staging, manifest, patch, reference)
+        else:
+            subprocess.run(['git', 'apply', '--whitespace=nowarn', str(patch)], cwd=staging, check=True, capture_output=True)
         values = {name: (staging / name).read_bytes() for name in names}
         for name, content in values.items():
             if name.endswith('.py'):
@@ -112,6 +187,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', type=Path, required=True)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--diagnose', action='store_true', help='Show conflicting code blocks if staging fails.')
     args = parser.parse_args()
     target = args.target.resolve()
     try:
@@ -126,6 +202,8 @@ def main():
             print('Backup:', install(target, changes))
             print('Installed. Environment, database and service state were not changed.')
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+        if args.diagnose and isinstance(exc, RuntimeConflict) and exc.details:
+            print(exc.details, flush=True)
         raise SystemExit(str(exc)) from exc
 
 

@@ -52,10 +52,13 @@ git switch --detach FETCH_HEAD
 
 O dry run copia os arquivos afetados para um diretório temporário, verifica a
 integridade do patch e sua aplicação sobre o código existente, compila os módulos
-e valida os catálogos. Nenhum arquivo da instalação é alterado nessa etapa.
+e valida os catálogos. Se o patch direto falhar por contexto, reconstrói a base
+verificada e usa uma comparação de três versões para preservar as mudanças locais.
+Nenhum arquivo da instalação é alterado nessa etapa.
 A base do patch é `fc89407d2b44c826da80722a2b3325edba8ccaa3`; alterações locais
-compatíveis fora dos trechos modificados são preservadas. Em caso de conflito,
-a instalação para antes de qualquer escrita. Não force o patch nem substitua a
+compatíveis fora dos trechos modificados são preservadas. Se as duas versões modificarem o mesmo trecho de formas incompatíveis,
+a instalação para antes de qualquer escrita. Use `--diagnose` para mostrar apenas
+os blocos conflitantes e permitir uma adaptação baseada no código real. Não force o patch nem substitua a
 pasta inteira do bot; os conflitos precisam de uma adaptação para a VPS.
 
 Após um dry run válido:
@@ -74,7 +77,7 @@ migração de esquema.
 
 ## Validação
 
-Foram executados 117 testes selecionados: mensagens/teclados anteriores, catálogos,
+Foram executados 120 testes selecionados: mensagens/teclados anteriores, catálogos,
 normalização, fallback, HTML/emojis/placeholders, legendas externas intactas,
 escopos privado/grupo, permissões/erros de gravação, isolamento e cancelamento,
 progresso em background, persistência SQLite e preservação da escolha após refresh
@@ -96,3 +99,8 @@ A conferência ao vivo no Telegram/VPS ainda é necessária:
 A inicialização registra descrições de comandos para pt/en/es; o Telegram pode
 apresentar o menu de comandos conforme o idioma do aplicativo, enquanto as
 respostas do bot respeitam a preferência escolhida no bot.
+
+A revisão do instalador também foi testada com alterações locais que invalidam
+o contexto do patch mas permitem merge sem conflito, com mensagens alteradas dos
+dois lados que devem ser recusadas, e com diagnóstico limitado aos blocos em
+conflito. O merge nunca escolhe automaticamente um dos lados de um conflito.

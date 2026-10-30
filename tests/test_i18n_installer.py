@@ -75,3 +75,42 @@ def test_failed_write_restores_original_files(baseline, monkeypatch):
         installer.install(baseline, changes)
     for name, data in before.items():
         assert (baseline / name).read_bytes() == data
+
+
+def test_three_way_merge_preserves_local_edits_that_only_break_patch_context(baseline):
+    path = baseline / 'handlers/music.py'
+    source = path.read_text()
+    anchor = '                titulo, artista, musica.get("url"), is_pt\n            )'
+    assert anchor in source
+    path.write_text(source.replace(anchor, anchor + '  # VPS CUSTOMIZATION', 1))
+    check = subprocess.run(['git', 'apply', '--check', str(ROOT / 'scripts/i18n_vps.patch')], cwd=baseline, capture_output=True)
+    assert check.returncode != 0  # Exercise the fallback rather than an already-applicable patch.
+    changes = installer.prepare(baseline)
+    merged = changes['handlers/music.py'].decode()
+    assert '# VPS CUSTOMIZATION' in merged
+    assert "_t('handlers.music.callback_identify_music.ce0b1fc3'" in merged
+    assert path.read_text().count('# VPS CUSTOMIZATION') == 1
+    assert not (baseline / 'i18n/locales/es.json').exists()
+
+
+def test_three_way_merge_refuses_competing_message_changes(baseline):
+    path = baseline / 'handlers/music.py'
+    source = path.read_text()
+    assert 'Identified Music:' in source
+    path.write_text(source.replace('Identified Music:', 'MY LOCAL TITLE:', 1))
+    with pytest.raises(ValueError, match='CONFLICT handlers/music.py'):
+        installer.prepare(baseline)
+    assert 'MY LOCAL TITLE:' in path.read_text()
+    assert not (baseline / 'i18n/locales/es.json').exists()
+
+
+def test_diagnostics_contain_only_conflicting_blocks_without_writing_files(baseline):
+    path = baseline / 'handlers/music.py'
+    source = path.read_text()
+    path.write_text(source.replace('Identified Music:', 'MY LOCAL TITLE:', 1) + '\n# UNRELATED LOCAL SENTINEL\n')
+    with pytest.raises(installer.RuntimeConflict) as result:
+        installer.prepare(baseline)
+    details = result.value.details
+    assert 'MY LOCAL TITLE:' in details and '<<<<<<<' in details and '|||||||' in details
+    assert 'UNRELATED LOCAL SENTINEL' not in details
+    assert not (baseline / 'i18n/locales/es.json').exists()
