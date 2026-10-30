@@ -1,3 +1,5 @@
+from i18n import effective_locale as _normalize_locale
+from i18n import t as _t
 import asyncio
 import datetime
 import io
@@ -34,7 +36,7 @@ _stats_render_lock = threading.Lock()
 
 
 def _normalize_lang(lang: str | None) -> str:
-    return "en" if str(lang or "").lower().startswith("en") else "pt"
+    return _normalize_locale(lang)
 
 
 def _prepare_series(
@@ -163,37 +165,16 @@ def _build_series_for_period(
     ]
 
 
-def _period_label(period: str, lang: str = "pt") -> str:
-    if _normalize_lang(lang) == "en":
-        return period
-
-    return {
-        "Week": "Semana",
-        "Month": "Mês",
-        "Year": "Ano",
-    }.get(period, period)
+def _period_label(period: str, lang: str | None = None) -> str:
+    return _t('stats.period.' + period, lang) if period in {'Week', 'Month', 'Year'} else period
 
 
-def _month_label(month: int, lang: str = "pt") -> str:
-    if _normalize_lang(lang) == "en":
-        return (
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        )[month - 1]
-
-    return (
-        "jan", "fev", "mar", "abr", "mai", "jun",
-        "jul", "ago", "set", "out", "nov", "dez",
-    )[month - 1]
+def _month_label(month: int, lang: str | None = None) -> str:
+    return _t('stats.month.' + str(month), lang)
 
 
-def _weekday_label(dt: datetime.datetime, lang: str = "pt") -> str:
-    if _normalize_lang(lang) == "en":
-        return dt.strftime("%a")
-
-    return (
-        "seg", "ter", "qua", "qui", "sex", "sáb", "dom",
-    )[dt.weekday()]
+def _weekday_label(dt: datetime.datetime, lang: str | None = None) -> str:
+    return _t('stats.weekday.' + str(dt.weekday()), lang)
 
 
 def _format_stats_bucket(
@@ -209,14 +190,8 @@ def _format_stats_bucket(
     return f"{month} {bucket.day:02d}"
 
 
-def _stats_bucket_name(
-    period: str,
-    lang: str = "pt",
-) -> str:
-    if period == "Year":
-        return "month" if _normalize_lang(lang) == "en" else "mês"
-
-    return "day" if _normalize_lang(lang) == "en" else "dia"
+def _stats_bucket_name(period: str, lang: str | None = None) -> str:
+    return _t('stats.unit.month' if period == 'Year' else 'stats.unit.day', lang)
 
 
 def _is_cache_fresh(
@@ -269,7 +244,6 @@ def render_stats_chart(
     lang: str = "pt",
 ) -> bytes:
     lang = _normalize_lang(lang)
-    is_pt = lang == "pt"
 
     cache_key = (period, mode, lang)
     cached = _stats_chart_cache.get(cache_key)
@@ -380,26 +354,16 @@ def render_stats_chart(
         )
 
         mode_label = (
-            (
-                "Atividade geral"
+            _t('services.stats.chart.render_stats_chart.af7ba346', lang)
                 if mode == "total"
-                else "Comparação por plataforma"
-            )
-            if is_pt
-            else (
-                "Overall activity"
-                if mode == "total"
-                else "Platform comparison"
-            )
+                else _t('services.stats.chart.render_stats_chart.218a8c97', lang)
         )
 
         fig.text(
             0.08,
             0.92,
             (
-                "Visão geral dos downloads"
-                if is_pt
-                else "Downloads Overview"
+                _t('services.stats.chart.render_stats_chart.dcc563b7', lang)
             ),
             color="#F8FAFC",
             fontsize=20,
@@ -427,15 +391,9 @@ def render_stats_chart(
 
         chip_titles = (
             [
-                "Total",
-                f"Pico por {bucket_name}",
-                "Média",
-            ]
-            if is_pt
-            else [
-                "Total",
-                f"Peak {bucket_name}",
-                "Average",
+                _t('services.stats.chart.render_stats_chart.c9b3c382', lang),
+                _t('services.stats.chart.render_stats_chart.1cc0298a', lang, p0=bucket_name),
+                _t('services.stats.chart.render_stats_chart.b38ae2c5', lang),
             ]
         )
 
@@ -507,7 +465,7 @@ def render_stats_chart(
                     total_dates,
                     total_counts,
                     "#6C5DD3",
-                    "Downloads",
+                    _t('services.stats.chart.render_stats_chart.d5fdc1af', lang),
                     marker_size=18,
                 )
 
@@ -516,7 +474,7 @@ def render_stats_chart(
                 total_dates,
                 total_counts,
                 "#38BDF8",
-                "Downloads",
+                _t('services.stats.chart.render_stats_chart.d5fdc1af', lang),
                 annotate_last=True,
                 marker_size=22,
                 fill_alpha=0.18,
@@ -527,9 +485,7 @@ def render_stats_chart(
                 0.5,
                 0.5,
                 (
-                    "Nenhum download neste período"
-                    if is_pt
-                    else "No downloads yet for this period"
+                    _t('services.stats.chart.render_stats_chart.28daa113', lang)
                 ),
                 transform=ax.transAxes,
                 ha="center",
@@ -544,14 +500,14 @@ def render_stats_chart(
             )
 
         ax.set_xlabel(
-            "Data" if is_pt else "Date",
+            _t('services.stats.chart.render_stats_chart.99c40ab4', lang),
             fontsize=11,
             color="#94A3B8",
             labelpad=12,
         )
 
         ax.set_ylabel(
-            "Downloads",
+            _t('services.stats.chart.render_stats_chart.d5fdc1af', lang),
             fontsize=11,
             color="#94A3B8",
             labelpad=10,
@@ -669,20 +625,12 @@ def build_stats_caption(
     display_period = _period_label(period, lang)
 
     header = (
-        f"<b>Estatísticas — {display_period}</b>"
-        if is_pt
-        else f"<b>Statistics for {display_period}</b>"
+        _t('services.stats.chart.build_stats_caption.22c300c5', lang, p0=display_period)
     )
 
     if snapshot.total_downloads <= 0:
         return (
-            f"{header}\n\n"
-            "Ainda não há downloads registrados neste período."
-            if is_pt
-            else (
-                f"{header}\n\n"
-                "No downloads recorded for this period yet."
-            )
+            _t('services.stats.chart.build_stats_caption.c821f4df', lang, p0=header)
         )
 
     dates, counts = _build_series_for_period(
@@ -715,17 +663,13 @@ def build_stats_caption(
             header,
             "",
             (
-                "Total de downloads: "
-                f"<b>{snapshot.total_downloads}</b>"
+                _t('services.stats.chart.build_stats_caption.c1f30324', lang, p0=snapshot.total_downloads)
             ),
             (
-                f"Pico por {bucket_name}: "
-                f"<b>{peak_bucket}</b> - "
-                f"<b>{peak_count}</b>"
+                _t('services.stats.chart.build_stats_caption.f097afb9', lang, p0=bucket_name, p1=peak_bucket, p2=peak_count)
             ),
             (
-                f"Média por {bucket_name}: "
-                f"<b>{average:.1f}</b>"
+                _t('services.stats.chart.build_stats_caption.4c08fcb4', lang, p0=bucket_name, p1=f'{average:.1f}')
             ),
         ]
 
@@ -734,17 +678,13 @@ def build_stats_caption(
             header,
             "",
             (
-                "Total downloads: "
-                f"<b>{snapshot.total_downloads}</b>"
+                _t('services.stats.chart.build_stats_caption.c1f30324', lang, p0=snapshot.total_downloads)
             ),
             (
-                f"Peak {bucket_name}: "
-                f"<b>{peak_bucket}</b> - "
-                f"<b>{peak_count}</b>"
+                _t('services.stats.chart.build_stats_caption.f097afb9', lang, p0=bucket_name, p1=peak_bucket, p2=peak_count)
             ),
             (
-                f"Average per {bucket_name}: "
-                f"<b>{average:.1f}</b>"
+                _t('services.stats.chart.build_stats_caption.4c08fcb4', lang, p0=bucket_name, p1=f'{average:.1f}')
             ),
         ]
 
@@ -765,9 +705,7 @@ def build_stats_caption(
             lines.extend([
                 "",
                 (
-                    "<b>Principais plataformas</b>"
-                    if is_pt
-                    else "<b>Top platforms</b>"
+                    _t('services.stats.chart.build_stats_caption.b5e56dff', lang)
                 ),
             ])
 

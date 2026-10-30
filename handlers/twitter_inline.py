@@ -1,3 +1,4 @@
+from i18n import t as _t
 from config import OUTPUT_DIR
 from services.platforms.twitter_media import download_twitter_media
 import asyncio
@@ -221,9 +222,9 @@ async def send_inline_twitter_media(
                 max_file_size=max_file_size,
                 service_name="X / Twitter",
                 cache_key=cache_key,
-                channel_caption=f"Twitter Video from {actor_name}",
+                channel_caption=_t('handlers.twitter_inline._plan.c4e0509f', None, p0=actor_name),
                 download_fn=_download,
-                progress_label="Twitter video",
+                progress_label=_t('handlers.twitter_inline._plan.b4cab819', None),
                 build_caption=_build_caption,
                 reply_markup=reply_markup,
                 edit_status=edit_status,
@@ -241,7 +242,7 @@ async def send_inline_twitter_media(
                 service_name="X / Twitter",
                 cache_key=cache_key,
                 photo_url=item.url,
-                channel_caption=f"Twitter Photo from {actor_name}",
+                channel_caption=_t('handlers.twitter_inline._plan.1e9cbfd9', None, p0=actor_name),
                 build_caption=_build_caption,
                 reply_markup=reply_markup,
                 edit_status=edit_status,

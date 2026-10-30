@@ -1,3 +1,5 @@
+from i18n import bind_locale as _bind_locale
+from i18n import t as _t
 import asyncio
 import datetime
 import os
@@ -120,7 +122,7 @@ def _create_throttled_progress_updater(label: str, edit_fn, min_interval: float 
             except Exception:
                 pass
 
-    return _progress_callback
+    return _bind_locale(_progress_callback)
 
 
 class TikTokService(tiktok_platform.TikTokMediaService):
@@ -331,7 +333,7 @@ async def process_tiktok_video(
         await safe_edit_text(status_message, text)
 
     # Throttling estrito de 4.0s para evitar FloodWait no Telegram
-    on_progress = _create_throttled_progress_updater("TikTok video", _edit_status, min_interval=4.0)
+    on_progress = _create_throttled_progress_updater(_t('handlers.tiktok.process_tiktok_video.75f3549c', user_lang), _edit_status, min_interval=4.0)
     on_retry_download = make_retry_status_notifier(
         _edit_status,
         enabled=show_service_status,
@@ -377,7 +379,7 @@ async def process_tiktok_video(
         caption=bm.captions(user_settings.get("captions", "off"), info.description, bot_url),
         reply_markup_fn=_reply_markup,
         as_document=as_document,
-        cached_log_label="TikTok video",
+        cached_log_label=_t('handlers.tiktok.process_tiktok_video.75f3549c', user_lang),
         cached_log_url=db_video_url,
     )
 
@@ -681,9 +683,7 @@ async def download_tiktok_doc_callback(call: types.CallbackQuery):
                 document=file_id,
                 allow_sending_without_reply=True,
                 caption=(
-                    "📄 Arquivo de vídeo original"
-                    if not str(user_lang).lower().startswith("en")
-                    else "📄 Original video file"
+                    _t('handlers.tiktok.download_tiktok_doc_callback.f7593e4c', None)
                 ),
                 disable_content_type_detection=True,
             )
@@ -790,7 +790,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
         async def _edit_status(text: str) -> None:
             await safe_edit_text(status_message, text)
 
-        on_progress = _create_throttled_progress_updater("TikTok audio", _edit_status, min_interval=4.0)
+        on_progress = _create_throttled_progress_updater(_t('handlers.tiktok.download_tiktok_audio_callback.6bfbd1c3', None), _edit_status, min_interval=4.0)
         on_retry_download = make_retry_status_notifier(
             _edit_status,
             enabled=show_service_status,
@@ -826,9 +826,7 @@ async def download_tiktok_audio_callback(call: types.CallbackQuery):
             call.message.answer_audio,
             audio=FSInputFile(metrics.path),
             title=info.description or (
-                "Áudio do TikTok"
-                if not str(user_lang).lower().startswith("en")
-                else "TikTok Audio"
+                _t('handlers.tiktok.download_tiktok_audio_callback.986611e3', None)
             ),
             caption=bm.captions(None, None, bot_url),
             audio_path=metrics.path,

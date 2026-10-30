@@ -1,4 +1,5 @@
 """Handle public Google Drive file links."""
+from i18n import t as _t
 import asyncio
 import re
 import tempfile
@@ -69,9 +70,7 @@ async def handle_google_drive(message: types.Message):
         ) or "pt"
 
         descricao = (
-            "Arquivo baixado do Google Drive"
-            if str(lang).lower().startswith("pt")
-            else "File downloaded from Google Drive"
+            _t('handlers.google_drive.handle_google_drive.7fa81ade', None)
         )
 
         caption = bm.captions(
@@ -146,8 +145,7 @@ async def handle_google_drive(message: types.Message):
         if status is not None:
             try:
                 await status.edit_text(
-                    "❌ Não foi possível baixar ou enviar "
-                    "esse arquivo do Google Drive."
+                    _t('handlers.google_drive.handle_google_drive.3733e3f4', None)
                 )
             except Exception:
                 pass

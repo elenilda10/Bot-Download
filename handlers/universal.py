@@ -1,3 +1,5 @@
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 import asyncio
 import hashlib
 import json
@@ -55,8 +57,8 @@ def _is_pt(lang: Optional[str]) -> bool:
 
 
 def _make_progress_keyboard(post_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
-    text = "📊 Ver Progresso" if _is_pt(lang) else "📊 View Progress"
-    norm_lang = "pt" if _is_pt(lang) else "en"
+    text = _t('progress.view', lang)
+    norm_lang = _normalize_locale(lang)
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"univprog:{post_id}:{norm_lang}")]]
     )
@@ -100,7 +102,7 @@ def _cache_key(url_hash: str, media_kind: str) -> str:
 
 
 def _file_button_caption(lang: str | None) -> str:
-    return "📄 Arquivo como documento" if _is_pt(lang) else "📄 File as document"
+    return _t('handlers.universal._file_button_caption.a6c766e8', lang) if _is_pt(lang) else _t('handlers.universal._file_button_caption.093a2919', lang)
 
 
 def _universal_keyboard(
@@ -112,7 +114,7 @@ def _universal_keyboard(
         # Only the public source URL is shown; MP3/file callbacks stay off.
         return InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text="🔗 Abrir no Facebook" if _is_pt(lang) else "🔗 Open Facebook",
+                text=_t('handlers.facebook._facebook_keyboard.b11161d2', lang) if _is_pt(lang) else _t('handlers.facebook._facebook_keyboard.73305390', lang),
                 url=url,
             ),
         ]])
@@ -250,9 +252,9 @@ async def handle_universal_progress_callback(call: types.CallbackQuery):
 
     if not info:
         text = (
-            "⏳ Inicializando download ou preparando envio..."
+            _t('handlers.universal.handle_universal_progress_callback.d5ee793e', None)
             if is_portuguese
-            else "⏳ Initializing download or preparing upload..."
+            else _t('handlers.universal.handle_universal_progress_callback.513ba163', None)
         )
         await call.answer(text, show_alert=True)
         return
@@ -260,9 +262,9 @@ async def handle_universal_progress_callback(call: types.CallbackQuery):
     status = info.get("status")
     if status == "uploading":
         text = (
-            "🚀 Download finalizado! Enviando ao Telegram..."
+            _t('handlers.universal.handle_universal_progress_callback.af0e785d', None)
             if is_portuguese
-            else "🚀 Download complete! Sending to Telegram..."
+            else _t('handlers.universal.handle_universal_progress_callback.381e15c0', None)
         )
         await call.answer(text, show_alert=True)
         return
@@ -274,17 +276,11 @@ async def handle_universal_progress_callback(call: types.CallbackQuery):
 
     if is_portuguese:
         msg = (
-            f"📊 Progresso do Download:\n\n"
-            f"▸ Status: {percent}\n"
-            f"▸ Tamanho: {downloaded} / {total}\n"
-            f"▸ Velocidade: {speed}"
+            _t('handlers.facebook.facebook_progress_callback.e81bb164', None, p0=percent, p1=downloaded, p2=total, p3=speed)
         )
     else:
         msg = (
-            f"📊 Download Progress:\n\n"
-            f"▸ Status: {percent}\n"
-            f"▸ Size: {downloaded} / {total}\n"
-            f"▸ Speed: {speed}"
+            _t('handlers.universal.handle_universal_progress_callback.1c6b67f4', None, p0=percent, p1=downloaded, p2=total, p3=speed)
         )
 
     await call.answer(msg, show_alert=True)
@@ -357,8 +353,8 @@ async def process_universal_link(
             reply_markup=progress_kb,
         )
 
-    initial_status_text = "Baixando..." if _is_pt(user_lang) else "Downloading..."
-    initial_speed_text = "Calculando..." if _is_pt(user_lang) else "Calculating..."
+    initial_status_text = _t('handlers.facebook._progress_update.8be1f22d', None) if _is_pt(user_lang) else _t('handlers.universal.process_universal_link.f976eb28', None)
+    initial_speed_text = _t('handlers.universal.process_universal_link.3381938f', None) if _is_pt(user_lang) else _t('handlers.universal.process_universal_link.d5ad0a70', None)
 
     UNIVERSAL_PROGRESS[post_id] = {
         "percent": "0%",
@@ -657,7 +653,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
     callback_url = _recover_callback_url(call.message, url_hash)
     if callback_url and _is_facebook_url(callback_url):
         await call.message.answer(
-            "Este botão ainda não está disponível para o Facebook.",
+            _t('handlers.universal.download_universal_doc_callback.65cf8cc5', None),
             allow_sending_without_reply=True,
         )
         return
@@ -686,9 +682,9 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
 
     if not original_url:
         await call.message.answer(
-            "Envie o link novamente para baixar como arquivo."
+            _t('handlers.universal.download_universal_doc_callback.007eec64', None)
             if _is_pt(user_lang) else
-            "Please send the link again to download it as a file.",
+            _t('handlers.universal.download_universal_doc_callback.cf90a75a', None),
             allow_sending_without_reply=True,
         )
         return
@@ -749,7 +745,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
     callback_url = _recover_callback_url(call.message, url_hash)
     if callback_url and _is_facebook_url(callback_url):
         await call.message.answer(
-            "Este botão ainda não está disponível para o Facebook.",
+            _t('handlers.universal.download_universal_doc_callback.65cf8cc5', None),
             allow_sending_without_reply=True,
         )
         return
@@ -765,9 +761,9 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
 
     if not cached_audio_id and not original_url:
         await call.message.answer(
-            "Envie o link novamente para baixar o MP3."
+            _t('handlers.universal.download_universal_audio_callback.c542cf28', None)
             if _is_pt(user_lang) else
-            "Please send the link again to download MP3.",
+            _t('handlers.universal.download_universal_audio_callback.e56f6b1c', None),
             allow_sending_without_reply=True,
         )
         return
@@ -804,9 +800,9 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
         if not original_url:
             await safe_delete_message(status_message)
             await call.message.answer(
-                "Envie o link novamente para baixar o MP3."
+                _t('handlers.universal.download_universal_audio_callback.c542cf28', None)
                 if _is_pt(user_lang) else
-                "Please send the link again to download MP3.",
+                _t('handlers.universal.download_universal_audio_callback.e56f6b1c', None),
                 allow_sending_without_reply=True,
             )
             return
@@ -852,9 +848,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
             call.message.answer_audio,
             audio=FSInputFile(output_mp3_path),
             title=res.description or (
-                "Áudio"
-                if not str(user_lang).lower().startswith("en")
-                else "Universal Audio"
+                _t('handlers.universal.download_universal_audio_callback.a98aa240', None)
             ),
             caption=bm.captions(None, None, bot_url),
             audio_path=output_mp3_path,

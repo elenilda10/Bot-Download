@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import re
 import shutil
@@ -195,7 +196,7 @@ async def ban_command(message: types.Message):
     is_en = str(user_lang).lower().startswith("en")
 
     target_id: Optional[int] = None
-    target_name = "Target" if is_en else "Alvo"
+    target_name = _t('handlers.commands.ban_command.978354db', None) if is_en else _t('handlers.commands.ban_command.978354db', None)
 
     # Permite banir respondendo a uma mensagem encaminhada no PV
     if message.reply_to_message:
@@ -216,33 +217,27 @@ async def ban_command(message: types.Message):
                 target_name = str(target_id)
             except ValueError:
                 await message.reply(
-                        "❌ Invalid numeric ID. Example: <code>/ban 123456789</code> "
-                        "or <code>/ban -100123456789</code>"
+                        _t('handlers.commands.ban_command.f7361713', None)
                         if is_en
                         else
-                        "❌ ID numérico inválido. Exemplo: <code>/ban 123456789</code> "
-                        "ou <code>/ban -100123456789</code>"
+                        _t('handlers.commands.ban_command.f7361713', None)
                     )
                 return
 
     if not target_id:
         await message.reply(
-            "⚠️ Send the command with the ID:\n"
-            "<code>/ban &lt;user_or_group_id&gt;</code>\n\n"
-            "Or reply to a forwarded message with <code>/ban</code>."
+            _t('handlers.commands.ban_command.b224bf13', None)
             if is_en
             else
-            "⚠️ Envie o comando com o ID:\n"
-            "<code>/ban &lt;id_usuario_ou_grupo&gt;</code>\n\n"
-            "Ou responda a uma mensagem encaminhada com <code>/ban</code>."
+            _t('handlers.commands.ban_command.b224bf13', None)
         )
         return
 
     if _is_admin(target_id):
         await message.reply(
-            "🚫 Administrators cannot be banned."
+            _t('handlers.commands.ban_command.2f0aa428', None)
             if is_en
-            else "🚫 Administradores não podem ser banidos."
+            else _t('handlers.commands.ban_command.2f0aa428', None)
         )
         return
 
@@ -257,19 +252,17 @@ async def ban_command(message: types.Message):
         await user_mod.db.ban_user(target_id)
         logging.info("Ban aplicado pelo admin no PV: target_id=%s", target_id)
         await message.reply(
-            f"🚫 <b>{target_name}</b> (<code>{target_id}</code>) "
-            f"was <b>banned</b> from the bot."
+            _t('handlers.commands.ban_command.7693a6c6', None, p0=target_name, p1=target_id)
             if is_en
             else
-            f"🚫 <b>{target_name}</b> (<code>{target_id}</code>) "
-            f"foi <b>banido</b> do bot."
+            _t('handlers.commands.ban_command.7693a6c6', None, p0=target_name, p1=target_id)
         )
     except Exception as exc:
         logging.exception("Erro ao banir target_id=%s: %s", target_id, exc)
         await message.reply(
-            f"❌ Error banning: {exc}"
+            _t('handlers.commands.ban_command.a7c93b70', None, p0=exc)
             if is_en
-            else f"❌ Erro ao banir: {exc}"
+            else _t('handlers.commands.ban_command.a7c93b70', None, p0=exc)
         )
 
 
@@ -285,7 +278,7 @@ async def unban_command(message: types.Message):
     is_en = str(user_lang).lower().startswith("en")
 
     target_id: Optional[int] = None
-    target_name = "Target" if is_en else "Alvo"
+    target_name = _t('handlers.commands.ban_command.978354db', None) if is_en else _t('handlers.commands.ban_command.978354db', None)
 
     if message.reply_to_message:
         fwd_user = getattr(message.reply_to_message, "forward_from", None)
@@ -304,23 +297,19 @@ async def unban_command(message: types.Message):
                 target_name = str(target_id)
             except ValueError:
                 await message.reply(
-                        "❌ Invalid numeric ID. Example: <code>/unban 123456789</code>"
+                        _t('handlers.commands.unban_command.39f42deb', None)
                         if is_en
                         else
-                        "❌ ID numérico inválido. Exemplo: <code>/unban 123456789</code>"
+                        _t('handlers.commands.unban_command.39f42deb', None)
                     )
                 return
 
     if not target_id:
         await message.reply(
-            "⚠️ Send the command with the ID:\n"
-            "<code>/unban &lt;user_or_group_id&gt;</code>\n\n"
-            "Or reply to a message with <code>/unban</code>."
+            _t('handlers.commands.unban_command.f56f7a97', None)
             if is_en
             else
-            "⚠️ Envie o comando com o ID:\n"
-            "<code>/unban &lt;id_usuario_ou_grupo&gt;</code>\n\n"
-            "Ou responda a uma mensagem com <code>/unban</code>."
+            _t('handlers.commands.unban_command.f56f7a97', None)
         )
         return
 
@@ -328,17 +317,17 @@ async def unban_command(message: types.Message):
         await user_mod.db.set_active(target_id)
         logging.info("Desban aplicado pelo admin no PV: target_id=%s", target_id)
         await message.reply(
-            f"✅ <b>{target_name}</b> (<code>{target_id}</code>) was <b>unbanned</b>."
+            _t('handlers.commands.unban_command.67c37fc3', None, p0=target_name, p1=target_id)
             if is_en
             else
-            f"✅ <b>{target_name}</b> (<code>{target_id}</code>) foi <b>desbanido</b>."
+            _t('handlers.commands.unban_command.67c37fc3', None, p0=target_name, p1=target_id)
         )
     except Exception as exc:
         logging.exception("Erro ao desbanir target_id=%s: %s", target_id, exc)
         await message.reply(
-            f"❌ Error unbanning: {exc}"
+            _t('handlers.commands.unban_command.c9bcc18d', None, p0=exc)
             if is_en
-            else f"❌ Erro ao desbanir: {exc}"
+            else _t('handlers.commands.unban_command.c9bcc18d', None, p0=exc)
         )
 
 
@@ -350,7 +339,7 @@ async def handle_bot_membership(update: ChatMemberUpdated):
     if new_status in {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR}:
         chat_id = chat.id
         chat_type_value = "private" if chat.type == ChatType.PRIVATE else "public"
-        chat_name = chat.title or getattr(chat, "full_name", None) or f"Chat {chat_id}"
+        chat_name = chat.title or getattr(chat, "full_name", None) or _t('handlers.admin.admin_send_to_chat.1744850b', None, p0=chat_id)
         chat_username = getattr(chat, "username", None)
         language = getattr(chat, "language_code", None)
 
@@ -546,6 +535,8 @@ def _clean_translation_input(text: str) -> str:
         if (
             "Powered by Save Vídeo DL Bot" in stripped
             or "Powered by Save Video DL Bot" in stripped
+            or "Desenvolvido por Save Vídeo DL Bot" in stripped
+            or "Desarrollado por Save Vídeo DL Bot" in stripped
         ):
             continue
 

@@ -1,4 +1,5 @@
 """Handle public MEGA links in Telegram messages."""
+from i18n import t as _t
 import asyncio
 import hashlib
 import logging
@@ -83,9 +84,7 @@ async def handle_mega(message: types.Message):
                     allow_sending_without_reply=True,
                     document=cached_file_id,
                     caption=(
-                        "📄 Arquivo baixado do MEGA"
-                        if str(lang).lower().startswith("pt")
-                        else "📄 File downloaded from MEGA"
+                        _t('handlers.mega.handle_mega.d6c00b58', None)
                     ),
                     parse_mode="HTML",
                 )
@@ -118,9 +117,7 @@ async def handle_mega(message: types.Message):
                 )
 
                 descricao = (
-                    "Arquivo baixado do MEGA"
-                    if str(lang).lower().startswith("pt")
-                    else "File downloaded from MEGA"
+                    _t('handlers.mega.handle_mega.b54d4377', None)
                 )
 
                 caption = bm.captions(
@@ -161,8 +158,7 @@ async def handle_mega(message: types.Message):
         if status is not None:
             try:
                 await status.edit_text(
-                    "❌ Não foi possível baixar ou enviar "
-                    "esse arquivo do MEGA."
+                    _t('handlers.mega.handle_mega.1cd2d2c8', None)
                 )
             except Exception:
                 pass

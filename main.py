@@ -371,8 +371,15 @@ async def main():
                 dp.callback_query.outer_middleware(middleware)
                 dp.inline_query.outer_middleware(middleware)
 
+            from middlewares.localization import LocalizationMiddleware
+            for observer in (dp.business_message, dp.my_chat_member, dp.chat_member):
+                observer.outer_middleware(LocalizationMiddleware())
+
             try:
                 await bot.set_my_commands(commands=BOT_COMMANDS)
+                from i18n import SUPPORTED_LOCALES, bot_commands
+                for locale in SUPPORTED_LOCALES:
+                    await bot.set_my_commands(commands=bot_commands(locale), language_code=locale)
             except Exception as exc:
                 logging.warning("Rate limit ao configurar comandos: %s", exc)
 

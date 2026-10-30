@@ -1,15 +1,15 @@
 from __future__ import annotations
+from i18n import get_locale as _get_locale
+from i18n import normalize_locale as _normalize_locale
 
 from typing import Final
+from i18n import t as _t
 
-DEFAULT_LANG = "en"
+DEFAULT_LANG = None
 
 
 def _normalize_lang(lang: str | None) -> str:
-    if not lang:
-        return DEFAULT_LANG
-    lang = lang.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+    return _normalize_locale(lang if lang is not None else _get_locale())
 
 
 SETTING_ENABLED: Final[str] = "on"
@@ -78,12 +78,9 @@ SETTING_LABELS_PT: Final[tuple[tuple[str, str], ...]] = (
 SETTING_LABELS: Final[tuple[tuple[str, str], ...]] = SETTING_LABELS_EN
 
 
-def get_setting_labels(
-    lang: str = DEFAULT_LANG,
-) -> tuple[tuple[str, str], ...]:
-    if _normalize_lang(lang) == "pt":
-        return SETTING_LABELS_PT
-    return SETTING_LABELS_EN
+def get_setting_labels(lang: str | None = DEFAULT_LANG) -> tuple[tuple[str, str], ...]:
+    locale = _normalize_lang(lang)
+    return tuple((_t('settings.label.' + field, locale), field) for _, field in SETTING_LABELS_EN)
 
 
 def is_valid_setting_field(field: str | None) -> bool:

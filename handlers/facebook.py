@@ -6,6 +6,7 @@ cookies are opt-in for the administrator's ordinary private conversation.
 No Facebook content is stored in the shared Telegram file_id cache.
 """
 from __future__ import annotations
+from i18n import t as _t
 
 import asyncio
 import hashlib
@@ -70,7 +71,7 @@ def _facebook_keyboard(
     buttons = []
     if token and single and has_video and settings.get("audio_button") == "on":
         buttons.append([InlineKeyboardButton(
-            text="🎧 Baixar MP3" if portuguese else "🎧 Download MP3",
+            text=_t('handlers.facebook._facebook_keyboard.2432fa18', lang) if portuguese else _t('handlers.facebook._facebook_keyboard.2432fa18', lang),
             callback_data=f"fba:{token}",
         )])
     if (
@@ -79,14 +80,14 @@ def _facebook_keyboard(
         and settings.get("as_document") != "on"
     ):
         buttons.append([InlineKeyboardButton(
-            text="📄 Baixar Arquivo" if portuguese else "📄 Download File",
+            text=_t('handlers.facebook._facebook_keyboard.d7fd5aab', lang) if portuguese else _t('handlers.facebook._facebook_keyboard.d7fd5aab', lang),
             callback_data=f"fbd:{token}",
         )])
     # Existing source button remains available. Never add direct authenticated
     # media URLs or reusable file IDs to a callback payload.
     if settings.get("url_button", "on") != "off":
         buttons.append([InlineKeyboardButton(
-            text="🔗 Abrir no Facebook" if portuguese else "🔗 Open Facebook",
+            text=_t('handlers.facebook._facebook_keyboard.b11161d2', lang) if portuguese else _t('handlers.facebook._facebook_keyboard.73305390', lang),
             url=url,
         )])
     return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
@@ -225,7 +226,7 @@ def _progress_update(key: str, downloaded: int, total: int | None, speed: float 
     calculated = max(downloaded - info["last_bytes"], 0) / elapsed
     speed = speed if speed and speed > 0 else calculated
     info.update({
-        "percent": f"{downloaded / total * 100:.1f}%" if total else "Baixando...",
+        "percent": f"{downloaded / total * 100:.1f}%" if total else _t('handlers.facebook._progress_update.8be1f22d', None),
         "downloaded": f"{downloaded / 1048576:.1f} MB",
         "total": f"{total / 1048576:.1f} MB" if total else "?",
         "speed": f"{speed / 1048576:.1f} MB/s",
@@ -239,16 +240,13 @@ async def facebook_progress_callback(call: types.CallbackQuery) -> None:
     key = (call.data or "").partition(":")[2]
     state = _PROGRESS.get(key)
     if not state or call.from_user.id != state["user_id"]:
-        await call.answer("⏳ Download finalizado ou indisponível.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_progress_callback.2517d389', None), show_alert=True)
         return
     if state.get("status") == "uploading":
-        await call.answer("🚀 Enviando ao Telegram...", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_progress_callback.13f73340', None), show_alert=True)
         return
     message = (
-        f"📊 Progresso do Download:\n\n"
-        f"▸ Status: {state['percent']}\n"
-        f"▸ Tamanho: {state['downloaded']} / {state['total']}\n"
-        f"▸ Velocidade: {state['speed']}"
+        _t('handlers.facebook.facebook_progress_callback.e81bb164', None, p0=state['percent'], p1=state['downloaded'], p2=state['total'], p3=state['speed'])
     )
     await call.answer(message, show_alert=True)
 
@@ -269,32 +267,32 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
     try:
         key = fc.callback_key(token)
     except ValueError:
-        await call.answer("Botão inválido.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_format_callback.a7070282', None), show_alert=True)
         return
 
     actor = call.from_user.id if call.from_user else None
     chat = call.message.chat if call.message else None
     if actor is None or chat is None or await cmd_mod.is_banned(actor, chat.id):
-        await call.answer("Acesso indisponível.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_format_callback.44809136', None), show_alert=True)
         return
 
     record = fc.decode(await db.get_file_id(key))
     if not fc.callback_allowed(record, actor, chat.id, chat.type):
         await call.answer(
-            "Este botão expirou ou pertence a outra conversa. Envie o link novamente.",
+            _t('handlers.facebook.facebook_format_callback.0dbd14ec', None),
             show_alert=True,
         )
         return
     url = record.get("url")
     if not isinstance(url, str) or not _is_facebook_media_link(url):
-        await call.answer("Link inválido.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_format_callback.988aa82f', None), show_alert=True)
         return
 
     user_settings = await db.user_settings(actor)
     option = "audio_button" if kind == "audio" else "file_button"
     if user_settings.get(option) != "on":
         await call.answer(
-            "Ative o botão nas configurações do bot para utilizá-lo.",
+            _t('handlers.facebook.facebook_format_callback.ada9b656', None),
             show_alert=True,
         )
         return
@@ -304,7 +302,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         if scope != "public" else None
     )
     if scope != "public" and not profile:
-        await call.answer("Sessão autenticada indisponível.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_format_callback.22eb1900', None), show_alert=True)
         return
 
     await call.answer()
@@ -350,7 +348,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         )
         if not result or len(result.media_list) != 1:
             await call.message.answer(
-                "Não consegui recuperar uma mídia única desta publicação.",
+                _t('handlers.facebook.facebook_format_callback.52d58f7c', None),
                 allow_sending_without_reply=True,
             )
             return
@@ -361,7 +359,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             or os.path.getsize(item.url) >= MAX_FILE_SIZE
         ):
             await call.message.answer(
-                "Arquivo indisponível ou acima do limite.",
+                _t('handlers.facebook.facebook_format_callback.acad8aba', None),
                 allow_sending_without_reply=True,
             )
             return
@@ -369,7 +367,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
         if kind == "audio":
             if item.type != "video":
                 await call.message.answer(
-                    "Esta publicação não contém vídeo com áudio para converter.",
+                    _t('handlers.facebook.facebook_format_callback.57448b90', None),
                     allow_sending_without_reply=True,
                 )
                 return
@@ -388,14 +386,14 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
                 await proc.communicate()
                 logging.warning("Facebook MP3 conversion timed out")
                 await call.message.answer(
-                    "A conversão do áudio excedeu o tempo limite.",
+                    _t('handlers.facebook.facebook_format_callback.8f8d2e48', None),
                     allow_sending_without_reply=True,
                 )
                 return
             if proc.returncode != 0:
                 logging.warning("Facebook MP3 conversion failed: %s", proc.returncode)
                 await call.message.answer(
-                    "Não consegui extrair áudio deste vídeo.",
+                    _t('handlers.facebook.facebook_format_callback.10e7f62f', None),
                     allow_sending_without_reply=True,
                 )
                 return
@@ -405,7 +403,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             or os.path.getsize(output_path) >= MAX_FILE_SIZE
         ):
             await call.message.answer(
-                "Não foi possível gerar o arquivo dentro do limite.",
+                _t('handlers.facebook.facebook_format_callback.b9a04fe6', None),
                 allow_sending_without_reply=True,
             )
             return
@@ -432,7 +430,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             sent = await send_audio_with_thumbnail(
                 call.message.answer_audio,
                 audio=FSInputFile(output_path, filename="facebook.mp3"),
-                title=(result.description or "Áudio do Facebook")[:128],
+                title=(result.description or _t('handlers.facebook.facebook_format_callback.97e012c2', None))[:128],
                 bot_url=bot_url, caption=caption,
                 parse_mode=ParseMode.HTML,
             )
@@ -445,7 +443,7 @@ async def facebook_format_callback(call: types.CallbackQuery) -> None:
             "Facebook %s callback failed: %s", kind, type(exc).__name__,
         )
         await call.message.answer(
-            "Não consegui concluir o download. Tente novamente mais tarde.",
+            _t('handlers.facebook.facebook_format_callback.3b4dab0a', None),
             allow_sending_without_reply=True,
         )
     finally:
@@ -469,12 +467,11 @@ async def facebook_gallery_first_test_command(message: types.Message) -> None:
         getattr(message, "business_connection_id", None),
     )
     if not profile:
-        await message.answer("Este teste está disponível apenas ao administrador no privado.")
+        await message.answer(_t('handlers.facebook.facebook_gallery_first_test_command.5a51ced6', None))
         return
     if not _extract_facebook_link(get_message_text(message)):
         await message.answer(
-            "Envie: /fbteste https://www.facebook.com/share/p/EXEMPLO/\n"
-            "O teste baixa o que o gallery-dl encontrar, sem comprovar a identidade da mídia."
+            _t('handlers.facebook.facebook_gallery_first_test_command.11806b7c', None)
         )
         return
     await process_facebook_link(message, facebook_gallery_first_test=True)
@@ -520,8 +517,7 @@ async def process_facebook_link(
         target = await _resolve_facebook_short_link(source)
         if not target:
             await message.answer(
-                "Não consegui abrir o link do Facebook. "
-                "Tente copiar o endereço direto do Reel, vídeo ou foto.",
+                _t('handlers.facebook.process_facebook_link.e91a31a3', None),
                 allow_sending_without_reply=True,
             )
             return
@@ -541,7 +537,7 @@ async def process_facebook_link(
         profile = _auth_profile(user_id, message.chat.type, business_id)
         # Never use experimental gallery mode for anonymous or public chats.
         if facebook_gallery_first_test and not profile:
-            await message.answer("Teste permitido apenas ao administrador no privado.")
+            await message.answer(_t('handlers.facebook.process_facebook_link.6d057cc1', None))
             return
         scope = fc.scope_for(profile, user_id)
         cache_kind = "document" if settings.get("as_document") == "on" else "media"
@@ -637,7 +633,7 @@ async def process_facebook_link(
         )
         if facebook_gallery_first_test:
             # Keep this visible even if the user's normal caption preference is off.
-            aviso = "🧪 TESTE gallery-dl: mídia NÃO verificada com a publicação original."
+            aviso = _t('handlers.facebook.process_facebook_link.28cbcc7f', None)
             caption = f"{aviso}\n\n{caption}" if caption else aviso
         has_video = any(item.type == "video" for item in result.media_list)
         keyboard = _facebook_keyboard(

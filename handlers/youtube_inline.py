@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 from typing import Optional
 
@@ -96,7 +97,7 @@ async def handle_youtube_music_inline_query(
         results = [
             types.InlineQueryResultArticle(
                 id=f"ytmusic_inline:{token}",
-                title="YouTube Music",
+                title=_t('handlers.youtube_inline.handle_youtube_music_inline_query.6921a7ca', None),
                 description=yt.get("title") or bm.inline_send_audio_description(lang=user_lang),
                 thumbnail_url=get_youtube_thumbnail_url_fn(yt) or get_inline_service_icon("youtube"),
                 input_message_content=types.InputTextMessageContent(
@@ -279,7 +280,7 @@ async def send_inline_youtube_music(
                 ),
                 title=yt.get("title"),
                 performer=audio_artist,
-                caption=f"YouTube Music from {actor_name}",
+                caption=_t('handlers.youtube_inline._send_downloaded.070dca9c', None, p0=actor_name),
                 audio_path=path,
                 bot_avatar=audio_thumbnail,
                 bot_url=bot_url,
@@ -435,9 +436,9 @@ async def send_inline_youtube_video(
             max_file_size=max_file_size,
             service_name="YouTube",
             cache_key=request.source_url,
-            channel_caption=f"YouTube Video from {actor_name}",
+            channel_caption=_t('handlers.youtube_inline._plan.0182142f', None, p0=actor_name),
             download_fn=_download,
-            progress_label="YouTube video",
+            progress_label=_t('handlers.youtube.download_video.4d78938a', None),
             build_caption=_build_caption,
             reply_markup=kb.return_video_info_keyboard(
                 views=views,

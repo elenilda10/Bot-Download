@@ -1,3 +1,4 @@
+from i18n import normalize_locale
 import time
 from typing import Any
 
@@ -33,7 +34,7 @@ class UserRepositoryMixin:
             "user_name": user_name,
             "user_username": user_username,
             "chat_type": chat_type,
-            "language": language,
+            "language": normalize_locale(language),
             "status": status,
         }
         if referred_by is not None:
@@ -228,13 +229,13 @@ class UserRepositoryMixin:
                     select(User.language).where(User.user_id == int(user_id))
                 )
                 val = result.scalar()
-                return str(val).lower() if val else "pt"
+                return normalize_locale(val)
         except Exception:
-            return "pt"
+            return normalize_locale(None)
 
     async def set_language(self, user_id: int, lang: str) -> None:
         async with self.SessionLocal() as session:
             async with session.begin():
                 await session.execute(
-                    update(User).where(User.user_id == int(user_id)).values(language=lang)
+                    update(User).where(User.user_id == int(user_id)).values(language=normalize_locale(lang))
                 )

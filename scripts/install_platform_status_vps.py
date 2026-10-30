@@ -141,6 +141,8 @@ def prepare(target):
 
 
 def main():
+    if (Path(__file__).resolve().parents[1] / 'i18n').is_dir():
+        raise SystemExit('This revision requires the complete locale migration. Use scripts/install_i18n_vps.py --target /root/Bot-Download instead.')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', type=Path, required=True)
     parser.add_argument('--apply', action='store_true')

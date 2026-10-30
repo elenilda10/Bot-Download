@@ -1,5 +1,6 @@
 """Botões XVideos com links persistentes e cache."""
 from __future__ import annotations
+from i18n import t as _t
 
 import asyncio
 import hashlib
@@ -113,13 +114,13 @@ async def handle_xvideos_button(call: types.CallbackQuery):
         or parts[1] not in ("a", "d")
         or not re.fullmatch(r"[0-9a-f]{24}", parts[2])
     ):
-        await call.answer("Botão inválido.", show_alert=True)
+        await call.answer(_t('handlers.facebook.facebook_format_callback.a7070282', None), show_alert=True)
         return
 
     if not message or not callable(
         getattr(message, "reply_document", None)
     ):
-        await call.answer("Mensagem indisponível.", show_alert=True)
+        await call.answer(_t('handlers.xvideos_actions.handle_xvideos_button.97d3b9a1', None), show_alert=True)
         return
 
     if await cmd_mod.is_banned(
@@ -138,7 +139,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
         or link_id(page) != parts[2]
     ):
         await call.answer(
-            "Link expirado. Envie o link original novamente.",
+            _t('handlers.xvideos_actions.handle_xvideos_button.9b20c71e', None),
             show_alert=True,
         )
         return
@@ -255,7 +256,7 @@ async def handle_xvideos_button(call: types.CallbackQuery):
             type(exc).__name__,
         )
         await message.answer(
-            "Não foi possível processar este arquivo agora."
+            _t('handlers.xvideos_actions.handle_xvideos_button.b6739551', None)
         )
     finally:
         if status:

@@ -1,3 +1,4 @@
+from i18n import t as _t
 import datetime
 import re
 from typing import Optional
@@ -187,7 +188,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
             audio_name = f"{track.id}_{timestamp}_soundcloud_audio.mp3"
 
             on_progress = make_status_text_progress_updater(
-                "SoundCloud audio", _edit_status
+                _t('handlers.soundcloud._download_audio.5c84f999', None), _edit_status
             )
             on_retry = make_retry_status_notifier(
                 _edit_status,
@@ -332,9 +333,7 @@ async def inline_soundcloud_query(query: types.InlineQuery):
             types.InlineQueryResultArticle(
                 id=f"soundcloud_inline:{token}",
                 title=(
-                    "Áudio do SoundCloud"
-                    if not str(user_lang).lower().startswith("en")
-                    else "SoundCloud Audio"
+                    _t('handlers.soundcloud.inline_soundcloud_query.78d340da', None)
                 ),
                 description=track.title
                 or bm.inline_send_audio_description(lang=user_lang),
@@ -422,7 +421,7 @@ async def _send_inline_soundcloud_audio(
             await _edit_inline_status(bm.downloading_audio_status(lang=user_lang, platform='SoundCloud'))
 
             on_progress = make_status_text_progress_updater(
-                "SoundCloud audio", _edit_inline_status
+                _t('handlers.soundcloud._download_audio.5c84f999', None), _edit_inline_status
             )
 
             return await soundcloud_service.download_media(

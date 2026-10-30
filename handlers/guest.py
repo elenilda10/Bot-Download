@@ -1,4 +1,5 @@
 from __future__ import annotations
+from i18n import normalize_locale as _normalize_locale
 
 import asyncio
 import re
@@ -70,8 +71,7 @@ _GUEST_AUTO_RESULT_PREFIXES = {
 
 
 def _normalize_lang(lang: str | None) -> str:
-    value = (lang or "").strip().lower()
-    return "pt" if value.startswith("pt") else "en"
+    return _normalize_locale(lang)
 
 
 def _chat_type_value(chat_type: Any) -> str:

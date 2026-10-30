@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import datetime
 import re
@@ -189,7 +190,7 @@ async def process_threads_single_media(
     async def _edit_status(text: str) -> None:
         await safe_edit_text(status_message, text)
 
-    on_progress = make_status_text_progress_updater(f"Threads {media_kind}", _edit_status)
+    on_progress = make_status_text_progress_updater(_t('handlers.threads.process_threads_single_media.c6214697', None, p0=media_kind), _edit_status)
     on_retry = make_retry_status_notifier(_edit_status, enabled=business_id is None)
 
     async def _download_media() -> DownloadMetrics | None:

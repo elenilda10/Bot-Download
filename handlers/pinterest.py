@@ -1,3 +1,4 @@
+from i18n import t as _t
 import asyncio
 import datetime
 import re
@@ -183,7 +184,7 @@ async def process_pinterest_single_media(
     async def _edit_status(text: str) -> None:
         await safe_edit_text(status_message, text)
 
-    on_progress = make_status_text_progress_updater(f"Pinterest {media_kind}", _edit_status)
+    on_progress = make_status_text_progress_updater(_t('handlers.pinterest.process_pinterest_single_media.95b2cdb7', None, p0=media_kind), _edit_status)
     on_retry = make_retry_status_notifier(_edit_status, enabled=business_id is None)
 
     def _reply_markup():

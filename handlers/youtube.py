@@ -1,3 +1,5 @@
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 from services.settings import resolve_video_quality_format
 import asyncio
 import re
@@ -86,8 +88,8 @@ def _is_pt(lang: Optional[str]) -> bool:
 
 
 def _make_progress_keyboard(video_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
-    text = "📊 Ver Progresso" if _is_pt(lang) else "📊 View Progress"
-    norm_lang = "pt" if _is_pt(lang) else "en"
+    text = _t('progress.view', lang)
+    norm_lang = _normalize_locale(lang)
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"ytprog:{video_id}:{norm_lang}")]]
     )
@@ -266,9 +268,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
 
     if not info:
         text = (
-            "⏳ Inicializando download ou preparando envio..."
+            _t('handlers.universal.handle_universal_progress_callback.d5ee793e', None)
             if is_portuguese
-            else "⏳ Initializing download or preparing upload..."
+            else _t('handlers.universal.handle_universal_progress_callback.513ba163', None)
         )
         await call.answer(text, show_alert=True)
         return
@@ -276,9 +278,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
     status = info.get("status")
     if status == "uploading":
         text = (
-            "🚀 Download finalizado! Enviando ao Telegram..."
+            _t('handlers.universal.handle_universal_progress_callback.af0e785d', None)
             if is_portuguese
-            else "🚀 Download complete! Sending to Telegram..."
+            else _t('handlers.universal.handle_universal_progress_callback.381e15c0', None)
         )
         await call.answer(text, show_alert=True)
         return
@@ -290,17 +292,11 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
 
     if is_portuguese:
         msg = (
-            f"📊 Progresso do Download:\n\n"
-            f"▸ Status: {percent}\n"
-            f"▸ Tamanho: {downloaded} / {total}\n"
-            f"▸ Velocidade: {speed}"
+            _t('handlers.facebook.facebook_progress_callback.e81bb164', None, p0=percent, p1=downloaded, p2=total, p3=speed)
         )
     else:
         msg = (
-            f"📊 Download Progress:\n\n"
-            f"▸ Status: {percent}\n"
-            f"▸ Size: {downloaded} / {total}\n"
-            f"▸ Speed: {speed}"
+            _t('handlers.universal.handle_universal_progress_callback.1c6b67f4', None, p0=percent, p1=downloaded, p2=total, p3=speed)
         )
 
     await call.answer(msg, show_alert=True)
@@ -385,8 +381,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             await handle_video_too_large(message, business_id=business_id)
             return
 
-        initial_status_text = "Baixando..." if _is_pt(user_lang) else "Downloading..."
-        initial_speed_text = "Calculando..." if _is_pt(user_lang) else "Calculating..."
+        initial_status_text = _t('handlers.facebook._progress_update.8be1f22d', None) if _is_pt(user_lang) else _t('handlers.universal.process_universal_link.f976eb28', None)
+        initial_speed_text = _t('handlers.universal.process_universal_link.3381938f', None) if _is_pt(user_lang) else _t('handlers.universal.process_universal_link.d5ad0a70', None)
 
         YOUTUBE_PROGRESS[video_id] = {
             "percent": "0%",
@@ -460,7 +456,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
                 caption=bm.captions(user_captions, yt["title"], bot_url),
                 reply_markup_fn=_reply_markup,
                 as_document=as_document,
-                cached_log_label="YouTube video",
+                cached_log_label=_t('handlers.youtube.download_video.4d78938a', None),
                 cached_log_url=yt["webpage_url"],
             )
         )
@@ -723,9 +719,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
     user_lang = await db.get_language(call.from_user.id)
     if not call.message:
         text = (
-            "Abra o bot para baixar o MP3"
-            if str(user_lang).lower().startswith("pt")
-            else "Open the bot to download MP3"
+            _t('handlers.youtube.download_youtube_mp3_callback.9a1621b8', None)
         )
         await call.answer(text, show_alert=True)
         return

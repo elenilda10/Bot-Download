@@ -1,3 +1,4 @@
+from i18n import t as _t
 import logging
 import time
 from datetime import datetime, timezone
@@ -37,29 +38,16 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
         self._resuming = resuming_users
 
     async def _language(self, user):
-        telegram_lang = getattr(user, "language_code", None)
-        fallback = (
-            "pt"
-            if not telegram_lang or telegram_lang.lower().startswith("pt")
-            else "en"
-        )
-
+        from i18n import normalize_locale, request_locale
+        if request_locale() is not None:
+            return request_locale()
+        fallback = normalize_locale(getattr(user, 'language_code', None))
         try:
             record = await db.get_user_info(user_id=user.id)
-            if record:
-                saved_lang = getattr(record, "language", None)
-                if saved_lang:
-                    return (
-                        "pt"
-                        if str(saved_lang).lower().startswith("pt")
-                        else "en"
-                    )
+            if record and getattr(record, 'language', None):
+                return normalize_locale(record.language)
         except Exception:
-            logging.exception(
-                "Falha ao consultar idioma do usuário %s",
-                user.id,
-            )
-
+            logging.exception('Failed to load user locale: user_id=%s', user.id)
         return fallback
 
     async def _is_member(self, bot, user_id, *, fresh=False):
@@ -236,14 +224,11 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
         )
 
         result = await resume_pending_request(bot, user, pending)
-        is_pt = str(lang).lower().startswith("pt")
 
         if result == "invalid":
             await self._send_in_context(
                 event, bot, user,
-                "✅ Inscrição confirmada. Envie o link novamente."
-                if is_pt else
-                "✅ Subscription confirmed. Please send the link again.",
+                _t('middlewares.channel_subscription._resume_after_verify.3697e4d3', lang),
             )
         elif result == "dm_required":
             info = await bot.get_me()
@@ -259,7 +244,6 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
             )
 
     async def _verify(self, event, bot, user, lang):
-        is_pt = str(lang).lower().startswith("pt")
 
         subscribed = await self._is_member(
             bot, user.id, fresh=True
@@ -267,27 +251,21 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
 
         if subscribed is None:
             await event.answer(
-                "⚠️ Não foi possível verificar agora. Tente novamente."
-                if is_pt else
-                "⚠️ Unable to verify right now. Please try again.",
+                _t('middlewares.channel_subscription._verify.d416f349', lang),
                 show_alert=True,
             )
             return
 
         if not subscribed:
             await event.answer(
-                "❌ Você ainda não entrou no canal."
-                if is_pt else
-                "❌ You haven't joined the channel yet.",
+                _t('middlewares.channel_subscription._verify.78ab70b3', lang),
                 show_alert=True,
             )
             return
 
         if user.id in self._resuming:
             await event.answer(
-                "⏳ Solicitação já em andamento."
-                if is_pt else
-                "⏳ Request already in progress.",
+                _t('middlewares.channel_subscription._verify.f5951464', lang),
             )
             return
 
@@ -299,9 +277,7 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
             pending = get_pending(user.id)
 
             await event.answer(
-                "✅ Inscrição confirmada!"
-                if is_pt else
-                "✅ Subscription confirmed!",
+                _t('middlewares.channel_subscription._verify.e3133c9a', lang),
             )
 
             if pending is not None:
@@ -321,11 +297,7 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
             try:
                 await self._send_in_context(
                     event, bot, user,
-                    "⚠️ Não foi possível continuar automaticamente. "
-                    "Tente novamente."
-                    if is_pt else
-                    "⚠️ Unable to continue automatically. "
-                    "Please try again.",
+                    _t('middlewares.channel_subscription._verify.5e6165cc', lang),
                 )
             except TelegramAPIError:
                 logging.exception(
@@ -413,9 +385,7 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
                 await self._notify(event.message, bot, user, lang)
 
             await event.answer(
-                "📢 Entre no canal para usar o bot."
-                if str(lang).startswith("pt")
-                else "📢 Join the channel to use the bot.",
+                _t('middlewares.channel_subscription.__call__.b9856f8c', None),
                 show_alert=True,
             )
 
@@ -426,9 +396,7 @@ class ChannelSubscriptionMiddleware(BaseMiddleware):
                 is_personal=True,
                 button=InlineQueryResultsButton(
                     text=(
-                        "📢 Inscrição obrigatória"
-                        if str(lang).startswith("pt")
-                        else "📢 Subscription required"
+                        _t('middlewares.channel_subscription.__call__.9a1bd4d8', None)
                     ),
                     start_parameter="channel_sub",
                 ),

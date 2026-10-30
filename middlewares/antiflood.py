@@ -1,4 +1,6 @@
 from __future__ import annotations
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 
 import time
 from collections import OrderedDict, deque
@@ -29,17 +31,14 @@ logging = logging.bind(service="antiflood")
 DEFAULT_LANG = "en"
 
 
-def _normalize_lang(language_code: Optional[str]) -> str:
-    if not language_code:
-        return DEFAULT_LANG
-    lang = language_code.lower().strip()
-    return "pt" if lang.startswith("pt") else "en"
+def _normalize_lang(language_code: str | None) -> str:
+    return _normalize_locale(language_code)
 
 
 def _flood_message(lang: str = DEFAULT_LANG) -> str:
     if _normalize_lang(lang) == "pt":
-        return "Muitas requisições. Por favor, aguarde alguns segundos."
-    return "Too many requests. Please slow down for a few seconds."
+        return _t('middlewares.antiflood._flood_message.10627b85', lang)
+    return _t('middlewares.antiflood._flood_message.10627b85', lang)
 
 
 @dataclass(frozen=True, slots=True)

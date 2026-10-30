@@ -1,3 +1,5 @@
+from i18n import normalize_locale as _normalize_locale
+from i18n import t as _t
 import asyncio
 import os
 import uuid
@@ -22,7 +24,7 @@ TELEGRAM_API_DIR = "/var/lib/telegram-bot-api"
 
 def _get_lang(settings: dict) -> str:
     lang = settings.get("language") or settings.get("lang") or "pt"
-    return "pt" if str(lang).lower().startswith("pt") else "en"
+    return _normalize_locale(lang)
 
 
 def _criar_botoes_plataformas(titulo: str, artista: str, shazam_url: str | None, is_pt: bool) -> InlineKeyboardMarkup:
@@ -32,11 +34,11 @@ def _criar_botoes_plataformas(titulo: str, artista: str, shazam_url: str | None,
     youtube_url = f"https://www.youtube.com/results?search_query={query}"
 
     botoes_linha_1 = [
-        InlineKeyboardButton(text="🎧 Spotify", url=spotify_url),
-        InlineKeyboardButton(text="▶️ YouTube", url=youtube_url),
+        InlineKeyboardButton(text=_t('handlers.music._criar_botoes_plataformas.bdf6b62e', None), url=spotify_url),
+        InlineKeyboardButton(text=_t('handlers.music._criar_botoes_plataformas.33229cbf', None), url=youtube_url),
     ]
     if shazam_url:
-        botoes_linha_1.append(InlineKeyboardButton(text="⚡ Shazam", url=shazam_url))
+        botoes_linha_1.append(InlineKeyboardButton(text=_t('handlers.music._criar_botoes_plataformas.47d6e326', None), url=shazam_url))
 
     return InlineKeyboardMarkup(inline_keyboard=[botoes_linha_1])
 
@@ -146,17 +148,13 @@ async def callback_identify_music(callback: types.CallbackQuery):
     video = getattr(message, "video", None)
     if not video:
         alert_no_video = (
-            "Este item não é um vídeo com áudio reconhecível."
-            if is_pt
-            else "This media is not a video with recognizable audio."
+            _t('handlers.music.callback_identify_music.4f78ce06', None)
         )
         await callback.answer(alert_no_video, show_alert=True)
         return
 
     alert_loading = (
-        "🔍 Identificando música... aguarde alguns segundos."
-        if is_pt
-        else "🔍 Identifying music... please wait a few seconds."
+        _t('handlers.music.callback_identify_music.5481cfc2', None)
     )
     await callback.answer(alert_loading, show_alert=False)
 
@@ -178,22 +176,16 @@ async def callback_identify_music(callback: types.CallbackQuery):
             )
             if is_pt:
                 texto = (
-                    f"🎵 <b>Música Identificada:</b>\n\n"
-                    f"<b>Título:</b> {titulo}\n"
-                    f"<b>Artista:</b> {artista}"
+                    _t('handlers.music.callback_identify_music.ce0b1fc3', None, p0=titulo, p1=artista)
                 )
             else:
                 texto = (
-                    f"🎵 <b>Identified Music:</b>\n\n"
-                    f"<b>Title:</b> {titulo}\n"
-                    f"<b>Artist:</b> {artista}"
+                    _t('handlers.music.callback_identify_music.ce0b1fc3', None, p0=titulo, p1=artista)
                 )
             await message.answer(texto, parse_mode=ParseMode.HTML, reply_markup=kb_plataformas)
         else:
             msg_not_found = (
-                "❌ Não consegui identificar a música deste vídeo (o áudio pode estar alterado, baixo ou não listado no Shazam)."
-                if is_pt
-                else "❌ Could not identify the song in this video (audio might be low, altered or unlisted on Shazam)."
+                _t('handlers.music.callback_identify_music.23ba7691', None)
             )
             sent_ephemeral = False
             if is_group:
@@ -211,9 +203,7 @@ async def callback_identify_music(callback: types.CallbackQuery):
     except Exception as exc:
         logger.warning("Erro no callback identify_music: %s", exc)
         err_generic = (
-            "❌ Ocorreu um erro ao tentar identificar a música."
-            if is_pt
-            else "❌ An error occurred while trying to identify music."
+            _t('handlers.music.callback_identify_music.f5ee9e00', None)
         )
         sent_ephemeral = False
         if is_group:
@@ -245,9 +235,7 @@ async def handle_direct_private_video(message: types.Message):
     is_pt = _get_lang(user_settings) == "pt"
 
     txt_searching = (
-        "🔍 Analisando áudio do vídeo para identificar a música..."
-        if is_pt
-        else "🔍 Analyzing video audio to identify the song..."
+        _t('handlers.music.handle_direct_private_video.07ef2680', None)
     )
     status_msg = await message.answer(txt_searching)
     await bot.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
@@ -271,31 +259,23 @@ async def handle_direct_private_video(message: types.Message):
 
             if is_pt:
                 texto = (
-                    f"🎵 <b>Música Encontrada:</b>\n\n"
-                    f"<b>Faixa:</b> {titulo}\n"
-                    f"<b>Artista:</b> {artista}"
+                    _t('handlers.music.handle_direct_private_video.73d487ec', None, p0=titulo, p1=artista)
                 )
             else:
                 texto = (
-                    f"🎵 <b>Song Found:</b>\n\n"
-                    f"<b>Track:</b> {titulo}\n"
-                    f"<b>Artist:</b> {artista}"
+                    _t('handlers.music.handle_direct_private_video.73d487ec', None, p0=titulo, p1=artista)
                 )
             await status_msg.edit_text(texto, parse_mode=ParseMode.HTML, reply_markup=kb_plataformas)
         else:
             txt_nf = (
-                "❌ Nenhuma música comercial foi reconhecida no áudio deste vídeo."
-                if is_pt
-                else "❌ No commercial song was recognized in this video's audio."
+                _t('handlers.music.handle_direct_private_video.004f5656', None)
             )
             await status_msg.edit_text(txt_nf)
             asyncio.create_task(_delete_message_after_delay(status_msg, delay=8))
     except Exception as exc:
         logger.warning("Erro ao reconhecer vídeo direto no PV: %s", exc)
         txt_err = (
-            "❌ Ocorreu um erro ao processar o vídeo."
-            if is_pt
-            else "❌ An error occurred while processing the video."
+            _t('handlers.music.handle_direct_private_video.baaae058', None)
         )
         await status_msg.edit_text(txt_err)
         asyncio.create_task(_delete_message_after_delay(status_msg, delay=8))
