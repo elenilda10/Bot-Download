@@ -1,4 +1,4 @@
-"""Safe download failure codes. Raw tool output is classified, never shown to users."""
+"""Download failure codes and bounded diagnostic excerpts with sensitive fields removed."""
 import asyncio
 import re
 import subprocess
@@ -19,6 +19,8 @@ _failures = ContextVar('download_failure_codes', default=())
 @dataclass(frozen=True)
 class Failure:
     reason: str
+    message: str = ""
+    error_type: str = ""
 
 
 def classify_failure(error) -> Failure:
@@ -66,7 +68,7 @@ def classify_failure(error) -> Failure:
         ('authentication', ('login required', 'please log in', 'authentication required', 'sign in to confirm')),
         ('access_denied', ("blocked by network security", 'access denied')),
         ('rate_limited', ('too many requests', 'rate limit exceeded')),
-        ('region', ('not available in your country', 'geo-restricted', 'region-restricted')),
+        ('region', ('not available in your country', 'geo-restricted', 'region-restricted', 'not made this video available in your country', 'not available from your location', 'georestrictederror', 'geo restricted')),
         ('restricted', ('private account', 'private video', 'private post')),
         ('unsupported', ('unsupported url:', 'unsupported url ')),
         ('timeout', ('timed out', 'timeouterror', 'readtimeout', 'connecttimeout')),
@@ -81,9 +83,40 @@ def classify_failure(error) -> Failure:
     return Failure('unknown')
 
 
-def note_failure(error, sink=None):
+def safe_error_message(error):
+    """Keep a bounded diagnostic excerpt; discard credentials and transport details."""
+    if isinstance(error, Failure):
+        return error.message
+    raw = str(error or '')[-8000:]
+    raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
+    sensitive = re.compile(r'cookie|authorization|bearer|password|passwd|secret|token|sessionid|api[_-]?key', re.IGNORECASE)
+    lines = []
+    for line in raw.splitlines():
+        if sensitive.search(line):
+            continue
+        if line.lstrip().startswith(('Traceback ', 'File "')):
+            continue
+        line = re.sub(r'https?://[^\s<>]+', '[URL]', line)
+        line = re.sub(r'/(?:root|home|tmp|data|workspace|etc|var|usr)/[^\s]+', '[PATH]', line)
+        line = re.sub(r'\b[A-Za-z0-9_+./=-]{32,}\b', '[REDACTED]', line)
+        line = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', line).strip()
+        if line:
+            lines.append(line)
+    return '\n'.join(lines)[:500]
+
+
+def diagnostic_failure(error):
     failure = classify_failure(error)
-    if failure.reason != 'unknown':
+    if isinstance(error, Failure):
+        return failure
+    message = '' if isinstance(error, str) and error in REASONS else safe_error_message(error)
+    error_type = type(error).__name__ if isinstance(error, BaseException) else ''
+    return Failure(failure.reason, message, error_type)
+
+
+def note_failure(error, sink=None):
+    failure = diagnostic_failure(error)
+    if failure.reason != 'unknown' or failure.message:
         if sink is not None:
             sink.append(failure)
             del sink[:-8]

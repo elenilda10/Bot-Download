@@ -77,7 +77,7 @@ migração de esquema.
 
 ## Validação
 
-Foram executados 235 testes selecionados, incluindo diagnóstico de falhas: mensagens/teclados anteriores, catálogos,
+Foram executados 240 testes selecionados, incluindo diagnóstico de falhas: mensagens/teclados anteriores, catálogos,
 normalização, fallback, HTML/emojis/placeholders, legendas externas intactas,
 escopos privado/grupo, permissões/erros de gravação, isolamento e cancelamento,
 progresso em background, persistência SQLite e preservação da escolha após refresh

@@ -244,6 +244,8 @@ def prepare(target, *, reference=REFERENCE):
     upgrade = reference / 'download_errors_vps_manifest.json'
     use_upgrade = marker.is_file() and upgrade.is_file()
     bundle = 'download_errors_vps' if use_upgrade else 'i18n_vps'
+    if (target / 'utils/download_errors.py').is_file() and (reference / 'download_errors_json_vps_manifest.json').is_file():
+        bundle = 'download_errors_json_vps'
     manifest = json.loads((reference / (bundle + '_manifest.json')).read_text())
     patch = (reference / (bundle + '.patch')).resolve()
     if digest(patch.read_bytes()) != manifest['patch_sha256']:
@@ -276,7 +278,10 @@ def prepare(target, *, reference=REFERENCE):
         for name, content in values.items():
             if name.endswith('.py'):
                 compile(content, name, 'exec')
-        catalogs = {lang: json.loads(values['i18n/locales/' + lang + '.json']) for lang in ('pt', 'en', 'es')}
+        catalogs = {}
+        for lang in ('pt', 'en', 'es'):
+            name = 'i18n/locales/' + lang + '.json'
+            catalogs[lang] = json.loads(values[name] if name in values else (target / name).read_bytes())
         for lang, catalog in catalogs.items():
             if catalog.keys() != catalogs['en'].keys():
                 raise ValueError('Translation keys differ: ' + lang)

@@ -13,6 +13,7 @@ from utils.download_errors import (
     best_failure,
     classify_failure,
     close_failure_context,
+    diagnostic_failure,
     download_attempt,
     failure_context,
     note_failure,
@@ -54,7 +55,8 @@ def test_every_reason_has_localized_action_without_raw_output(lang, reason):
     text = bm.download_failure_message(reason, lang=lang, platform='Instagram', reference='A1B2C3D4')
     assert 'Instagram' in text and 'A1B2C3D4' in text
     assert 'download_error.' not in text
-    assert len(text.split('\n\n')) == 4
+    assert len(text.split('\n\n')) == 2
+    assert '<pre><code class="language-json">' in text
     assert len(text) < 1200
     assert 'cookie' not in text.lower() and 'traceback' not in text.lower()
 
@@ -124,7 +126,7 @@ def error_handler():
     logger = Mock()
     namespace = {'types': SimpleNamespace(Message=object), 'Optional': __import__('typing').Optional,
                  'Any': __import__('typing').Any, 'bm': bm, 'best_failure': best_failure,
-                 'classify_failure': classify_failure, 'platform_name': platform_name,
+                 'classify_failure': classify_failure, 'diagnostic_failure': diagnostic_failure, 'platform_name': platform_name,
                  'secrets': SimpleNamespace(token_hex=lambda _: 'a1b2c3d4'),
                  '_resolve_user_lang': resolve, '_send_with_reaction': send, 'logging': logger,
                  'get_message_text': lambda m: m.text}
@@ -155,3 +157,46 @@ async def test_handler_retains_collected_cause_and_explicit_text_override():
     await handle(SimpleNamespace(text=''), text='Custom message')
     assert send.await_args.args[1] == 'Custom message'
     assert logger.event.call_count == 1
+
+
+def parse_diagnostic(text):
+    import html
+    import json
+    return json.loads(html.unescape(text.split('<code class="language-json">', 1)[1].split('</code>', 1)[0]))
+
+
+def test_json_contains_actual_geoblock_error_and_reference():
+    error = type('DownloadError', (Exception,), {})(
+        'ERROR: [youtube] GAozEIDKArM: The uploader has not made this video available in your country')
+    failure = diagnostic_failure(error)
+    assert failure.reason == 'region'
+    text = bm.download_failure_message(failure.reason, diagnostic=failure, platform='YouTube', reference='21640B0B', lang='pt')
+    data = parse_diagnostic(text)
+    assert data['error'] == str(error)
+    assert data['code'] == 'region'
+    assert data['error_type'] == 'DownloadError'
+    assert data['reference'] == '21640B0B'
+
+
+def test_unknown_error_is_retained_as_diagnostic_without_fabricating_cause():
+    note_failure(Exception('Extractor returned an unexpected empty response'))
+    failure = best_failure()
+    assert failure.reason == 'unknown'
+    assert failure.message == 'Extractor returned an unexpected empty response'
+    data = parse_diagnostic(bm.download_failure_message('unknown', diagnostic=failure, lang='en'))
+    assert data['error'] == failure.message
+
+
+def test_diagnostic_redacts_credentials_paths_urls_and_limits_output():
+    from utils.download_errors import safe_error_message
+    raw = ('ERROR: HTTP Error 403 at https://cdn.test/video?signature=SECRET\n'
+           'Cookie: sessionid=SECRET\nAuthorization: Bearer SECRET\n'
+           'password=SECRET\nFile "/root/secret.py", line 2\n'
+           '/home/user/profile/cookies.sqlite\n' + '<>&' * 800)
+    result = safe_error_message(raw)
+    assert 'SECRET' not in result and '/root/' not in result and '/home/' not in result
+    assert 'https://' not in result and len(result) <= 500
+    data = diagnostic_failure(Exception(raw))
+    text = bm.download_failure_message(data.reason, diagnostic=data, lang='pt')
+    assert len(text) < 4096
+    assert parse_diagnostic(text)['code'] == 'access_denied'

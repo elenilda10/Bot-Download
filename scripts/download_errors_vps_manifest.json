@@ -1,6 +1,6 @@
 {
   "base_commit": "85cf09898b93ccacfd4c19cfd623866494dd1fea",
-  "patch_sha256": "b82d5cafb267a96b6c6abb1ffc0aceadad186ef8ae0ee2d893846c5a275874fd",
+  "patch_sha256": "4b17ea16c1ea473917605358a590997c7f9a0963b7f035bc283337fd63fcb7ef",
   "files": {
     "handlers/deezer.py": {
       "base_sha256": "3b71a66fa78c3466cdebe436484e8f97d018297b306a158ece079951f60a4215",
@@ -48,7 +48,7 @@
     },
     "handlers/telegram_ui_utils.py": {
       "base_sha256": "46a2193108a37e96162dc3d1cf8fc6c470cbb3fb509faf60436e4e26e5577add",
-      "result_sha256": "f5d31bb7fff083b1af803fe8a5a6f5757a9e67453bb0b35f4f67491ec31c6290"
+      "result_sha256": "d1bedae47b257b7f97ac42e5c7ce831d2e9112ac1eb9623bf662492c5b8a8195"
     },
     "handlers/threads.py": {
       "base_sha256": "9e8c681c6ae05d6fb672065fe6431f3423ed181bf8e81f51caceeaa5b6d40991",
@@ -72,7 +72,7 @@
     },
     "handlers/youtube.py": {
       "base_sha256": "a113192051b473ad75a3663c13df1f82190ed486822cbcf85d54c9062abd5b15",
-      "result_sha256": "8d7fe2c30f79a7f3f3cc9e909cacbc3b5db9d245e33b7eeb0cd41fa524abc0d4"
+      "result_sha256": "26c703d2ee9e6e89a43d712cbd04e71d16bc4fa2ea95dff943a86c761a8d3bd9"
     },
     "i18n/locales/en.json": {
       "base_sha256": "ef55798a1acf86009ca86d6ec67d661fe15237c761e08ba219c2261c78048fb2",
@@ -92,7 +92,7 @@
     },
     "messages/user_messages.py": {
       "base_sha256": "80e06b6e0c59afba44a03dd528eff08c05d6d5254e235a90977b96325ae702d7",
-      "result_sha256": "511356f8ac32b9cce5260620896cc162b4c473719a89fce30d4cdda3604a18a2"
+      "result_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d"
     },
     "middlewares/__init__.py": {
       "base_sha256": "1b38d2106f79c9de276228ababb5c35d6790ef4b79c19b4ac0c2e2e87470a682",
@@ -114,9 +114,13 @@
       "base_sha256": "0efcd32b0520e046bb83b95ddfe1566b3c89763cc5e0c6143758c12a09b88714",
       "result_sha256": "45e219c84f26b081a6207a1dfd3e4d4ddc995da9934064aa34f310d85f94a346"
     },
+    "services/platforms/youtube_media.py": {
+      "base_sha256": "1943a287258a4a512f807d091e09cd43ac2487f69caf1c744c623d63d2ac73b0",
+      "result_sha256": "5c288b1d210b27825f8d9f6e3a84ad5f55f266776f2a9f202d8d9bd5a2dc243c"
+    },
     "utils/download_errors.py": {
       "base_sha256": null,
-      "result_sha256": "1db27d610ceb77b9f6e391d3958fa6831143701556c2a9e6b83213732248827e"
+      "result_sha256": "ea60678e6f42ecdfad7140afeeb32d4eeaef983a4a644d2bdc753c5a7e620da8"
     }
   }
 }

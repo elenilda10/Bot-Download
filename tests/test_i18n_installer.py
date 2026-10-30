@@ -207,3 +207,22 @@ def test_notice_adapter_refuses_competing_local_payload():
     for reply in (b'{"message_id": other.message_id}', b'{"message_id": message.message_id, "allow_sending_without_reply": True}'):
         local = old.replace(b'"receiver_user_id": user_id,', b'"receiver_user_id": user_id,\n        "reply_parameters": ' + reply + b',')
         assert installer.preserve_notice_reply_parameters(old, incoming, local) == (old, incoming)
+
+
+def test_existing_diagnostics_runtime_receives_json_and_keeps_local_reply(tmp_path):
+    full = json.loads((ROOT / 'scripts/i18n_vps_manifest.json').read_text())
+    for name in full['files']:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    subprocess.run(['git', 'apply', '--reverse', str(ROOT / 'scripts/download_errors_json_vps.patch')],
+                   cwd=tmp_path, check=True, capture_output=True)
+    path = tmp_path / 'handlers/telegram_ui_utils.py'
+    path.write_text(path.read_text().replace('                    "receiver_user_id": user_id,\n',
+        '                    "receiver_user_id": user_id,\n'
+        '                    "reply_parameters": {"message_id": message.message_id},\n', 1))
+    changes = installer.prepare(tmp_path)
+    assert b'language-json' in changes['messages/user_messages.py']
+    assert b'"reply_parameters": {"message_id": message.message_id}' in changes['handlers/telegram_ui_utils.py']
+    installer.install(tmp_path, changes)
+    assert installer.prepare(tmp_path) == {}

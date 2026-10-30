@@ -856,18 +856,28 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
     return f"{emoji} {label}: {action}"
 
 
-def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None):
+def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None, diagnostic=None):
+    import json
     from utils.download_errors import REASONS
     reason = reason if reason in REASONS else 'unknown'
-    platform = html.escape(str(platform)) if platform else _t('download_error.generic_platform', lang)
+    label = str(platform) if platform else _t('download_error.generic_platform', lang)
     header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
     action = ('support' if reason in {'authentication', 'access_denied', 'redirect_loop', 'region'}
               else 'link' if reason in {'not_found', 'unsupported', 'restricted'}
               else 'limit' if reason == 'too_large'
               else 'delivery' if reason == 'delivery' else 'retry')
-    parts = [_t(header, lang, platform=platform),
-             _t('download_error.reason_label', lang, reason=_t('download_error.reason.' + reason, lang)),
-             _t('download_error.action_label', lang, action=_t('download_error.action.' + action, lang))]
+    payload = {
+        'platform': label,
+        'code': reason,
+        'reason': _t('download_error.reason.' + reason, lang),
+    }
+    if diagnostic and diagnostic.message:
+        payload['error'] = diagnostic.message
+    if diagnostic and diagnostic.error_type:
+        payload['error_type'] = diagnostic.error_type
+    payload['action'] = _t('download_error.action.' + action, lang)
     if reference:
-        parts.append(_t('download_error.reference', lang, reference=html.escape(str(reference))))
-    return '\n\n'.join(parts)
+        payload['reference'] = str(reference)
+    rendered = html.escape(json.dumps(payload, ensure_ascii=False, indent=2))
+    return (_t(header, lang, platform=html.escape(label)) +
+            '\n\n<pre><code class="language-json">' + rendered + '</code></pre>')

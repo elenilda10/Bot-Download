@@ -1,0 +1,26 @@
+{
+  "base_commit": "57234221ad7df86a1888b7063f1897c7f71a3271",
+  "patch_sha256": "0c16f434d82d6de84d9aef25d997188b85440a265c6739faee3a090158985b63",
+  "files": {
+    "handlers/telegram_ui_utils.py": {
+      "base_sha256": "f5d31bb7fff083b1af803fe8a5a6f5757a9e67453bb0b35f4f67491ec31c6290",
+      "result_sha256": "d1bedae47b257b7f97ac42e5c7ce831d2e9112ac1eb9623bf662492c5b8a8195"
+    },
+    "handlers/youtube.py": {
+      "base_sha256": "8d7fe2c30f79a7f3f3cc9e909cacbc3b5db9d245e33b7eeb0cd41fa524abc0d4",
+      "result_sha256": "26c703d2ee9e6e89a43d712cbd04e71d16bc4fa2ea95dff943a86c761a8d3bd9"
+    },
+    "messages/user_messages.py": {
+      "base_sha256": "511356f8ac32b9cce5260620896cc162b4c473719a89fce30d4cdda3604a18a2",
+      "result_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d"
+    },
+    "services/platforms/youtube_media.py": {
+      "base_sha256": "1943a287258a4a512f807d091e09cd43ac2487f69caf1c744c623d63d2ac73b0",
+      "result_sha256": "5c288b1d210b27825f8d9f6e3a84ad5f55f266776f2a9f202d8d9bd5a2dc243c"
+    },
+    "utils/download_errors.py": {
+      "base_sha256": "1db27d610ceb77b9f6e391d3958fa6831143701556c2a9e6b83213732248827e",
+      "result_sha256": "ea60678e6f42ecdfad7140afeeb32d4eeaef983a4a644d2bdc753c5a7e620da8"
+    }
+  }
+}

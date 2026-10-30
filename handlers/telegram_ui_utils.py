@@ -1,5 +1,5 @@
 import secrets
-from utils.download_errors import best_failure, classify_failure, platform_name
+from utils.download_errors import best_failure, classify_failure, diagnostic_failure, platform_name
 from i18n import bind_locale as _bind_locale
 from i18n import t as _t
 import httpx
@@ -248,12 +248,14 @@ async def handle_download_error(
     if text is not None:
         error_text = text
     else:
-        failure = classify_failure(reason) if reason else classify_failure(error) if error is not None else best_failure()
+        failure = classify_failure(reason) if reason else diagnostic_failure(error) if error is not None else best_failure()
         if failure.reason == 'unknown':
-            failure = best_failure()
+            collected = best_failure()
+            if collected.reason != 'unknown' or not failure.message:
+                failure = collected
         reference = secrets.token_hex(4).upper()
         platform = platform or platform_name(get_message_text(message))
-        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang)
+        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang, diagnostic=failure)
         logging.event('download_user_failure', failure_code=failure.reason, error_reference=reference,
                       platform=platform or 'unknown', error_type=type(error).__name__ if error is not None else 'none')
         kwargs.setdefault('parse_mode', 'HTML')

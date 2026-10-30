@@ -1,3 +1,4 @@
+from utils.download_errors import best_failure, close_failure_context, failure_context, note_failure
 from i18n import normalize_locale as _normalize_locale
 from i18n import t as _t
 from services.settings import resolve_video_quality_format
@@ -214,10 +215,20 @@ def search_youtube_track(query: str):
 
 
 async def _get_youtube_video_with_timeout(url: str):
-    return await asyncio.wait_for(
-        asyncio.to_thread(get_youtube_video, url),
-        timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
+    def extract():
+        token = failure_context()
+        try:
+            result = get_youtube_video(url)
+            return result, best_failure()
+        finally:
+            close_failure_context(token)
+
+    result, failure = await asyncio.wait_for(
+        asyncio.to_thread(extract), timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
     )
+    if not result:
+        note_failure(failure)
+    return result
 
 
 async def _download_youtube_media(
@@ -352,7 +363,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         if not yt:
             if status_message:
                 await safe_delete_message(status_message)
-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
+            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
             return
 
         video_id = yt.get("id") or "video"
@@ -519,7 +530,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
         if show_service_status:
             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
         await handle_download_error(
-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
+            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
         logging.error("Video download error: %s", e)
@@ -577,7 +588,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
 
         yt = await _get_youtube_video_with_timeout(url)
         if not yt:
-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
+            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
             return
 
         audio_duration = yt.get("duration")
@@ -702,7 +713,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
         if show_service_status:
             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
         await handle_download_error(
-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
+            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
         logging.error("Audio download error: %s", e)
@@ -856,7 +867,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
         if show_service_status:
             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
         await handle_download_error(
-            call.message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
+            call.message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
         logging.exception(
