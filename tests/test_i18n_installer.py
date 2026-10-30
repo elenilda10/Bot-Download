@@ -226,3 +226,37 @@ def test_existing_diagnostics_runtime_receives_json_and_keeps_local_reply(tmp_pa
     assert b'"reply_parameters": {"message_id": message.message_id}' in changes['handlers/telegram_ui_utils.py']
     installer.install(tmp_path, changes)
     assert installer.prepare(tmp_path) == {}
+
+
+@pytest.mark.parametrize('migrated', [False, True])
+def test_youtube_reply_not_found_replaced_by_json_without_losing_other_replies(baseline, migrated):
+    if migrated:
+        full = json.loads((ROOT / 'scripts/i18n_vps_manifest.json').read_text())
+        for name in full['files']:
+            path = baseline / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, path)
+        subprocess.run(['git', 'apply', '--reverse', str(ROOT / 'scripts/download_errors_json_vps.patch')],
+                       cwd=baseline, check=True, capture_output=True)
+    path = baseline / 'handlers/youtube.py'
+    before = path.read_text()
+    source = before.replace('.answer(', '.reply(').replace('.answer_video(', '.reply_video(').replace('.answer_audio(', '.reply_audio(')
+    path.write_text(source)
+    assert source.count('message.reply(bm.nothing_found(lang=user_lang)') == 2
+    changes = installer.prepare(baseline)
+    result = changes['handlers/youtube.py'].decode()
+    assert 'message.reply(bm.nothing_found(lang=user_lang)' not in result
+    assert result.count("await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')") == 2
+    assert result.count('.reply(') == source.count('.reply(') - 2
+    assert result.count('.reply_video(') == source.count('.reply_video(')
+    assert result.count('.reply_audio(') == source.count('.reply_audio(')
+    installer.install(baseline, changes)
+    assert installer.prepare(baseline) == {}
+
+
+def test_replaced_notice_adapter_refuses_competing_local_text():
+    before = b'async def download_video():\n    if not yt:\n        await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)\n        return\n'
+    incoming = before.replace(b'message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)',
+        b"handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')")
+    local = before.replace(b'message.answer(bm.nothing_found(lang=user_lang)', b'message.reply("LOCAL TEXT"')
+    assert installer.preserve_replaced_youtube_notice(before, incoming, local) == (before, incoming)

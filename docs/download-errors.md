@@ -34,6 +34,9 @@ as mudanças. Seleciona a atualização incremental conforme a presença da migr
 de idiomas ou do diagnóstico anterior; prepara e valida a mesclagem antes de alterar o destino e cria
 backups. Também preserva as escolhas locais compatíveis de `answer` para `reply` e o
 `reply_parameters` observado no payload de aviso do grupo, junto com `parse_mode`.
+No YouTube, o instalador reconhece a variante local exata `reply(nothing_found)`
+e a substitui pelo diagnóstico central, preservando os outros replies. Mudanças
+concorrentes no texto ou nos argumentos continuam sendo recusadas.
 Não execute um instalador antigo de status ou um patch parcial por cima disso.
 
 A verificação automatizada simula falhas e transporte, sem acessar contas nem

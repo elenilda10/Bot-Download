@@ -173,6 +173,63 @@ def preserve_notice_reply_parameters(base_source, incoming_source, local_source)
         return base_source, incoming_source
 
 
+def preserve_replaced_youtube_notice(base_source, incoming_source, local_source):
+    """Accept only the observed reply variant of the notice replaced by diagnostics."""
+    import copy
+
+    old_call = ast.parse('message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)', mode='eval').body
+    reply_call = ast.parse('message.reply(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)', mode='eval').body
+    new_call = ast.parse("handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')", mode='eval').body
+    condition = ast.dump(ast.parse('not yt', mode='eval').body)
+
+    def blocks(source):
+        tree = ast.parse(source)
+        found = {}
+        for function in tree.body:
+            if isinstance(function, ast.AsyncFunctionDef) and function.name in {'download_video', 'download_music'}:
+                matches = [node for node in ast.walk(function)
+                           if isinstance(node, ast.If) and ast.dump(node.test) == condition]
+                if len(matches) == 1:
+                    found[function.name] = matches[0]
+        return found
+
+    class Replace(ast.NodeTransformer):
+        def __init__(self, expected, replacement):
+            self.expected, self.replacement = ast.dump(expected), replacement
+            self.matches = 0
+
+        def visit_Call(self, node):
+            if ast.dump(node) == self.expected:
+                self.matches += 1
+                return copy.deepcopy(self.replacement)
+            return self.generic_visit(node)
+
+    try:
+        old, new, local = [blocks(source) for source in (base_source, incoming_source, local_source)]
+        edits = []
+        for name, block in old.items():
+            if name not in new or name not in local:
+                continue
+            normalize_local = Replace(reply_call, old_call)
+            local_block = normalize_local.visit(copy.deepcopy(local[name]))
+            if normalize_local.matches != 1 or ast.dump(local_block) != ast.dump(block):
+                continue
+            normalize_incoming = Replace(old_call, new_call)
+            expected = normalize_incoming.visit(copy.deepcopy(block))
+            if normalize_incoming.matches != 1 or ast.dump(expected) != ast.dump(new[name]):
+                continue
+            call = next(node for node in ast.walk(block)
+                        if isinstance(node, ast.Call) and ast.dump(node) == ast.dump(old_call))
+            lines = base_source.splitlines(keepends=True)
+            end = sum(map(len, lines[:call.func.end_lineno - 1])) + call.func.end_col_offset
+            edits.append((end - len('answer'), end))
+        for start, end in sorted(edits, reverse=True):
+            base_source = base_source[:start] + b'reply' + base_source[end:]
+        return base_source, incoming_source
+    except (SyntaxError, UnicodeDecodeError, StopIteration):
+        return base_source, incoming_source
+
+
 def merge_runtime(target, staging, manifest, patch, reference):
     """Three-way merge only in temporary directories; never choose a conflict side."""
     with tempfile.TemporaryDirectory(prefix='bot-i18n-base-') as directory:
@@ -208,6 +265,9 @@ def merge_runtime(target, staging, manifest, patch, reference):
                     content = expected
                 else:
                     compatible_base, compatible_incoming = preserve_reply_methods(original.read_bytes(), expected, local)
+                    if name == 'handlers/youtube.py':
+                        compatible_base, compatible_incoming = preserve_replaced_youtube_notice(
+                            compatible_base, compatible_incoming, local)
                     if name == 'handlers/telegram_ui_utils.py':
                         compatible_base, compatible_incoming = preserve_notice_reply_parameters(
                             compatible_base, compatible_incoming, local)
