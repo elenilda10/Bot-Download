@@ -285,7 +285,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
         )
     except Exception as exc:
         logging.exception("Error processing SoundCloud request: error=%s", exc)
-        await handle_download_error(message, business_id=message.business_connection_id)
+        await handle_download_error(message, error=exc, business_id=message.business_connection_id)
     finally:
         if request_lease is not None:
             request_lease.finish()

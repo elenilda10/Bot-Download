@@ -225,7 +225,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
         )
     except Exception as exc:
         logging.exception("Spotify download failed: error=%s", exc)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         if request_lease is not None:
             request_lease.finish()

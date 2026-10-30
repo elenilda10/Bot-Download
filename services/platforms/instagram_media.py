@@ -1,3 +1,4 @@
+from utils.download_errors import download_attempt, note_failure
 import time
 import asyncio
 import glob
@@ -111,7 +112,7 @@ def _instagram_cookie_args(url: str, extractor: str) -> list[str]:
     return []
 
 
-def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None) -> Optional[InstagramVideo]:
+def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None, failure_sink=None) -> Optional[InstagramVideo]:
     try:
         target_dir = os.path.join(output_dir, f"gdl_{post_id}")
         os.makedirs(target_dir, exist_ok=True)
@@ -152,6 +153,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
 
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if proc.returncode != 0:
+            note_failure(proc.stderr, sink=failure_sink)
             logger.warning("Instagram gallery-dl terminou com código %s", proc.returncode)
 
         saved_files = []
@@ -217,11 +219,12 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
             return InstagramVideo(id=post_id, description=caption.strip(), author=author, media_list=media_items)
 
     except Exception as exc:
+        note_failure(exc, sink=failure_sink)
         logger.warning("gallery-dl falhou: %s", exc)
     return None
 
 
-def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVideo]:
+def _run_ytdlp(url: str, output_dir: str, post_id: str, failure_sink=None) -> Optional[InstagramVideo]:
     """Extrai vídeos, fotos e carrosséis do Instagram usando yt-dlp.
 
     Para vídeos, deixa o yt-dlp fazer o download normalmente.
@@ -253,6 +256,8 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             timeout=30,
         )
 
+        if metadata_proc.returncode != 0:
+            note_failure(metadata_proc.stderr, sink=failure_sink)
         data = None
         if metadata_proc.stdout.strip():
             try:
@@ -423,12 +428,15 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
 
         download_cmd.append(url)
 
-        subprocess.run(
+        download_proc = subprocess.run(
             download_cmd,
             capture_output=True,
             text=True,
             timeout=120,
         )
+
+        if download_proc.returncode != 0:
+            note_failure(download_proc.stderr, sink=failure_sink)
 
         info_json_pattern = os.path.join(
             output_dir,
@@ -508,6 +516,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             )
 
     except Exception as exc:
+        note_failure(exc, sink=failure_sink)
         logger.warning("yt-dlp falhou: %s", exc)
 
     return None
@@ -568,6 +577,7 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
     return None
 
 
+@download_attempt
 async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
     story_id = _extract_story_target_id(url)
     clean_url = strip_instagram_url(url)
@@ -580,6 +590,8 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
     os.makedirs(output_dir, exist_ok=True)
     loop = asyncio.get_running_loop()
 
+    failures = []
+
     # 1. gallery-dl continua sendo a primeira tentativa.
     _t = time.monotonic()
     res_gdl = await loop.run_in_executor(
@@ -589,7 +601,11 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
         output_dir,
         post_id,
         story_id,
+        failures,
     )
+    for failure in failures:
+        note_failure(failure)
+    failures.clear()
     logger.warning(
         "Instagram fallback timing: stage=gallery_dl duration=%.2fs success=%s",
         time.monotonic() - _t,
@@ -606,7 +622,11 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
         clean_url,
         output_dir,
         post_id,
+        failures,
     )
+    for failure in failures:
+        note_failure(failure)
+    failures.clear()
     logger.warning(
         "Instagram fallback timing: stage=yt_dlp duration=%.2fs success=%s",
         time.monotonic() - _t,

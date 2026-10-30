@@ -517,7 +517,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
         await handle_video_too_large(message, lang=lang)
     except Exception as exc:
         logger.warning("Pornhub button failed: %s", type(exc).__name__)
-        await handle_download_error(message, lang=lang)
+        await handle_download_error(message, error=exc, lang=lang)
     finally:
         await safe_delete_message(status)
 
@@ -675,6 +675,6 @@ async def download_pornhub_test(message: types.Message):
         # Avoid logging credentials, URLs or possibly sensitive page titles.
         logger.warning("Pornhub test failed: %s", type(exc).__name__)
         await safe_delete_message(status)
-        await handle_download_error(message, lang=user_lang)
+        await handle_download_error(message, error=exc, lang=user_lang)
     finally:
         lease.finish()

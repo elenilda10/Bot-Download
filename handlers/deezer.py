@@ -155,7 +155,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
         if status_message:
             await safe_delete_message(status_message)
         await react_to_message(message, "👎", business_id=business_id)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         if request_lease is not None:
             request_lease.finish()

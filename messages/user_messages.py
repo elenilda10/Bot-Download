@@ -854,3 +854,14 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
     else:
         action = _t('messages.user_messages.media_transfer_status.2eabdcaf', lang) if uploading else _t('messages.user_messages.media_transfer_status.cc5d009a', lang)
     return f"{emoji} {label}: {action}"
+
+
+def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None, diagnostic=None):
+    """Show the original extractor error as code, without a generated JSON wrapper."""
+    from utils.download_errors import REASONS
+    reason = reason if reason in REASONS else 'unknown'
+    label = str(platform) if platform else _t('download_error.generic_platform', lang)
+    header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
+    detail = diagnostic.message if diagnostic and diagnostic.message else _t('download_error.reason.' + reason, lang)
+    return (_t(header, lang, platform=html.escape(label)) +
+            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')

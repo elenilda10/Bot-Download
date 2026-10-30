@@ -137,3 +137,39 @@ def _run_ytdlp(url):
     assert installer.patch_source(reference, reference) == reference
     with pytest.raises(ValueError):
         installer.patch_source('pass\n', reference)
+
+
+def test_failure_sink_preserves_redirect_cause_without_cookie_values(monkeypatch, tmp_path):
+    from utils.download_errors import Failure
+    module, _ = load(monkeypatch, tmp_path)
+    monkeypatch.setattr(module.subprocess, 'run', lambda *a, **kw: SimpleNamespace(
+        returncode=1, stdout='', stderr='HttpError: TooManyRedirects cookie=SECRET'))
+    sink = []
+    assert module._run_gallery_dl('https://instagram.com/p/ABC/', str(tmp_path), 'ABC', failure_sink=sink) is None
+    assert sink == [Failure('redirect_loop')]
+    assert 'SECRET' not in repr(sink)
+
+
+@pytest.mark.asyncio
+async def test_executor_failure_reaches_async_request_and_success_clears_it(monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+    from utils.download_errors import best_failure, note_failure, failure_context, close_failure_context
+    module, _ = load(monkeypatch, tmp_path)
+    def gallery(url, output, post, story, sink):
+        note_failure('redirect_loop', sink=sink)
+        return None
+    monkeypatch.setattr(module, '_run_gallery_dl', gallery)
+    monkeypatch.setattr(module, '_run_ytdlp', lambda *args: None)
+    monkeypatch.setattr(module, 'fetch_cobalt_data', AsyncMock(return_value=None))
+    monkeypatch.setattr(module, 'PUBLIC_COBALT_INSTANCES', [])
+    monkeypatch.setattr(module.httpx, 'AsyncClient', lambda **kwargs: AsyncMock())
+    token = failure_context()
+    try:
+        assert await module.fetch_instagram_media('https://instagram.com/p/ABC/', str(tmp_path)) is None
+        assert best_failure().reason == 'redirect_loop'
+        result = SimpleNamespace(media_list=['downloaded'])
+        monkeypatch.setattr(module, '_run_ytdlp', lambda *args: result)
+        assert await module.fetch_instagram_media('https://instagram.com/p/ABC/', str(tmp_path)) is result
+        assert best_failure().reason == 'unknown'
+    finally:
+        close_failure_context(token)

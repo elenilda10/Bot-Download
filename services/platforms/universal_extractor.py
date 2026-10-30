@@ -1,3 +1,4 @@
+from utils.download_errors import download_attempt, note_failure
 from services.platforms.firefox_cookies import firefox_cookie_args
 import asyncio
 import glob
@@ -414,6 +415,7 @@ async def _download_with_gallery_dl(
                 timeout=75 if _is_facebook_url(url) else None,
             )
         except asyncio.TimeoutError:
+            note_failure('timeout')
             proc.kill()
             await proc.communicate()
             logging.warning("gallery-dl timed out: facebook=%s", _is_facebook_url(url))
@@ -455,6 +457,7 @@ async def _download_with_gallery_dl(
 
         if not downloaded:
             if proc.returncode != 0 and stderr:
+                note_failure(stderr.decode('utf-8', errors='replace'))
                 if _is_facebook_url(url):
                     logging.warning(
                         "Facebook gallery-dl failed: code=%s reason=%s",
@@ -558,6 +561,7 @@ async def _download_with_gallery_dl(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        note_failure(exc)
         logging.warning("gallery-dl extraction failed: facebook=%s error=%s",
                         _is_facebook_url(url), type(exc).__name__)
         return None
@@ -690,6 +694,7 @@ async def _download_with_ytdlp(
             await asyncio.wait_for(_consume(), timeout=180 if is_facebook else 900)
             await asyncio.wait_for(proc.wait(), timeout=15)
         except asyncio.TimeoutError:
+            note_failure('timeout')
             if proc.returncode is None:
                 proc.kill()
             await proc.communicate()
@@ -706,6 +711,7 @@ async def _download_with_ytdlp(
             raise
 
         if proc.returncode != 0:
+            note_failure("\n".join(recent))
             logging.warning(
                 "Universal yt-dlp download failed: mode=%s code=%s reason=%s",
                 "chrome99" if impersonate == "chrome99" else
@@ -776,10 +782,12 @@ async def _download_with_ytdlp(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        note_failure(exc)
         logging.warning("Universal yt-dlp processing failed: %s", type(exc).__name__)
         return None
 
 
+@download_attempt
 async def download_universal_media(
     url: str,
     output_dir: str = "downloads",

@@ -456,6 +456,19 @@ index 2dfab4c..04e632a 100644
          ):
              continue
  
+diff --git a/handlers/deezer.py b/handlers/deezer.py
+index f507ef3..ca40cbc 100644
+--- a/handlers/deezer.py
++++ b/handlers/deezer.py
+@@ -155,7 +155,7 @@ async def process_deezer(message: types.Message, direct_url: Optional[str] = Non
+         if status_message:
+             await safe_delete_message(status_message)
+         await react_to_message(message, "👎", business_id=business_id)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 diff --git a/handlers/deezer_inline.py b/handlers/deezer_inline.py
 index 8ec15d8..fbc79d3 100644
 --- a/handlers/deezer_inline.py
@@ -511,7 +524,7 @@ index 8ec15d8..fbc79d3 100644
          duration = coerce_audio_duration_seconds(getattr(downloaded_track, "duration", 0))
  
 diff --git a/handlers/eporner.py b/handlers/eporner.py
-index 7baed22..3a33870 100644
+index 7baed22..311373b 100644
 --- a/handlers/eporner.py
 +++ b/handlers/eporner.py
 @@ -4,6 +4,7 @@ All yt-dlp and helper processes run within ph-proton, which has only a VPN
@@ -562,8 +575,25 @@ index 7baed22..3a33870 100644
                          sent = await message.answer_audio(
                              audio=FSInputFile(mp3, filename=f"{video_id}.mp3"),
                              title=title,
+@@ -526,7 +523,7 @@ async def handle_eporner_media_button(call: types.CallbackQuery):
+         await handle_video_too_large(message, lang=lang)
+     except Exception as exc:
+         logger.warning("Eporner button failed: %s", type(exc).__name__)
+-        await handle_download_error(message, lang=lang)
++        await handle_download_error(message, error=exc, lang=lang)
+     finally:
+         await safe_delete_message(status)
+ 
+@@ -683,6 +680,6 @@ async def download_eporner_test(message: types.Message):
+         # Avoid logging credentials, URLs or possibly sensitive page titles.
+         logger.warning("Eporner test failed: %s", type(exc).__name__)
+         await safe_delete_message(status)
+-        await handle_download_error(message, lang=user_lang)
++        await handle_download_error(message, error=exc, lang=user_lang)
+     finally:
+         lease.finish()
 diff --git a/handlers/facebook.py b/handlers/facebook.py
-index d72aaed..847cd9b 100644
+index d72aaed..75cb495 100644
 --- a/handlers/facebook.py
 +++ b/handlers/facebook.py
 @@ -6,6 +6,7 @@ cookies are opt-in for the administrator's ordinary private conversation.
@@ -790,6 +820,15 @@ index d72aaed..847cd9b 100644
              caption = f"{aviso}\n\n{caption}" if caption else aviso
          has_video = any(item.type == "video" for item in result.media_list)
          keyboard = _facebook_keyboard(
+@@ -732,7 +728,7 @@ async def process_facebook_link(
+                             type(exc).__name__)
+     except Exception as exc:
+         logging.exception("Facebook delivery failed: %s", type(exc).__name__)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+         await react_to_message(message, "👎", business_id=business_id)
+     finally:
+         if status:
 diff --git a/handlers/google_drive.py b/handlers/google_drive.py
 index 2796a2e..18be2f4 100644
 --- a/handlers/google_drive.py
@@ -841,6 +880,19 @@ index 5c188d5..3834555 100644
  
  
  def _chat_type_value(chat_type: Any) -> str:
+diff --git a/handlers/instagram.py b/handlers/instagram.py
+index fe2cb9a..3f5dfcb 100644
+--- a/handlers/instagram.py
++++ b/handlers/instagram.py
+@@ -352,7 +352,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] =
+         if status_message:
+             await safe_delete_message(status_message)
+         await react_to_message(message, "👎", business_id=business_id)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         await safe_delete_message(status_message)
+         for path in set(local_files_to_clean):
 diff --git a/handlers/instagram_inline.py b/handlers/instagram_inline.py
 index 67c4157..68b6b1b 100644
 --- a/handlers/instagram_inline.py
@@ -872,7 +924,7 @@ index 67c4157..68b6b1b 100644
              reply_markup=reply_markup,
              edit_status=edit_status,
 diff --git a/handlers/kwai.py b/handlers/kwai.py
-index 8817255..09cbfd2 100644
+index 8817255..6b7e4e1 100644
 --- a/handlers/kwai.py
 +++ b/handlers/kwai.py
 @@ -5,6 +5,7 @@ Reuses the verified public Kwai downloader, ffprobe and thumbnail utilities
@@ -895,6 +947,15 @@ index 8817255..09cbfd2 100644
              )
          ])
      return markup
+@@ -310,7 +310,7 @@ async def process_kwai_link(
+ 
+     except Exception as exc:
+         logging.exception("Kwai message delivery failed: %s", type(exc).__name__)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         await safe_delete_message(status_message)
+         await _cleanup(result)
 @@ -334,9 +334,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
      cached_id = await db.get_file_id(_cache_key(token, kind))
      if not source and not cached_id:
@@ -917,6 +978,15 @@ index 8817255..09cbfd2 100644
                  allow_sending_without_reply=True,
              )
              return
+@@ -449,7 +445,7 @@ async def _callback_request(call: types.CallbackQuery, kind: str) -> None:
+             )
+     except Exception as exc:
+         logging.exception("Kwai %s callback failed: %s", kind, type(exc).__name__)
+-        await handle_download_error(call.message, lang=lang)
++        await handle_download_error(call.message, error=exc, lang=lang)
+     finally:
+         await safe_delete_message(status_message)
+         await _cleanup(result)
 diff --git a/handlers/mediafire.py b/handlers/mediafire.py
 index 6d25fba..543e0cf 100644
 --- a/handlers/mediafire.py
@@ -1129,7 +1199,7 @@ index 8ca1583..d3806ec 100644
          await status_msg.edit_text(txt_err)
          asyncio.create_task(_delete_message_after_delay(status_msg, delay=8))
 diff --git a/handlers/pinterest.py b/handlers/pinterest.py
-index 786878b..42a0a7f 100644
+index 786878b..0d4a965 100644
 --- a/handlers/pinterest.py
 +++ b/handlers/pinterest.py
 @@ -1,3 +1,4 @@
@@ -1137,6 +1207,15 @@ index 786878b..42a0a7f 100644
  import asyncio
  import datetime
  import re
+@@ -144,7 +145,7 @@ async def process_pinterest(message: types.Message, direct_url: Optional[str] =
+             summarize_text_for_log(get_message_text(message)),
+             exc,
+         )
+-        await handle_download_error(message)
++        await handle_download_error(message, error=exc)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 @@ -183,7 +184,7 @@ async def process_pinterest_single_media(
      async def _edit_status(text: str) -> None:
          await safe_edit_text(status_message, text)
@@ -1147,7 +1226,7 @@ index 786878b..42a0a7f 100644
  
      def _reply_markup():
 diff --git a/handlers/pornhub.py b/handlers/pornhub.py
-index dd30d66..c1372e4 100644
+index dd30d66..fe6f077 100644
 --- a/handlers/pornhub.py
 +++ b/handlers/pornhub.py
 @@ -4,6 +4,7 @@ All yt-dlp and helper processes run within ph-proton, which has only a VPN
@@ -1198,8 +1277,25 @@ index dd30d66..c1372e4 100644
                          sent = await message.answer_audio(
                              audio=FSInputFile(mp3, filename=f"{viewkey}.mp3"),
                              title=title,
+@@ -520,7 +517,7 @@ async def handle_pornhub_media_button(call: types.CallbackQuery):
+         await handle_video_too_large(message, lang=lang)
+     except Exception as exc:
+         logger.warning("Pornhub button failed: %s", type(exc).__name__)
+-        await handle_download_error(message, lang=lang)
++        await handle_download_error(message, error=exc, lang=lang)
+     finally:
+         await safe_delete_message(status)
+ 
+@@ -678,6 +675,6 @@ async def download_pornhub_test(message: types.Message):
+         # Avoid logging credentials, URLs or possibly sensitive page titles.
+         logger.warning("Pornhub test failed: %s", type(exc).__name__)
+         await safe_delete_message(status)
+-        await handle_download_error(message, lang=user_lang)
++        await handle_download_error(message, error=exc, lang=user_lang)
+     finally:
+         lease.finish()
 diff --git a/handlers/reddit.py b/handlers/reddit.py
-index 618dd67..27b0215 100644
+index 618dd67..cee9c25 100644
 --- a/handlers/reddit.py
 +++ b/handlers/reddit.py
 @@ -1,5 +1,6 @@
@@ -1218,6 +1314,42 @@ index 618dd67..27b0215 100644
      return markup
  
  
+@@ -217,7 +218,7 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
+             await handle_download_error(message, business_id=business_id, lang=lang)
+     except Exception as exc:
+         logging.exception('Reddit request failed: %s', type(exc).__name__)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         await safe_delete_message(status)
+         if directory:
+@@ -309,7 +310,7 @@ async def reddit_media_action(call: types.CallbackQuery):
+             await db.add_file(_cache_key(url, scope, 'audio'), sent.audio.file_id, 'audio')
+     except Exception as exc:
+         logging.exception('Reddit action failed: %s', type(exc).__name__)
+-        await handle_download_error(call.message)
++        await handle_download_error(call.message, error=exc)
+     finally:
+         await safe_delete_message(status)
+         if directory:
+diff --git a/handlers/request_dedupe.py b/handlers/request_dedupe.py
+index 45a12ce..dd8d432 100644
+--- a/handlers/request_dedupe.py
++++ b/handlers/request_dedupe.py
+@@ -1,4 +1,5 @@
+ from __future__ import annotations
++from utils.download_errors import reset_failures
+ 
+ from dataclasses import dataclass
+ 
+@@ -42,6 +43,7 @@ async def claim_message_request(
+     service: str,
+     url: str,
+ ) -> MessageRequestLease | None:
++    reset_failures()
+     chat_id = getattr(getattr(message, "chat", None), "id", None)
+     scope_id = getattr(message, "business_connection_id", None)
+     status = claim_request(message.from_user.id, chat_id, service, url, scope_id=scope_id)
 diff --git a/handlers/settings_menu.py b/handlers/settings_menu.py
 index 2cc594a..5599834 100644
 --- a/handlers/settings_menu.py
@@ -1540,7 +1672,7 @@ index 2cc594a..5599834 100644
          await call.message.edit_text(title, reply_markup=keyboard, parse_mode="HTML")
      except Exception:
 diff --git a/handlers/soundcloud.py b/handlers/soundcloud.py
-index 69ff3cd..4357579 100644
+index 69ff3cd..b51f28e 100644
 --- a/handlers/soundcloud.py
 +++ b/handlers/soundcloud.py
 @@ -1,3 +1,4 @@
@@ -1557,6 +1689,15 @@ index 69ff3cd..4357579 100644
              )
              on_retry = make_retry_status_notifier(
                  _edit_status,
+@@ -284,7 +285,7 @@ async def process_soundcloud(message: types.Message, direct_url: Optional[str] =
+         )
+     except Exception as exc:
+         logging.exception("Error processing SoundCloud request: error=%s", exc)
+-        await handle_download_error(message, business_id=message.business_connection_id)
++        await handle_download_error(message, error=exc, business_id=message.business_connection_id)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 @@ -332,9 +333,7 @@ async def inline_soundcloud_query(query: types.InlineQuery):
              types.InlineQueryResultArticle(
                  id=f"soundcloud_inline:{token}",
@@ -1577,17 +1718,69 @@ index 69ff3cd..4357579 100644
              )
  
              return await soundcloud_service.download_media(
+diff --git a/handlers/spotify.py b/handlers/spotify.py
+index 788ee4c..187e1b9 100644
+--- a/handlers/spotify.py
++++ b/handlers/spotify.py
+@@ -225,7 +225,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+         )
+     except Exception as exc:
+         logging.exception("Spotify download failed: error=%s", exc)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 diff --git a/handlers/telegram_ui_utils.py b/handlers/telegram_ui_utils.py
-index 58403d5..0827b4c 100644
+index 58403d5..bf48c19 100644
 --- a/handlers/telegram_ui_utils.py
 +++ b/handlers/telegram_ui_utils.py
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,7 @@
++import secrets
++from utils.download_errors import best_failure, classify_failure, diagnostic_failure, platform_name
 +from i18n import bind_locale as _bind_locale
 +from i18n import t as _t
  import httpx
  from app_context import db
  import asyncio
-@@ -394,7 +396,7 @@ def make_status_text_progress_updater(
+@@ -188,6 +192,7 @@ async def _send_with_reaction(
+                     "chat_id": message.chat.id,
+                     "text": text,
+                     "receiver_user_id": user_id,
++                    "parse_mode": kwargs.get("parse_mode", "HTML"),
+                 }
+                 res = await client.post(
+                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
+@@ -233,11 +238,27 @@ async def handle_download_error(
+     skip_if_business: bool = True,
+     method: str = "answer",
+     lang: Optional[str] = None,
++    error: Exception | None = None,
++    reason: str | None = None,
++    platform: str | None = None,
+     **kwargs: Any,
+ ) -> None:
+     """Notify user about a failed download with a consistent reaction and message."""
+     user_lang = lang or await _resolve_user_lang(message)
+-    error_text = text or bm.something_went_wrong(lang=user_lang)
++    if text is not None:
++        error_text = text
++    else:
++        failure = classify_failure(reason) if reason else diagnostic_failure(error) if error is not None else best_failure()
++        if failure.reason == 'unknown':
++            collected = best_failure()
++            if collected.reason != 'unknown' or not failure.message:
++                failure = collected
++        reference = secrets.token_hex(4).upper()
++        platform = platform or platform_name(get_message_text(message))
++        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang, diagnostic=failure)
++        logging.event('download_user_failure', failure_code=failure.reason, error_reference=reference,
++                      platform=platform or 'unknown', error_type=type(error).__name__ if error is not None else 'none')
++        kwargs.setdefault('parse_mode', 'HTML')
+     await _send_with_reaction(
+         message,
+         error_text,
+@@ -394,7 +415,7 @@ def make_status_text_progress_updater(
          state["last"] = now
          await update_text(build_progress_status(label, progress))
  
@@ -1596,7 +1789,7 @@ index 58403d5..0827b4c 100644
  
  
  def make_retry_status_notifier(
-@@ -518,13 +520,13 @@ def _format_bytes(num_bytes: int) -> str:
+@@ -518,13 +539,13 @@ def _format_bytes(num_bytes: int) -> str:
  
  def _format_eta(seconds: Optional[float]) -> str:
      if seconds is None:
@@ -1613,7 +1806,7 @@ index 58403d5..0827b4c 100644
  
  
  def _format_eta_short(seconds: Optional[float]) -> str:
-@@ -540,9 +542,7 @@ def _format_eta_short(seconds: Optional[float]) -> str:
+@@ -540,9 +561,7 @@ def _format_eta_short(seconds: Optional[float]) -> str:
  
  def build_queue_status(label: str, ticket: QueueTicket) -> str:
      return (
@@ -1624,7 +1817,7 @@ index 58403d5..0827b4c 100644
      )
  
  
-@@ -574,15 +574,13 @@ def build_progress_status(label: str, progress: DownloadProgress) -> str:
+@@ -574,15 +593,13 @@ def build_progress_status(label: str, progress: DownloadProgress) -> str:
  def build_rate_limit_text(retry_after: float) -> str:
      wait = max(1, int(round(retry_after)))
      return (
@@ -1643,7 +1836,7 @@ index 58403d5..0827b4c 100644
  
  
 diff --git a/handlers/threads.py b/handlers/threads.py
-index fca584c..1ce98e7 100644
+index fca584c..615dcc7 100644
 --- a/handlers/threads.py
 +++ b/handlers/threads.py
 @@ -1,3 +1,4 @@
@@ -1651,6 +1844,15 @@ index fca584c..1ce98e7 100644
  import asyncio
  import datetime
  import re
+@@ -129,7 +130,7 @@ async def process_threads(message: types.Message, direct_url: Optional[str] = No
+             summarize_text_for_log(get_message_text(message)),
+             exc,
+         )
+-        await handle_download_error(message)
++        await handle_download_error(message, error=exc)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 @@ -189,7 +190,7 @@ async def process_threads_single_media(
      async def _edit_status(text: str) -> None:
          await safe_edit_text(status_message, text)
@@ -1661,7 +1863,7 @@ index fca584c..1ce98e7 100644
  
      async def _download_media() -> DownloadMetrics | None:
 diff --git a/handlers/tiktok.py b/handlers/tiktok.py
-index e7eeb6f..7b67714 100644
+index e7eeb6f..20a2573 100644
 --- a/handlers/tiktok.py
 +++ b/handlers/tiktok.py
 @@ -1,3 +1,5 @@
@@ -1679,6 +1881,15 @@ index e7eeb6f..7b67714 100644
  
  
  class TikTokService(tiktok_platform.TikTokMediaService):
+@@ -269,7 +271,7 @@ async def process_tiktok(message: types.Message, direct_url: Optional[str] = Non
+             summarize_text_for_log(get_message_text(message)),
+             e,
+         )
+-        await handle_download_error(message)
++        await handle_download_error(message, error=e)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 @@ -331,7 +333,7 @@ async def process_tiktok_video(
          await safe_edit_text(status_message, text)
  
@@ -1749,6 +1960,19 @@ index 6d2c2a0..4888241 100644
              build_caption=_build_caption,
              reply_markup=reply_markup,
              edit_status=edit_status,
+diff --git a/handlers/twitter.py b/handlers/twitter.py
+index f143dbd..adc2cbb 100644
+--- a/handlers/twitter.py
++++ b/handlers/twitter.py
+@@ -285,7 +285,7 @@ async def handle_twitter_message(message: types.Message, **kwargs):
+         if status_message:
+             await safe_delete_message(status_message)
+         await react_to_message(message, "👎", business_id=business_id)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
 diff --git a/handlers/twitter_inline.py b/handlers/twitter_inline.py
 index a9c1f27..992d144 100644
 --- a/handlers/twitter_inline.py
@@ -1780,7 +2004,7 @@ index a9c1f27..992d144 100644
                  reply_markup=reply_markup,
                  edit_status=edit_status,
 diff --git a/handlers/universal.py b/handlers/universal.py
-index ec2079c..1556d71 100644
+index ec2079c..2736912 100644
 --- a/handlers/universal.py
 +++ b/handlers/universal.py
 @@ -1,3 +1,5 @@
@@ -1873,6 +2097,15 @@ index ec2079c..1556d71 100644
  
      UNIVERSAL_PROGRESS[post_id] = {
          "percent": "0%",
+@@ -627,7 +623,7 @@ async def process_universal_link(
+         if status_message:
+             await safe_delete_message(status_message)
+         await react_to_message(message, "👎", business_id=business_id)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         if post_id and post_id in UNIVERSAL_PROGRESS:
+             UNIVERSAL_PROGRESS.pop(post_id, None)
 @@ -657,7 +653,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
      callback_url = _recover_callback_url(call.message, url_hash)
      if callback_url and _is_facebook_url(callback_url):
@@ -1894,6 +2127,15 @@ index ec2079c..1556d71 100644
              allow_sending_without_reply=True,
          )
          return
+@@ -730,7 +726,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
+                 await remove_file(first_item.thumb)
+     except Exception as exc:
+         logging.error("Universal file button failed: %s", type(exc).__name__)
+-        await handle_download_error(call.message, lang=user_lang)
++        await handle_download_error(call.message, error=exc, lang=user_lang)
+     finally:
+         await safe_delete_message(status_message)
+ 
 @@ -749,7 +745,7 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
      callback_url = _recover_callback_url(call.message, url_hash)
      if callback_url and _is_facebook_url(callback_url):
@@ -1938,6 +2180,14 @@ index ec2079c..1556d71 100644
              ),
              caption=bm.captions(None, None, bot_url),
              audio_path=output_mp3_path,
+@@ -879,6 +873,6 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
+ 
+     except Exception as exc:
+         logging.exception("Erro ao processar audio:univ: %s", exc)
+-        await handle_download_error(call.message, lang=user_lang)
++        await handle_download_error(call.message, error=exc, lang=user_lang)
+     finally:
+         await safe_delete_message(status_message)
 diff --git a/handlers/user.py b/handlers/user.py
 index 58c8743..b2c5409 100644
 --- a/handlers/user.py
@@ -1969,6 +2219,19 @@ index 58c8743..b2c5409 100644
  settings_menu = settings_mod.settings_menu
  back_to_settings = settings_mod.back_to_settings
  open_setting = settings_mod.open_setting
+diff --git a/handlers/xvideos.py b/handlers/xvideos.py
+index e2ddd58..169c028 100644
+--- a/handlers/xvideos.py
++++ b/handlers/xvideos.py
+@@ -254,7 +254,7 @@ async def handle_xvideos(message: types.Message) -> None:
+     except Exception as exc:
+         # Source URLs and short-lived CDN tokens must never be written to logs.
+         logging.warning("XVideos request failed: %s", type(exc).__name__)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
+         if status:
+             await safe_delete_message(status)
 diff --git a/handlers/xvideos_actions.py b/handlers/xvideos_actions.py
 index 2895c4c..cb12cc2 100644
 --- a/handlers/xvideos_actions.py
@@ -2015,16 +2278,17 @@ index 2895c4c..cb12cc2 100644
      finally:
          if status:
 diff --git a/handlers/youtube.py b/handlers/youtube.py
-index 9934f4e..3a9747e 100644
+index 9934f4e..987d64f 100644
 --- a/handlers/youtube.py
 +++ b/handlers/youtube.py
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++from utils.download_errors import best_failure, close_failure_context, failure_context, note_failure
 +from i18n import normalize_locale as _normalize_locale
 +from i18n import t as _t
  from services.settings import resolve_video_quality_format
  import asyncio
  import re
-@@ -86,8 +88,8 @@ def _is_pt(lang: Optional[str]) -> bool:
+@@ -86,8 +89,8 @@ def _is_pt(lang: Optional[str]) -> bool:
  
  
  def _make_progress_keyboard(video_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
@@ -2035,7 +2299,31 @@ index 9934f4e..3a9747e 100644
      return InlineKeyboardMarkup(
          inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"ytprog:{video_id}:{norm_lang}")]]
      )
-@@ -266,9 +268,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -212,10 +215,20 @@ def search_youtube_track(query: str):
+ 
+ 
+ async def _get_youtube_video_with_timeout(url: str):
+-    return await asyncio.wait_for(
+-        asyncio.to_thread(get_youtube_video, url),
+-        timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
++    def extract():
++        token = failure_context()
++        try:
++            result = get_youtube_video(url)
++            return result, best_failure()
++        finally:
++            close_failure_context(token)
++
++    result, failure = await asyncio.wait_for(
++        asyncio.to_thread(extract), timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
+     )
++    if not result:
++        note_failure(failure)
++    return result
+ 
+ 
+ async def _download_youtube_media(
+@@ -266,9 +279,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
  
      if not info:
          text = (
@@ -2047,7 +2335,7 @@ index 9934f4e..3a9747e 100644
          )
          await call.answer(text, show_alert=True)
          return
-@@ -276,9 +278,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -276,9 +289,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
      status = info.get("status")
      if status == "uploading":
          text = (
@@ -2059,7 +2347,7 @@ index 9934f4e..3a9747e 100644
          )
          await call.answer(text, show_alert=True)
          return
-@@ -290,17 +292,11 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -290,17 +303,11 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
  
      if is_portuguese:
          msg = (
@@ -2079,7 +2367,16 @@ index 9934f4e..3a9747e 100644
          )
  
      await call.answer(msg, show_alert=True)
-@@ -385,8 +381,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -356,7 +363,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+         if not yt:
+             if status_message:
+                 await safe_delete_message(status_message)
+-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
++            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
+             return
+ 
+         video_id = yt.get("id") or "video"
+@@ -385,8 +392,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
              await handle_video_too_large(message, business_id=business_id)
              return
  
@@ -2090,7 +2387,7 @@ index 9934f4e..3a9747e 100644
  
          YOUTUBE_PROGRESS[video_id] = {
              "percent": "0%",
-@@ -460,7 +456,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -460,7 +467,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
                  caption=bm.captions(user_captions, yt["title"], bot_url),
                  reply_markup_fn=_reply_markup,
                  as_document=as_document,
@@ -2099,7 +2396,44 @@ index 9934f4e..3a9747e 100644
                  cached_log_url=yt["webpage_url"],
              )
          )
-@@ -723,9 +719,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+@@ -523,11 +530,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.error("Video download error: %s", e)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=e, business_id=business_id)
+     finally:
+         if video_id and video_id in YOUTUBE_PROGRESS:
+             YOUTUBE_PROGRESS.pop(video_id, None)
+@@ -581,7 +588,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+ 
+         yt = await _get_youtube_video_with_timeout(url)
+         if not yt:
+-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
++            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
+             return
+ 
+         audio_duration = yt.get("duration")
+@@ -706,11 +713,11 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.error("Audio download error: %s", e)
+-        await handle_download_error(message, business_id=business_id)
++        await handle_download_error(message, error=e, business_id=business_id)
+     finally:
+         if request_lease is not None:
+             request_lease.finish()
+@@ -723,9 +730,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
      user_lang = await db.get_language(call.from_user.id)
      if not call.message:
          text = (
@@ -2110,6 +2444,24 @@ index 9934f4e..3a9747e 100644
          )
          await call.answer(text, show_alert=True)
          return
+@@ -862,7 +867,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            call.message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            call.message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.exception(
+@@ -870,7 +875,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+             summarize_url_for_log(url),
+             e,
+         )
+-        await handle_download_error(call.message, business_id=business_id)
++        await handle_download_error(call.message, error=e, business_id=business_id)
+     finally:
+         await safe_delete_message(status_message)
+ 
 diff --git a/handlers/youtube_inline.py b/handlers/youtube_inline.py
 index e41fb97..b2dc9da 100644
 --- a/handlers/youtube_inline.py
@@ -2228,10 +2580,10 @@ index 0000000..e9bc783
 +    return localized
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
 new file mode 100644
-index 0000000..1820ce9
+index 0000000..8bb4cec
 --- /dev/null
 +++ b/i18n/locales/en.json
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,487 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "The folder '{p0}' does not exist.",
 +  "handlers.admin._format_age.eb04b447": " ago",
@@ -2583,7 +2935,7 @@ index 0000000..1820ce9
 +  "messages.user_messages.settings.918d2a64": "<b>⚙️ Settings</b>\nUse the buttons below to customize how downloads are sent. These changes apply only to your account.",
 +  "messages.user_messages.settings_admin_only.a65eb7a7": "Only group admins can open /settings in group chats.",
 +  "messages.user_messages.settings_private_only.8f9b59fe": "Settings are available only in private chat. Open DM with the bot to change preferences.",
-+  "messages.user_messages.something_went_wrong.d2e288ca": "Couldn't process this link right now.\nIt may be private, deleted, region-limited, or temporarily blocked by the source. Please try again later.",
++  "messages.user_messages.something_went_wrong.d2e288ca": "Could not complete this request.\nThe source did not provide a specific cause. Check that the link opens normally and try again later.",
 +  "messages.user_messages.spotify_metadata_failed.480184fd": "Couldn't read this Spotify track. Please check the link and try again.",
 +  "messages.user_messages.spotify_source_not_found.8b705fec": "Couldn't find a matching audio source for this Spotify track.",
 +  "messages.user_messages.stats_temporarily_unavailable.195d4b5b": "Couldn't generate stats right now. Please try again later.",
@@ -2691,14 +3043,40 @@ index 0000000..1820ce9
 +  "common.yes": "yes",
 +  "common.no": "no",
 +  "caption.footer": "<tg-emoji emoji-id=\"5283080528818360566\">🚀</tg-emoji> Powered by <a href=\"{url}\">Save Vídeo DL Bot</a>",
-+  "admin.bound.balanced": "balanced"
++  "admin.bound.balanced": "balanced",
++  "download_error.header": "❌ <b>{platform}: could not complete the download.</b>",
++  "download_error.delivery_header": "❌ <b>{platform}: could not complete delivery.</b>",
++  "download_error.generic_platform": "Download",
++  "download_error.reason_label": "<b>Reason:</b> {reason}",
++  "download_error.action_label": "<b>What to do:</b> {action}",
++  "download_error.reference": "Reference: <code>{reference}</code>",
++  "download_error.action.retry": "Wait a little and try again. If it persists, share the reference with support.",
++  "download_error.action.link": "Check that the post opens normally and send its direct link.",
++  "download_error.action.limit": "Try a smaller item or the audio option, when available.",
++  "download_error.action.support": "Try again later. If it continues, share the reference with support so we can check the bot’s access.",
++  "download_error.action.delivery": "Check that the bot can send messages and files in this conversation, then try again.",
++  "download_error.reason.unknown": "The source did not provide a specific cause.",
++  "download_error.reason.timeout": "The source did not respond within the time limit.",
++  "download_error.reason.authentication": "The platform requested login or rejected the session used by the bot.",
++  "download_error.reason.access_denied": "The source refused the bot’s access request.",
++  "download_error.reason.rate_limited": "The request limit was reached.",
++  "download_error.reason.not_found": "The requested address was not found or is no longer available.",
++  "download_error.reason.region": "The source reported a regional restriction for this content.",
++  "download_error.reason.unsupported": "The extractor did not recognize this link format.",
++  "download_error.reason.connection": "Could not establish or maintain a connection to the source.",
++  "download_error.reason.redirect_loop": "The source entered a redirect loop and did not provide the post.",
++  "download_error.reason.restricted": "The source indicated that the content is private, removed or restricted.",
++  "download_error.reason.too_large": "The file exceeds the size limit allowed by the bot or Telegram.",
++  "download_error.reason.delivery": "Telegram refused an operation needed to deliver the response.",
++  "download_error.reason.internal": "An internal error occurred while processing the request.",
++  "download_error.reason.verification": "Could not verify that the media belongs to the requested post."
 +}
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
 new file mode 100644
-index 0000000..0c03249
+index 0000000..242b05f
 --- /dev/null
 +++ b/i18n/locales/es.json
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,487 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "La carpeta '{p0}' no existe.",
 +  "handlers.admin._format_age.eb04b447": " atrás",
@@ -3050,7 +3428,7 @@ index 0000000..0c03249
 +  "messages.user_messages.settings.918d2a64": "<b>⚙️ Configuración</b>\nUsa los botones para personalizar cómo se envían las descargas. Estos cambios solo se aplican a tu cuenta.",
 +  "messages.user_messages.settings_admin_only.a65eb7a7": "Solo los administradores pueden abrir /settings en los grupos.",
 +  "messages.user_messages.settings_private_only.8f9b59fe": "La configuración solo está disponible en el chat privado. Abre una conversación con el bot para cambiar tus preferencias.",
-+  "messages.user_messages.something_went_wrong.d2e288ca": "No se pudo procesar este enlace ahora.\nEl contenido podría ser privado, haberse eliminado, tener una restricción regional o estar bloqueado temporalmente por la plataforma. Inténtalo de nuevo más tarde.",
++  "messages.user_messages.something_went_wrong.d2e288ca": "No se pudo completar esta solicitud.\nLa fuente no proporcionó una causa específica. Comprueba que el enlace se abra normalmente e inténtalo de nuevo más tarde.",
 +  "messages.user_messages.spotify_metadata_failed.480184fd": "No se pudo leer esta pista de Spotify. Comprueba el enlace e inténtalo de nuevo.",
 +  "messages.user_messages.spotify_source_not_found.8b705fec": "No se encontró una fuente de audio que coincida con esta pista de Spotify.",
 +  "messages.user_messages.stats_temporarily_unavailable.195d4b5b": "No se pudieron generar las estadísticas. Inténtalo de nuevo más tarde.",
@@ -3158,14 +3536,40 @@ index 0000000..0c03249
 +  "common.yes": "sí",
 +  "common.no": "no",
 +  "caption.footer": "<tg-emoji emoji-id=\"5283080528818360566\">🚀</tg-emoji> Desarrollado por <a href=\"{url}\">Save Vídeo DL Bot</a>",
-+  "admin.bound.balanced": "equilibrado"
++  "admin.bound.balanced": "equilibrado",
++  "download_error.header": "❌ <b>{platform}: no se pudo completar la descarga.</b>",
++  "download_error.delivery_header": "❌ <b>{platform}: no se pudo completar el envío.</b>",
++  "download_error.generic_platform": "Descarga",
++  "download_error.reason_label": "<b>Motivo:</b> {reason}",
++  "download_error.action_label": "<b>Qué hacer:</b> {action}",
++  "download_error.reference": "Referencia: <code>{reference}</code>",
++  "download_error.action.retry": "Espera un poco e inténtalo de nuevo. Si persiste, indica la referencia al soporte.",
++  "download_error.action.link": "Comprueba que la publicación se abra normalmente y envía su enlace directo.",
++  "download_error.action.limit": "Prueba con un contenido más pequeño o la opción de audio, si está disponible.",
++  "download_error.action.support": "Inténtalo de nuevo más tarde. Si continúa, indica la referencia al soporte para revisar el acceso del bot.",
++  "download_error.action.delivery": "Comprueba que el bot pueda enviar mensajes y archivos en esta conversación e inténtalo de nuevo.",
++  "download_error.reason.unknown": "La fuente no proporcionó una causa específica.",
++  "download_error.reason.timeout": "La fuente no respondió dentro del tiempo límite.",
++  "download_error.reason.authentication": "La plataforma solicitó iniciar sesión o rechazó la sesión del bot.",
++  "download_error.reason.access_denied": "La fuente rechazó la solicitud de acceso del bot.",
++  "download_error.reason.rate_limited": "Se alcanzó el límite de solicitudes.",
++  "download_error.reason.not_found": "La dirección solicitada no se encontró o ya no está disponible.",
++  "download_error.reason.region": "La fuente informó de una restricción regional para este contenido.",
++  "download_error.reason.unsupported": "El extractor no reconoció este formato de enlace.",
++  "download_error.reason.connection": "No se pudo establecer o mantener la conexión con la fuente.",
++  "download_error.reason.redirect_loop": "La fuente entró en un bucle de redirecciones y no entregó la publicación.",
++  "download_error.reason.restricted": "La fuente indicó que el contenido es privado, está eliminado o tiene restricciones.",
++  "download_error.reason.too_large": "El archivo supera el límite de tamaño permitido por el bot o Telegram.",
++  "download_error.reason.delivery": "Telegram rechazó una operación necesaria para enviar la respuesta.",
++  "download_error.reason.internal": "Se produjo un error interno al procesar la solicitud.",
++  "download_error.reason.verification": "No se pudo verificar que el contenido pertenezca a la publicación enviada."
 +}
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
 new file mode 100644
-index 0000000..b346421
+index 0000000..0604960
 --- /dev/null
 +++ b/i18n/locales/pt.json
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,487 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "A pasta '{p0}' não existe.",
 +  "handlers.admin._format_age.eb04b447": " atrás",
@@ -3517,7 +3921,7 @@ index 0000000..b346421
 +  "messages.user_messages.settings.918d2a64": "<b>⚙️ Configurações</b>\nUse os botões abaixo para personalizar como os downloads são enviados. Essas alterações se aplicam apenas à sua conta.",
 +  "messages.user_messages.settings_admin_only.a65eb7a7": "Apenas administradores podem usar /settings em grupos.",
 +  "messages.user_messages.settings_private_only.8f9b59fe": "As configurações estão disponíveis apenas no chat privado. Abra uma conversa direta com o bot para alterar suas preferências.",
-+  "messages.user_messages.something_went_wrong.d2e288ca": "Não foi possível processar este link no momento.\nO conteúdo pode ser privado, ter sido apagado, ter restrição de região ou estar temporariamente bloqueado pela plataforma de origem. Tente novamente mais tarde.",
++  "messages.user_messages.something_went_wrong.d2e288ca": "Não foi possível concluir esta solicitação.\nA origem não informou uma causa específica. Confira se o link abre normalmente e tente novamente mais tarde.",
 +  "messages.user_messages.spotify_metadata_failed.480184fd": "Não foi possível ler esta faixa do Spotify. Verifique o link e tente novamente.",
 +  "messages.user_messages.spotify_source_not_found.8b705fec": "Não foi possível encontrar uma fonte de áudio correspondente para esta música do Spotify.",
 +  "messages.user_messages.stats_temporarily_unavailable.195d4b5b": "Não foi possível gerar as estatísticas agora. Tente novamente mais tarde.",
@@ -3625,7 +4029,33 @@ index 0000000..b346421
 +  "common.yes": "sim",
 +  "common.no": "não",
 +  "caption.footer": "<tg-emoji emoji-id=\"5283080528818360566\">🚀</tg-emoji> Desenvolvido por <a href=\"{url}\">Save Vídeo DL Bot</a>",
-+  "admin.bound.balanced": "equilibrado"
++  "admin.bound.balanced": "equilibrado",
++  "download_error.header": "❌ <b>{platform}: não foi possível concluir o download.</b>",
++  "download_error.delivery_header": "❌ <b>{platform}: não foi possível concluir o envio.</b>",
++  "download_error.generic_platform": "Download",
++  "download_error.reason_label": "<b>Motivo:</b> {reason}",
++  "download_error.action_label": "<b>O que fazer:</b> {action}",
++  "download_error.reference": "Referência: <code>{reference}</code>",
++  "download_error.action.retry": "Aguarde um pouco e tente novamente. Se persistir, informe a referência ao suporte.",
++  "download_error.action.link": "Confira se a publicação abre normalmente e envie o link direto dela.",
++  "download_error.action.limit": "Tente um conteúdo menor ou a opção de áudio, quando disponível.",
++  "download_error.action.support": "Tente novamente mais tarde. Se continuar, informe a referência ao suporte para verificarmos o acesso usado pelo bot.",
++  "download_error.action.delivery": "Verifique se o bot pode enviar mensagens e arquivos nesta conversa. Depois, tente novamente.",
++  "download_error.reason.unknown": "Não recebemos uma causa específica da origem.",
++  "download_error.reason.timeout": "A origem não respondeu dentro do tempo limite.",
++  "download_error.reason.authentication": "A plataforma solicitou login ou recusou a sessão usada pelo bot.",
++  "download_error.reason.access_denied": "A origem recusou a solicitação de acesso do bot.",
++  "download_error.reason.rate_limited": "O limite de solicitações foi atingido.",
++  "download_error.reason.not_found": "O endereço solicitado não foi encontrado ou não está mais disponível.",
++  "download_error.reason.region": "A origem informou uma restrição de região para este conteúdo.",
++  "download_error.reason.unsupported": "O extrator não reconheceu este formato de link.",
++  "download_error.reason.connection": "Não foi possível estabelecer ou manter a conexão com a origem.",
++  "download_error.reason.redirect_loop": "A origem entrou em um ciclo de redirecionamentos e não entregou a publicação.",
++  "download_error.reason.restricted": "A origem indicou que o conteúdo está privado, removido ou restrito.",
++  "download_error.reason.too_large": "O arquivo ultrapassa o limite de tamanho permitido pelo bot ou pelo Telegram.",
++  "download_error.reason.delivery": "O Telegram recusou uma operação necessária para enviar a resposta.",
++  "download_error.reason.internal": "Ocorreu uma falha interna ao processar a solicitação.",
++  "download_error.reason.verification": "Não foi possível confirmar que a mídia pertence à publicação enviada."
 +}
 diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
 index 1513cfe..113f9eb 100644
@@ -4113,15 +4543,17 @@ index 1513cfe..113f9eb 100644
                  )
              ],
 diff --git a/main.py b/main.py
-index c0d47e7..a99e903 100644
+index c0d47e7..59fe1a3 100644
 --- a/main.py
 +++ b/main.py
-@@ -371,8 +371,15 @@ async def main():
+@@ -371,8 +371,17 @@ async def main():
                  dp.callback_query.outer_middleware(middleware)
                  dp.inline_query.outer_middleware(middleware)
  
 +            from middlewares.localization import LocalizationMiddleware
++            from middlewares.download_failure import DownloadFailureMiddleware
 +            for observer in (dp.business_message, dp.my_chat_member, dp.chat_member):
++                observer.outer_middleware(DownloadFailureMiddleware())
 +                observer.outer_middleware(LocalizationMiddleware())
 +
              try:
@@ -4448,7 +4880,7 @@ index 650de89..332bd2b 100644
          removed_files=removed_files,
          removed_dirs=removed_dirs,
 diff --git a/messages/user_messages.py b/messages/user_messages.py
-index c0a2e8a..262cf2c 100644
+index c0a2e8a..3159ede 100644
 --- a/messages/user_messages.py
 +++ b/messages/user_messages.py
 @@ -1,176 +1,116 @@
@@ -5596,7 +6028,7 @@ index c0a2e8a..262cf2c 100644
      )
  
  
-@@ -1056,7 +850,7 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
+@@ -1056,7 +850,18 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
      platform = "X/Twitter" if platform in {"Twitter", "X / Twitter", "X"} else platform
      label = html.escape(platform)
      if _normalize_lang(lang) == "pt":
@@ -5606,19 +6038,32 @@ index c0a2e8a..262cf2c 100644
 -        action = "Sending to Telegram…" if uploading else "Downloading content…"
 +        action = _t('messages.user_messages.media_transfer_status.2eabdcaf', lang) if uploading else _t('messages.user_messages.media_transfer_status.cc5d009a', lang)
      return f"{emoji} {label}: {action}"
++
++
++def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None, diagnostic=None):
++    """Show the original extractor error as code, without a generated JSON wrapper."""
++    from utils.download_errors import REASONS
++    reason = reason if reason in REASONS else 'unknown'
++    label = str(platform) if platform else _t('download_error.generic_platform', lang)
++    header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
++    detail = diagnostic.message if diagnostic and diagnostic.message else _t('download_error.reason.' + reason, lang)
++    return (_t(header, lang, platform=html.escape(label)) +
++            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')
 diff --git a/middlewares/__init__.py b/middlewares/__init__.py
-index 1ee9bcb..2ecbc39 100644
+index 1ee9bcb..b2287ff 100644
 --- a/middlewares/__init__.py
 +++ b/middlewares/__init__.py
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++from .download_failure import DownloadFailureMiddleware
 +from .localization import LocalizationMiddleware
  from .antiflood import AntifloodMiddleware
  from .ban_middleware import UserBannedMiddleware
  from .channel_subscription import ChannelSubscriptionMiddleware
-@@ -5,6 +6,7 @@ from .chat_tracker import ChatTrackerMiddleware
+@@ -5,6 +7,8 @@ from .chat_tracker import ChatTrackerMiddleware
  from .private_chat_guard import PrivateChatGuardMiddleware
  
  __all__ = [
++    "DownloadFailureMiddleware",
 +    "LocalizationMiddleware",
      "AntifloodMiddleware",
      "UserBannedMiddleware",
@@ -5887,6 +6332,25 @@ index bdc9aeb..2e43f42 100644
  
          username = getattr(chat, "username", None)
          language = getattr(chat, "language_code", None)
+diff --git a/middlewares/download_failure.py b/middlewares/download_failure.py
+new file mode 100644
+index 0000000..9eaaea3
+--- /dev/null
++++ b/middlewares/download_failure.py
+@@ -0,0 +1,13 @@
++"""Keep extractor failure diagnostics isolated to one incoming update."""
++from aiogram import BaseMiddleware
++
++from utils.download_errors import close_failure_context, failure_context
++
++
++class DownloadFailureMiddleware(BaseMiddleware):
++    async def __call__(self, handler, event, data):
++        token = failure_context()
++        try:
++            return await handler(event, data)
++        finally:
++            close_failure_context(token)
 diff --git a/middlewares/localization.py b/middlewares/localization.py
 new file mode 100644
 index 0000000..3e53db6
@@ -5998,6 +6462,325 @@ index 85e73f2..e9d175e 100644
              build_caption=_build_caption,
              reply_markup=reply_markup,
              edit_status=edit_status,
+diff --git a/services/platforms/instagram_media.py b/services/platforms/instagram_media.py
+index b4a21b5..d97c8f8 100644
+--- a/services/platforms/instagram_media.py
++++ b/services/platforms/instagram_media.py
+@@ -1,3 +1,4 @@
++from utils.download_errors import download_attempt, note_failure
+ import time
+ import asyncio
+ import glob
+@@ -111,7 +112,7 @@ def _instagram_cookie_args(url: str, extractor: str) -> list[str]:
+     return []
+ 
+ 
+-def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None) -> Optional[InstagramVideo]:
++def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None, failure_sink=None) -> Optional[InstagramVideo]:
+     try:
+         target_dir = os.path.join(output_dir, f"gdl_{post_id}")
+         os.makedirs(target_dir, exist_ok=True)
+@@ -152,6 +153,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
+ 
+         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
+         if proc.returncode != 0:
++            note_failure(proc.stderr, sink=failure_sink)
+             logger.warning("Instagram gallery-dl terminou com código %s", proc.returncode)
+ 
+         saved_files = []
+@@ -217,11 +219,12 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
+             return InstagramVideo(id=post_id, description=caption.strip(), author=author, media_list=media_items)
+ 
+     except Exception as exc:
++        note_failure(exc, sink=failure_sink)
+         logger.warning("gallery-dl falhou: %s", exc)
+     return None
+ 
+ 
+-def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVideo]:
++def _run_ytdlp(url: str, output_dir: str, post_id: str, failure_sink=None) -> Optional[InstagramVideo]:
+     """Extrai vídeos, fotos e carrosséis do Instagram usando yt-dlp.
+ 
+     Para vídeos, deixa o yt-dlp fazer o download normalmente.
+@@ -253,6 +256,8 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
+             timeout=30,
+         )
+ 
++        if metadata_proc.returncode != 0:
++            note_failure(metadata_proc.stderr, sink=failure_sink)
+         data = None
+         if metadata_proc.stdout.strip():
+             try:
+@@ -423,13 +428,16 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
+ 
+         download_cmd.append(url)
+ 
+-        subprocess.run(
++        download_proc = subprocess.run(
+             download_cmd,
+             capture_output=True,
+             text=True,
+             timeout=120,
+         )
+ 
++        if download_proc.returncode != 0:
++            note_failure(download_proc.stderr, sink=failure_sink)
++
+         info_json_pattern = os.path.join(
+             output_dir,
+             f"{post_id}_ytdlp_*.info.json",
+@@ -508,6 +516,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
+             )
+ 
+     except Exception as exc:
++        note_failure(exc, sink=failure_sink)
+         logger.warning("yt-dlp falhou: %s", exc)
+ 
+     return None
+@@ -568,6 +577,7 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
+     return None
+ 
+ 
++@download_attempt
+ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
+     story_id = _extract_story_target_id(url)
+     clean_url = strip_instagram_url(url)
+@@ -580,6 +590,8 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
+     os.makedirs(output_dir, exist_ok=True)
+     loop = asyncio.get_running_loop()
+ 
++    failures = []
++
+     # 1. gallery-dl continua sendo a primeira tentativa.
+     _t = time.monotonic()
+     res_gdl = await loop.run_in_executor(
+@@ -589,7 +601,11 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
+         output_dir,
+         post_id,
+         story_id,
++        failures,
+     )
++    for failure in failures:
++        note_failure(failure)
++    failures.clear()
+     logger.warning(
+         "Instagram fallback timing: stage=gallery_dl duration=%.2fs success=%s",
+         time.monotonic() - _t,
+@@ -606,7 +622,11 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
+         clean_url,
+         output_dir,
+         post_id,
++        failures,
+     )
++    for failure in failures:
++        note_failure(failure)
++    failures.clear()
+     logger.warning(
+         "Instagram fallback timing: stage=yt_dlp duration=%.2fs success=%s",
+         time.monotonic() - _t,
+diff --git a/services/platforms/reddit_download.py b/services/platforms/reddit_download.py
+index ba0b7e4..fb18d39 100644
+--- a/services/platforms/reddit_download.py
++++ b/services/platforms/reddit_download.py
+@@ -1,6 +1,8 @@
+ """Local Reddit download adapter; independent of Telegram's universal handler."""
+ from __future__ import annotations
+ 
++from utils.download_errors import download_attempt, note_failure
++
+ import asyncio
+ import time
+ from urllib.parse import urlparse
+@@ -25,6 +27,7 @@ async def _notify_kind(callback, kind, count):
+             logging.warning('Reddit status update skipped: %s', type(exc).__name__)
+ 
+ 
++@download_attempt
+ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int, on_kind=None):
+     if not is_reddit_media_url(url):
+         return None
+@@ -42,6 +45,7 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
+             try:
+                 result = await download_reddit_gallery(info['post'], sources, output_dir, max_file_size)
+             except Exception as exc:
++                note_failure(exc)
+                 logging.warning('Reddit gallery failed: %s', exc.code if isinstance(exc, RedditImageError) else type(exc).__name__)
+                 return None
+             logging.info('Reddit gallery: items=%s seconds=%.2f', len(result.media_list), time.monotonic() - started)
+@@ -50,21 +54,32 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
+             try:
+                 result = await download_native_video(info['post'], video, output_dir, max_file_size)
+             except Exception as exc:
++                note_failure(exc)
+                 logging.warning('Reddit native video failed: %s', exc.code if isinstance(exc, RedditVideoError) else type(exc).__name__)
+                 return None
+             logging.info('Reddit native video: seconds=%.2f audio=%s',
+                          time.monotonic() - started, result.media_list[0].has_audio)
+         else:
+             # External or unsupported post types keep the legacy fallback.
+-            result = await asyncio.wait_for(download_universal_media(
+-                info['canonical'], output_dir=output_dir, post_id='reddit_post'
+-            ), timeout=420)
++            async with asyncio.timeout(420):
++                result = await download_universal_media(
++                    info['canonical'], output_dir=output_dir, post_id='reddit_post'
++                )
+     elif info['status'] == 'direct':
+         await _notify_kind(on_kind, 'video' if urlparse(url).hostname == 'v.redd.it' else 'photo', 1)
+-        result = await asyncio.wait_for(download_universal_media(
+-            normalize_reddit_url(url), output_dir=output_dir, post_id='reddit_post'
+-        ), timeout=420)
++        async with asyncio.timeout(420):
++            result = await download_universal_media(
++                normalize_reddit_url(url), output_dir=output_dir, post_id='reddit_post'
++            )
+     else:
++        if info.get('http') in {401, 403, 404, 410, 429}:
++            note_failure(f"HTTP {info['http']}")
++        elif info['status'] == 'blocked':
++            note_failure('access_denied')
++        elif info['status'] == 'timeout':
++            note_failure('timeout')
++        elif info.get('http'):
++            note_failure(f"HTTP {info['http']}")
+         # Do not turn a known JSON rejection into several 90-second retries.
+         return None
+     if not result or not result.media_list:
+diff --git a/services/platforms/universal_extractor.py b/services/platforms/universal_extractor.py
+index 5eff1fb..5e71a59 100644
+--- a/services/platforms/universal_extractor.py
++++ b/services/platforms/universal_extractor.py
+@@ -1,3 +1,4 @@
++from utils.download_errors import download_attempt, note_failure
+ from services.platforms.firefox_cookies import firefox_cookie_args
+ import asyncio
+ import glob
+@@ -414,6 +415,7 @@ async def _download_with_gallery_dl(
+                 timeout=75 if _is_facebook_url(url) else None,
+             )
+         except asyncio.TimeoutError:
++            note_failure('timeout')
+             proc.kill()
+             await proc.communicate()
+             logging.warning("gallery-dl timed out: facebook=%s", _is_facebook_url(url))
+@@ -455,6 +457,7 @@ async def _download_with_gallery_dl(
+ 
+         if not downloaded:
+             if proc.returncode != 0 and stderr:
++                note_failure(stderr.decode('utf-8', errors='replace'))
+                 if _is_facebook_url(url):
+                     logging.warning(
+                         "Facebook gallery-dl failed: code=%s reason=%s",
+@@ -558,6 +561,7 @@ async def _download_with_gallery_dl(
+     except asyncio.CancelledError:
+         raise
+     except Exception as exc:
++        note_failure(exc)
+         logging.warning("gallery-dl extraction failed: facebook=%s error=%s",
+                         _is_facebook_url(url), type(exc).__name__)
+         return None
+@@ -690,6 +694,7 @@ async def _download_with_ytdlp(
+             await asyncio.wait_for(_consume(), timeout=180 if is_facebook else 900)
+             await asyncio.wait_for(proc.wait(), timeout=15)
+         except asyncio.TimeoutError:
++            note_failure('timeout')
+             if proc.returncode is None:
+                 proc.kill()
+             await proc.communicate()
+@@ -706,6 +711,7 @@ async def _download_with_ytdlp(
+             raise
+ 
+         if proc.returncode != 0:
++            note_failure("\n".join(recent))
+             logging.warning(
+                 "Universal yt-dlp download failed: mode=%s code=%s reason=%s",
+                 "chrome99" if impersonate == "chrome99" else
+@@ -776,10 +782,12 @@ async def _download_with_ytdlp(
+     except asyncio.CancelledError:
+         raise
+     except Exception as exc:
++        note_failure(exc)
+         logging.warning("Universal yt-dlp processing failed: %s", type(exc).__name__)
+         return None
+ 
+ 
++@download_attempt
+ async def download_universal_media(
+     url: str,
+     output_dir: str = "downloads",
+diff --git a/services/platforms/youtube_media.py b/services/platforms/youtube_media.py
+index a6f61e6..2e8494d 100644
+--- a/services/platforms/youtube_media.py
++++ b/services/platforms/youtube_media.py
+@@ -1,3 +1,4 @@
++from utils.download_errors import download_attempt, note_failure
+ from services.platforms.firefox_cookies import firefox_ytdlp_options
+ import asyncio
+ import glob
+@@ -266,6 +267,7 @@ class YouTubeMediaService:
+             with self._youtube_dl_factory(ydl_opts) as ydl:
+                 return ydl.extract_info(url, download=False)
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("Error fetching YouTube info: %s", exc)
+             return None
+ 
+@@ -292,9 +294,11 @@ class YouTubeMediaService:
+                 return None
+             return self.get_youtube_video(str(candidate_url))
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("YouTube track search failed: query=%s error=%s", query, exc)
+             return None
+ 
++    @download_attempt
+     async def download_stream(
+         self,
+         stream: dict,
+@@ -348,9 +352,11 @@ class YouTubeMediaService:
+         except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError):
+             raise
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("Falha ao baixar stream: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_with_ytdlp(self, url: str, filename: str) -> Optional[str]:
+         out_path = self._downloader._resolve_target_path(filename)
+         os.makedirs(os.path.dirname(out_path) or self._output_dir, exist_ok=True)
+@@ -365,9 +371,11 @@ class YouTubeMediaService:
+             logging.info("yt-dlp fallback succeeded: url=%s path=%s", url, resolved_path)
+             return resolved_path
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp fallback failed: url=%s error=%s", url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_with_ytdlp_metrics(
+         self,
+         url: str,
+@@ -419,9 +427,11 @@ class YouTubeMediaService:
+             log_download_metrics(source, metrics)
+             return metrics
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp download failed: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_mp3_with_ytdlp_metrics(
+         self,
+         url: str,
+@@ -463,6 +473,7 @@ class YouTubeMediaService:
+             log_download_metrics(source, metrics)
+             return metrics
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp mp3 download failed: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
 diff --git a/services/settings.py b/services/settings.py
 index aeb67d3..c070a34 100644
 --- a/services/settings.py
@@ -6333,3 +7116,192 @@ index 8846438..08925ef 100644
 -                    update(User).where(User.user_id == int(user_id)).values(language=lang)
 +                    update(User).where(User.user_id == int(user_id)).values(language=normalize_locale(lang))
                  )
+diff --git a/utils/download_errors.py b/utils/download_errors.py
+new file mode 100644
+index 0000000..dfb4d1b
+--- /dev/null
++++ b/utils/download_errors.py
+@@ -0,0 +1,183 @@
++"""Download failure codes and bounded diagnostic excerpts with sensitive fields removed."""
++import asyncio
++import re
++import subprocess
++from contextvars import ContextVar
++from dataclasses import dataclass
++from functools import wraps
++from urllib.parse import urlparse
++
++REASONS = frozenset({'unknown', 'timeout', 'authentication', 'access_denied', 'rate_limited',
++                     'not_found', 'region', 'unsupported', 'connection', 'redirect_loop',
++                     'restricted', 'too_large', 'delivery', 'internal', 'verification'})
++_PRIORITY = {'verification': 80, 'redirect_loop': 75, 'authentication': 70, 'rate_limited': 65,
++             'region': 60, 'restricted': 55, 'access_denied': 50, 'not_found': 45,
++             'timeout': 40, 'connection': 35, 'too_large': 30, 'unsupported': 20}
++_failures = ContextVar('download_failure_codes', default=())
++
++
++@dataclass(frozen=True)
++class Failure:
++    reason: str
++    message: str = ""
++    error_type: str = ""
++
++
++def classify_failure(error) -> Failure:
++    if isinstance(error, Failure):
++        return error if error.reason in REASONS else Failure('unknown')
++    if isinstance(error, str) and error in REASONS:
++        return Failure(error)
++    name = type(error).__name__.lower()
++    if name.startswith('telegram'):
++        return Failure('delivery')
++    if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)) or 'timeout' in name:
++        return Failure('timeout')
++    if 'toomanyredirects' in name:
++        return Failure('redirect_loop')
++    if name in {'mediaprivateerror'}:
++        return Failure('restricted')
++    if 'geoblocked' in name or 'georestricted' in name:
++        return Failure('region')
++    if 'toolarge' in name:
++        return Failure('too_large')
++    if 'ratelimit' in name:
++        return Failure('rate_limited')
++    response = getattr(error, 'response', None)
++    status = getattr(error, 'status_code', None) or getattr(error, 'status', None) or getattr(response, 'status_code', None) or getattr(response, 'status', None)
++    statuses = {401: 'authentication', 403: 'access_denied', 404: 'not_found', 410: 'not_found', 429: 'rate_limited'}
++    if isinstance(status, int) and status in statuses:
++        return Failure(statuses[status])
++    if isinstance(error, (TypeError, NameError, AttributeError, FileNotFoundError)):
++        return Failure('internal')
++    if isinstance(error, ConnectionError) or name in {'clientconnectorerror', 'connecterror', 'gaierror'}:
++        return Failure('connection')
++    code = getattr(error, 'code', '')
++    if isinstance(code, str):
++        status_match = re.fullmatch(r'(?:image|native_video)_http_(401|403|404|410|429)', code)
++        if status_match:
++            return Failure(statuses[int(status_match[1])])
++        if code in {'image_size_limit', 'image_dimensions_limit'}:
++            return Failure('too_large')
++        if code in {'image_redirect_loop', 'image_redirect_limit'}:
++            return Failure('redirect_loop')
++    # Bound the scan and accept only recognizable error phrases, not bare words or URLs.
++    text = str(error or '')[-8000:].lower()
++    phrases = (
++        ('redirect_loop', ('too many redirects', 'toomanyredirects', 'exceeded 30 redirects')),
++        ('authentication', ('login required', 'please log in', 'authentication required', 'sign in to confirm')),
++        ('access_denied', ("blocked by network security", 'access denied')),
++        ('rate_limited', ('too many requests', 'rate limit exceeded')),
++        ('region', ('not available in your country', 'geo-restricted', 'region-restricted', 'not made this video available in your country', 'not available from your location', 'georestrictederror', 'geo restricted')),
++        ('restricted', ('private account', 'private video', 'private post')),
++        ('unsupported', ('unsupported url:', 'unsupported url ')),
++        ('timeout', ('timed out', 'timeouterror', 'readtimeout', 'connecttimeout')),
++        ('connection', ('connection refused', 'connection reset', 'name resolution failed')),
++    )
++    for reason, patterns in phrases:
++        if any(pattern in text for pattern in patterns):
++            return Failure(reason)
++    match = re.search(r'\b(?:http(?: error|error)?|status(?: code)?)[ :\-=]+(401|403|404|410|429)\b', text)
++    if match:
++        return Failure(statuses[int(match[1])])
++    return Failure('unknown')
++
++
++def safe_error_message(error):
++    """Keep a bounded diagnostic excerpt; discard credentials and transport details."""
++    if isinstance(error, Failure):
++        return error.message
++    raw = str(error or '')[-8000:]
++    raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
++    sensitive = re.compile(r'cookie|authorization|bearer|password|passwd|secret|token|sessionid|api[_-]?key', re.IGNORECASE)
++    lines = []
++    for line in raw.splitlines():
++        if sensitive.search(line):
++            continue
++        if line.lstrip().startswith(('Traceback ', 'File "')):
++            continue
++        line = re.sub(r'https?://[^\s<>]+', '[URL]', line)
++        line = re.sub(r'/(?:root|home|tmp|data|workspace|etc|var|usr)/[^\s]+', '[PATH]', line)
++        line = re.sub(r'\b[A-Za-z0-9_+./=-]{32,}\b', '[REDACTED]', line)
++        line = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', line).strip()
++        if line:
++            lines.append(line)
++    return '\n'.join(lines)[:500]
++
++
++def diagnostic_failure(error):
++    failure = classify_failure(error)
++    if isinstance(error, Failure):
++        return failure
++    message = '' if isinstance(error, str) and error in REASONS else safe_error_message(error)
++    error_type = type(error).__name__ if isinstance(error, BaseException) else ''
++    return Failure(failure.reason, message, error_type)
++
++
++def note_failure(error, sink=None):
++    failure = diagnostic_failure(error)
++    if failure.reason != 'unknown' or failure.message:
++        if sink is not None:
++            sink.append(failure)
++            del sink[:-8]
++        else:
++            _failures.set((*_failures.get(), failure)[-8:])
++    return failure
++
++
++def best_failure():
++    return max(_failures.get(), key=lambda f: _PRIORITY.get(f.reason, 0), default=Failure('unknown'))
++
++
++def reset_failures():
++    _failures.set(())
++
++
++def failure_context():
++    return _failures.set(())
++
++
++def close_failure_context(token):
++    _failures.reset(token)
++
++
++def download_attempt(function):
++    """Preserve failure codes for a failed attempt and discard them after a successful fallback."""
++    @wraps(function)
++    async def wrapped(*args, **kwargs):
++        inherited = _failures.get()
++        token = _failures.set(())
++        succeeded = False
++        cancelled = False
++        try:
++            result = await function(*args, **kwargs)
++            succeeded = bool(result)
++            return result
++        except asyncio.CancelledError:
++            cancelled = True
++            raise
++        finally:
++            failures = _failures.get()
++            _failures.reset(token)
++            if not cancelled:
++                _failures.set(()) if succeeded else _failures.set((*inherited, *failures)[-8:])
++    return wrapped
++
++
++def platform_name(text):
++    names = {'instagram.com': 'Instagram', 'facebook.com': 'Facebook', 'fb.watch': 'Facebook',
++             'youtube.com': 'YouTube', 'youtu.be': 'YouTube', 'kwai.com': 'Kwai',
++             'reddit.com': 'Reddit', 'redd.it': 'Reddit', 'tiktok.com': 'TikTok',
++             'x.com': 'X/Twitter', 'twitter.com': 'X/Twitter', 'threads.net': 'Threads',
++             'pinterest.com': 'Pinterest', 'pin.it': 'Pinterest', 'soundcloud.com': 'SoundCloud',
++             'spotify.com': 'Spotify', 'deezer.com': 'Deezer', 'mediafire.com': 'MediaFire',
++             'mega.nz': 'MEGA', 'pornhub.com': 'Pornhub', 'xvideos.com': 'Xvideos', 'eporner.com': 'Eporner'}
++    for url in re.findall(r'https?://[^\s<>]+', text or ''):
++        try:
++            host = (urlparse(url).hostname or '').lower()
++        except ValueError:
++            continue
++        for domain, label in names.items():
++            if host == domain or host.endswith('.' + domain):
++                return label
++    return None

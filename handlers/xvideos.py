@@ -254,7 +254,7 @@ async def handle_xvideos(message: types.Message) -> None:
     except Exception as exc:
         # Source URLs and short-lived CDN tokens must never be written to logs.
         logging.warning("XVideos request failed: %s", type(exc).__name__)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         if status:
             await safe_delete_message(status)

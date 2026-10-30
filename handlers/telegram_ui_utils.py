@@ -1,3 +1,5 @@
+import secrets
+from utils.download_errors import best_failure, classify_failure, diagnostic_failure, platform_name
 from i18n import bind_locale as _bind_locale
 from i18n import t as _t
 import httpx
@@ -190,6 +192,7 @@ async def _send_with_reaction(
                     "chat_id": message.chat.id,
                     "text": text,
                     "receiver_user_id": user_id,
+                    "parse_mode": kwargs.get("parse_mode", "HTML"),
                 }
                 res = await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
@@ -235,11 +238,27 @@ async def handle_download_error(
     skip_if_business: bool = True,
     method: str = "answer",
     lang: Optional[str] = None,
+    error: Exception | None = None,
+    reason: str | None = None,
+    platform: str | None = None,
     **kwargs: Any,
 ) -> None:
     """Notify user about a failed download with a consistent reaction and message."""
     user_lang = lang or await _resolve_user_lang(message)
-    error_text = text or bm.something_went_wrong(lang=user_lang)
+    if text is not None:
+        error_text = text
+    else:
+        failure = classify_failure(reason) if reason else diagnostic_failure(error) if error is not None else best_failure()
+        if failure.reason == 'unknown':
+            collected = best_failure()
+            if collected.reason != 'unknown' or not failure.message:
+                failure = collected
+        reference = secrets.token_hex(4).upper()
+        platform = platform or platform_name(get_message_text(message))
+        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang, diagnostic=failure)
+        logging.event('download_user_failure', failure_code=failure.reason, error_reference=reference,
+                      platform=platform or 'unknown', error_type=type(error).__name__ if error is not None else 'none')
+        kwargs.setdefault('parse_mode', 'HTML')
     await _send_with_reaction(
         message,
         error_text,

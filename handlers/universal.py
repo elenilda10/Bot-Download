@@ -623,7 +623,7 @@ async def process_universal_link(
         if status_message:
             await safe_delete_message(status_message)
         await react_to_message(message, "👎", business_id=business_id)
-        await handle_download_error(message, business_id=business_id)
+        await handle_download_error(message, error=exc, business_id=business_id)
     finally:
         if post_id and post_id in UNIVERSAL_PROGRESS:
             UNIVERSAL_PROGRESS.pop(post_id, None)
@@ -726,7 +726,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
                 await remove_file(first_item.thumb)
     except Exception as exc:
         logging.error("Universal file button failed: %s", type(exc).__name__)
-        await handle_download_error(call.message, lang=user_lang)
+        await handle_download_error(call.message, error=exc, lang=user_lang)
     finally:
         await safe_delete_message(status_message)
 
@@ -873,6 +873,6 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
 
     except Exception as exc:
         logging.exception("Erro ao processar audio:univ: %s", exc)
-        await handle_download_error(call.message, lang=user_lang)
+        await handle_download_error(call.message, error=exc, lang=user_lang)
     finally:
         await safe_delete_message(status_message)

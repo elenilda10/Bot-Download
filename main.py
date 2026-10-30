@@ -372,7 +372,9 @@ async def main():
                 dp.inline_query.outer_middleware(middleware)
 
             from middlewares.localization import LocalizationMiddleware
+            from middlewares.download_failure import DownloadFailureMiddleware
             for observer in (dp.business_message, dp.my_chat_member, dp.chat_member):
+                observer.outer_middleware(DownloadFailureMiddleware())
                 observer.outer_middleware(LocalizationMiddleware())
 
             try:

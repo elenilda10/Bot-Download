@@ -1,0 +1,280 @@
+diff --git a/handlers/telegram_ui_utils.py b/handlers/telegram_ui_utils.py
+index 3ae602b..bf48c19 100644
+--- a/handlers/telegram_ui_utils.py
++++ b/handlers/telegram_ui_utils.py
+@@ -1,5 +1,5 @@
+ import secrets
+-from utils.download_errors import best_failure, classify_failure, platform_name
++from utils.download_errors import best_failure, classify_failure, diagnostic_failure, platform_name
+ from i18n import bind_locale as _bind_locale
+ from i18n import t as _t
+ import httpx
+@@ -248,12 +248,14 @@ async def handle_download_error(
+     if text is not None:
+         error_text = text
+     else:
+-        failure = classify_failure(reason) if reason else classify_failure(error) if error is not None else best_failure()
++        failure = classify_failure(reason) if reason else diagnostic_failure(error) if error is not None else best_failure()
+         if failure.reason == 'unknown':
+-            failure = best_failure()
++            collected = best_failure()
++            if collected.reason != 'unknown' or not failure.message:
++                failure = collected
+         reference = secrets.token_hex(4).upper()
+         platform = platform or platform_name(get_message_text(message))
+-        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang)
++        error_text = bm.download_failure_message(failure.reason, platform=platform, reference=reference, lang=user_lang, diagnostic=failure)
+         logging.event('download_user_failure', failure_code=failure.reason, error_reference=reference,
+                       platform=platform or 'unknown', error_type=type(error).__name__ if error is not None else 'none')
+         kwargs.setdefault('parse_mode', 'HTML')
+diff --git a/handlers/youtube.py b/handlers/youtube.py
+index 542b50e..987d64f 100644
+--- a/handlers/youtube.py
++++ b/handlers/youtube.py
+@@ -1,3 +1,4 @@
++from utils.download_errors import best_failure, close_failure_context, failure_context, note_failure
+ from i18n import normalize_locale as _normalize_locale
+ from i18n import t as _t
+ from services.settings import resolve_video_quality_format
+@@ -214,10 +215,20 @@ def search_youtube_track(query: str):
+ 
+ 
+ async def _get_youtube_video_with_timeout(url: str):
+-    return await asyncio.wait_for(
+-        asyncio.to_thread(get_youtube_video, url),
+-        timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
++    def extract():
++        token = failure_context()
++        try:
++            result = get_youtube_video(url)
++            return result, best_failure()
++        finally:
++            close_failure_context(token)
++
++    result, failure = await asyncio.wait_for(
++        asyncio.to_thread(extract), timeout=YOUTUBE_INFO_TIMEOUT_SECONDS,
+     )
++    if not result:
++        note_failure(failure)
++    return result
+ 
+ 
+ async def _download_youtube_media(
+@@ -352,7 +363,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+         if not yt:
+             if status_message:
+                 await safe_delete_message(status_message)
+-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
++            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
+             return
+ 
+         video_id = yt.get("id") or "video"
+@@ -519,7 +530,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.error("Video download error: %s", e)
+@@ -577,7 +588,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+ 
+         yt = await _get_youtube_video_with_timeout(url)
+         if not yt:
+-            await message.answer(bm.nothing_found(lang=user_lang), allow_sending_without_reply=True)
++            await handle_download_error(message, business_id=business_id, lang=user_lang, platform='YouTube')
+             return
+ 
+         audio_duration = yt.get("duration")
+@@ -702,7 +713,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.error("Audio download error: %s", e)
+@@ -856,7 +867,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+         if show_service_status:
+             await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
+         await handle_download_error(
+-            call.message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
++            call.message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
+         logging.exception(
+diff --git a/messages/user_messages.py b/messages/user_messages.py
+index 8251df7..3159ede 100644
+--- a/messages/user_messages.py
++++ b/messages/user_messages.py
+@@ -856,18 +856,12 @@ def media_transfer_status(platform: str, *, uploading: bool = False, lang: str =
+     return f"{emoji} {label}: {action}"
+ 
+ 
+-def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None):
++def download_failure_message(reason='unknown', *, platform=None, reference=None, lang=None, diagnostic=None):
++    """Show the original extractor error as code, without a generated JSON wrapper."""
+     from utils.download_errors import REASONS
+     reason = reason if reason in REASONS else 'unknown'
+-    platform = html.escape(str(platform)) if platform else _t('download_error.generic_platform', lang)
++    label = str(platform) if platform else _t('download_error.generic_platform', lang)
+     header = 'download_error.delivery_header' if reason == 'delivery' else 'download_error.header'
+-    action = ('support' if reason in {'authentication', 'access_denied', 'redirect_loop', 'region'}
+-              else 'link' if reason in {'not_found', 'unsupported', 'restricted'}
+-              else 'limit' if reason == 'too_large'
+-              else 'delivery' if reason == 'delivery' else 'retry')
+-    parts = [_t(header, lang, platform=platform),
+-             _t('download_error.reason_label', lang, reason=_t('download_error.reason.' + reason, lang)),
+-             _t('download_error.action_label', lang, action=_t('download_error.action.' + action, lang))]
+-    if reference:
+-        parts.append(_t('download_error.reference', lang, reference=html.escape(str(reference))))
+-    return '\n\n'.join(parts)
++    detail = diagnostic.message if diagnostic and diagnostic.message else _t('download_error.reason.' + reason, lang)
++    return (_t(header, lang, platform=html.escape(label)) +
++            '\n\n<pre><code>' + html.escape(detail) + '</code></pre>')
+diff --git a/services/platforms/youtube_media.py b/services/platforms/youtube_media.py
+index a6f61e6..2e8494d 100644
+--- a/services/platforms/youtube_media.py
++++ b/services/platforms/youtube_media.py
+@@ -1,3 +1,4 @@
++from utils.download_errors import download_attempt, note_failure
+ from services.platforms.firefox_cookies import firefox_ytdlp_options
+ import asyncio
+ import glob
+@@ -266,6 +267,7 @@ class YouTubeMediaService:
+             with self._youtube_dl_factory(ydl_opts) as ydl:
+                 return ydl.extract_info(url, download=False)
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("Error fetching YouTube info: %s", exc)
+             return None
+ 
+@@ -292,9 +294,11 @@ class YouTubeMediaService:
+                 return None
+             return self.get_youtube_video(str(candidate_url))
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("YouTube track search failed: query=%s error=%s", query, exc)
+             return None
+ 
++    @download_attempt
+     async def download_stream(
+         self,
+         stream: dict,
+@@ -348,9 +352,11 @@ class YouTubeMediaService:
+         except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError):
+             raise
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("Falha ao baixar stream: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_with_ytdlp(self, url: str, filename: str) -> Optional[str]:
+         out_path = self._downloader._resolve_target_path(filename)
+         os.makedirs(os.path.dirname(out_path) or self._output_dir, exist_ok=True)
+@@ -365,9 +371,11 @@ class YouTubeMediaService:
+             logging.info("yt-dlp fallback succeeded: url=%s path=%s", url, resolved_path)
+             return resolved_path
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp fallback failed: url=%s error=%s", url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_with_ytdlp_metrics(
+         self,
+         url: str,
+@@ -419,9 +427,11 @@ class YouTubeMediaService:
+             log_download_metrics(source, metrics)
+             return metrics
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp download failed: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
++    @download_attempt
+     async def download_mp3_with_ytdlp_metrics(
+         self,
+         url: str,
+@@ -463,6 +473,7 @@ class YouTubeMediaService:
+             log_download_metrics(source, metrics)
+             return metrics
+         except Exception as exc:
++            note_failure(exc)
+             logging.error("yt-dlp mp3 download failed: source=%s url=%s error=%s", source, url, exc)
+             return None
+ 
+diff --git a/utils/download_errors.py b/utils/download_errors.py
+index 739a047..dfb4d1b 100644
+--- a/utils/download_errors.py
++++ b/utils/download_errors.py
+@@ -1,4 +1,4 @@
+-"""Safe download failure codes. Raw tool output is classified, never shown to users."""
++"""Download failure codes and bounded diagnostic excerpts with sensitive fields removed."""
+ import asyncio
+ import re
+ import subprocess
+@@ -19,6 +19,8 @@ _failures = ContextVar('download_failure_codes', default=())
+ @dataclass(frozen=True)
+ class Failure:
+     reason: str
++    message: str = ""
++    error_type: str = ""
+ 
+ 
+ def classify_failure(error) -> Failure:
+@@ -66,7 +68,7 @@ def classify_failure(error) -> Failure:
+         ('authentication', ('login required', 'please log in', 'authentication required', 'sign in to confirm')),
+         ('access_denied', ("blocked by network security", 'access denied')),
+         ('rate_limited', ('too many requests', 'rate limit exceeded')),
+-        ('region', ('not available in your country', 'geo-restricted', 'region-restricted')),
++        ('region', ('not available in your country', 'geo-restricted', 'region-restricted', 'not made this video available in your country', 'not available from your location', 'georestrictederror', 'geo restricted')),
+         ('restricted', ('private account', 'private video', 'private post')),
+         ('unsupported', ('unsupported url:', 'unsupported url ')),
+         ('timeout', ('timed out', 'timeouterror', 'readtimeout', 'connecttimeout')),
+@@ -81,9 +83,40 @@ def classify_failure(error) -> Failure:
+     return Failure('unknown')
+ 
+ 
+-def note_failure(error, sink=None):
++def safe_error_message(error):
++    """Keep a bounded diagnostic excerpt; discard credentials and transport details."""
++    if isinstance(error, Failure):
++        return error.message
++    raw = str(error or '')[-8000:]
++    raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
++    sensitive = re.compile(r'cookie|authorization|bearer|password|passwd|secret|token|sessionid|api[_-]?key', re.IGNORECASE)
++    lines = []
++    for line in raw.splitlines():
++        if sensitive.search(line):
++            continue
++        if line.lstrip().startswith(('Traceback ', 'File "')):
++            continue
++        line = re.sub(r'https?://[^\s<>]+', '[URL]', line)
++        line = re.sub(r'/(?:root|home|tmp|data|workspace|etc|var|usr)/[^\s]+', '[PATH]', line)
++        line = re.sub(r'\b[A-Za-z0-9_+./=-]{32,}\b', '[REDACTED]', line)
++        line = re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', line).strip()
++        if line:
++            lines.append(line)
++    return '\n'.join(lines)[:500]
++
++
++def diagnostic_failure(error):
+     failure = classify_failure(error)
+-    if failure.reason != 'unknown':
++    if isinstance(error, Failure):
++        return failure
++    message = '' if isinstance(error, str) and error in REASONS else safe_error_message(error)
++    error_type = type(error).__name__ if isinstance(error, BaseException) else ''
++    return Failure(failure.reason, message, error_type)
++
++
++def note_failure(error, sink=None):
++    failure = diagnostic_failure(error)
++    if failure.reason != 'unknown' or failure.message:
+         if sink is not None:
+             sink.append(failure)
+             del sink[:-8]

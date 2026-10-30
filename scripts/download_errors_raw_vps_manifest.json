@@ -1,0 +1,10 @@
+{
+  "base_commit": "f88a0902dc220bad72d9a013d7db3f2a8ffdd3e6",
+  "patch_sha256": "9db9a9d79bd10c2789520ac7c10641dbf671852d2d133d242368221b69e7bb14",
+  "files": {
+    "messages/user_messages.py": {
+      "base_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d",
+      "result_sha256": "5d3b395dbe4e46bb29e354e2d22fac6ad482d723e1d9640aef373171721c88fc"
+    }
+  }
+}

@@ -1,3 +1,4 @@
+from utils.download_errors import download_attempt, note_failure
 from services.platforms.firefox_cookies import firefox_ytdlp_options
 import asyncio
 import glob
@@ -266,6 +267,7 @@ class YouTubeMediaService:
             with self._youtube_dl_factory(ydl_opts) as ydl:
                 return ydl.extract_info(url, download=False)
         except Exception as exc:
+            note_failure(exc)
             logging.error("Error fetching YouTube info: %s", exc)
             return None
 
@@ -292,9 +294,11 @@ class YouTubeMediaService:
                 return None
             return self.get_youtube_video(str(candidate_url))
         except Exception as exc:
+            note_failure(exc)
             logging.error("YouTube track search failed: query=%s error=%s", query, exc)
             return None
 
+    @download_attempt
     async def download_stream(
         self,
         stream: dict,
@@ -348,9 +352,11 @@ class YouTubeMediaService:
         except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError):
             raise
         except Exception as exc:
+            note_failure(exc)
             logging.error("Falha ao baixar stream: source=%s url=%s error=%s", source, url, exc)
             return None
 
+    @download_attempt
     async def download_with_ytdlp(self, url: str, filename: str) -> Optional[str]:
         out_path = self._downloader._resolve_target_path(filename)
         os.makedirs(os.path.dirname(out_path) or self._output_dir, exist_ok=True)
@@ -365,9 +371,11 @@ class YouTubeMediaService:
             logging.info("yt-dlp fallback succeeded: url=%s path=%s", url, resolved_path)
             return resolved_path
         except Exception as exc:
+            note_failure(exc)
             logging.error("yt-dlp fallback failed: url=%s error=%s", url, exc)
             return None
 
+    @download_attempt
     async def download_with_ytdlp_metrics(
         self,
         url: str,
@@ -419,9 +427,11 @@ class YouTubeMediaService:
             log_download_metrics(source, metrics)
             return metrics
         except Exception as exc:
+            note_failure(exc)
             logging.error("yt-dlp download failed: source=%s url=%s error=%s", source, url, exc)
             return None
 
+    @download_attempt
     async def download_mp3_with_ytdlp_metrics(
         self,
         url: str,
@@ -463,6 +473,7 @@ class YouTubeMediaService:
             log_download_metrics(source, metrics)
             return metrics
         except Exception as exc:
+            note_failure(exc)
             logging.error("yt-dlp mp3 download failed: source=%s url=%s error=%s", source, url, exc)
             return None
 
