@@ -108,6 +108,71 @@ def preserve_reply_methods(base_source, incoming_source, local_source):
     return sources[0].encode(), sources[1].encode()
 
 
+def preserve_notice_reply_parameters(base_source, incoming_source, local_source):
+    """Carry the observed source-message reply field into the HTML notice payload.
+
+    Only the exact reply-to-current-message addition is accepted. Other payload
+    changes remain ordinary three-way conflicts instead of being overwritten.
+    """
+    def payload(source):
+        tree = ast.parse(source)
+        function = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef)
+                        and node.name == '_send_with_reaction')
+        matches = [node.value for node in ast.walk(function) if isinstance(node, ast.Assign)
+                   and any(isinstance(target, ast.Name) and target.id == 'payload' for target in node.targets)
+                   and isinstance(node.value, ast.Dict)]
+        if len(matches) != 1:
+            raise ValueError('Ambiguous notice payload')
+        node = matches[0]
+        if any(not isinstance(key, ast.Constant) or not isinstance(key.value, str) for key in node.keys):
+            raise ValueError('Dynamic notice payload')
+        fields = {key.value: value for key, value in zip(node.keys, node.values)}
+        if len(fields) != len(node.keys):
+            raise ValueError('Duplicate notice payload field')
+        return node, fields
+
+    try:
+        old, new, local = [payload(source) for source in (base_source, incoming_source, local_source)]
+        required = {'chat_id', 'text', 'receiver_user_id'}
+        if set(old[1]) != required or set(new[1]) != required | {'parse_mode'}:
+            return base_source, incoming_source
+        if set(local[1]) not in (required | {'reply_parameters'}, required | {'parse_mode', 'reply_parameters'}):
+            return base_source, incoming_source
+        for key in required:
+            if not ast.dump(old[1][key]) == ast.dump(new[1][key]) == ast.dump(local[1][key]):
+                return base_source, incoming_source
+        reply = ast.parse('{"message_id": message.message_id}', mode='eval').body
+        parse_mode = ast.parse('kwargs.get("parse_mode", "HTML")', mode='eval').body
+        if ast.dump(local[1]['reply_parameters']) != ast.dump(reply):
+            return base_source, incoming_source
+        if ast.dump(new[1]['parse_mode']) != ast.dump(parse_mode):
+            return base_source, incoming_source
+        if 'parse_mode' in local[1] and ast.dump(local[1]['parse_mode']) != ast.dump(parse_mode):
+            return base_source, incoming_source
+        index = [key.value for key in local[0].keys].index('reply_parameters')
+        key = local[0].keys[index]
+        value = local[1]['reply_parameters']
+        lines = local_source.splitlines(keepends=True)
+        field = b''.join(lines[key.lineno - 1:value.end_lineno])
+        # Require a standalone field, avoiding adjacent same-line dictionary data.
+        if lines[key.lineno - 1][:key.col_offset].strip():
+            return base_source, incoming_source
+        ending = lines[value.end_lineno - 1][value.end_col_offset:].strip()
+        if ending not in (b'', b','):
+            return base_source, incoming_source
+        field = field.rstrip().rstrip(b',') + b',\n'
+        results = []
+        for source, item in ((base_source, old), (incoming_source, new)):
+            parts = source.splitlines(keepends=True)
+            if parts[item[0].end_lineno - 1][:item[0].end_col_offset - 1].strip():
+                return base_source, incoming_source
+            parts.insert(item[0].end_lineno - 1, field)
+            results.append(b''.join(parts))
+        return tuple(results)
+    except (SyntaxError, UnicodeDecodeError, StopIteration, ValueError):
+        return base_source, incoming_source
+
+
 def merge_runtime(target, staging, manifest, patch, reference):
     """Three-way merge only in temporary directories; never choose a conflict side."""
     with tempfile.TemporaryDirectory(prefix='bot-i18n-base-') as directory:
@@ -143,6 +208,9 @@ def merge_runtime(target, staging, manifest, patch, reference):
                     content = expected
                 else:
                     compatible_base, compatible_incoming = preserve_reply_methods(original.read_bytes(), expected, local)
+                    if name == 'handlers/telegram_ui_utils.py':
+                        compatible_base, compatible_incoming = preserve_notice_reply_parameters(
+                            compatible_base, compatible_incoming, local)
                     with tempfile.TemporaryDirectory(prefix='bot-i18n-replies-') as reply_directory:
                         merge_base = Path(reply_directory) / 'base.py'
                         merge_incoming = Path(reply_directory) / 'incoming.py'

@@ -171,3 +171,39 @@ def test_existing_i18n_runtime_receives_error_upgrade_with_local_replies(tmp_pat
     assert b'.reply(' in changes['handlers/universal.py']
     installer.install(tmp_path, changes)
     assert installer.prepare(tmp_path) == {}
+
+
+@pytest.mark.parametrize('migrated', [False, True])
+def test_notice_payload_preserves_observed_local_reply_and_adds_html(baseline, migrated):
+    if migrated:
+        full = json.loads((ROOT / 'scripts/i18n_vps_manifest.json').read_text())
+        for name in full['files']:
+            path = baseline / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / name, path)
+        subprocess.run(['git', 'apply', '--reverse', str(ROOT / 'scripts/download_errors_vps.patch')],
+                       cwd=baseline, check=True, capture_output=True)
+    path = baseline / 'handlers/telegram_ui_utils.py'
+    source = path.read_text().replace(
+        '                    "receiver_user_id": user_id,\n',
+        '                    "receiver_user_id": user_id,\n'
+        '                    "reply_parameters": {\n'
+        '                        "message_id": message.message_id\n'
+        '                    }\n', 1)
+    path.write_text(source)
+    changes = installer.prepare(baseline)
+    result = changes['handlers/telegram_ui_utils.py'].decode()
+    assert '"parse_mode": kwargs.get("parse_mode", "HTML")' in result
+    assert '"reply_parameters": {' in result
+    assert '"message_id": message.message_id' in result
+    compile(result, str(path), 'exec')
+    installer.install(baseline, changes)
+    assert installer.prepare(baseline) == {}
+
+
+def test_notice_adapter_refuses_competing_local_payload():
+    old = b'async def _send_with_reaction():\n    payload = {\n        "chat_id": message.chat.id,\n        "text": text,\n        "receiver_user_id": user_id,\n    }\n'
+    incoming = old.replace(b'"receiver_user_id": user_id,', b'"receiver_user_id": user_id,\n        "parse_mode": kwargs.get("parse_mode", "HTML"),')
+    for reply in (b'{"message_id": other.message_id}', b'{"message_id": message.message_id, "allow_sending_without_reply": True}'):
+        local = old.replace(b'"receiver_user_id": user_id,', b'"receiver_user_id": user_id,\n        "reply_parameters": ' + reply + b',')
+        assert installer.preserve_notice_reply_parameters(old, incoming, local) == (old, incoming)

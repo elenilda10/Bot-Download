@@ -28,7 +28,8 @@ Esta alteração depende da migração PT/EN/ES. O instalador completo
 `scripts/install_i18n_vps.py --target /root/Bot-Download --apply --diagnose` inclui
 ambas as mudanças. Seleciona a atualização incremental para uma versão que já
 tenha `i18n/__init__.py`; prepara e valida a mesclagem antes de alterar o destino e cria
-backups. Também preserva as escolhas locais compatíveis de `answer` para `reply`.
+backups. Também preserva as escolhas locais compatíveis de `answer` para `reply` e o
+`reply_parameters` observado no payload de aviso do grupo, junto com `parse_mode`.
 Não execute um instalador antigo de status ou um patch parcial por cima disso.
 
 A verificação automatizada simula falhas e transporte, sem acessar contas nem
