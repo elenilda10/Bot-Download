@@ -90,3 +90,9 @@ fallback do bot. O arquivo responde ao link original quando disponível, nunca �
 URL de autorização. O cache da pipeline é explicitamente desabilitado para
 continuar verificando a licença individual e não compartilhar file_ids.
 O instalador escolhe a atualização incremental quando o handler já existe.
+
+O login, o download e o envio não exibem botão Cancelar. O comando
+`/audible_logout` continua disponível para desconectar a conta. Quando o livro
+não está disponível na biblioteca, o aviso orienta adicioná-lo à biblioteca da
+conta conectada e reenviar o link, sem oferecer uma nova conexão. O instalador
+atualiza também as traduções e preserva sessões das versões anteriores.

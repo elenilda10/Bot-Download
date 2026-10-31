@@ -114,3 +114,26 @@ def test_upgrade_from_installed_audible_reuses_shared_flow_without_touching_sess
     assert (private / "AccountsSettings.json").read_text() == "keep"
     again = subprocess.run(cmd, capture_output=True, text=True, check=False)
     assert again.returncode == 0 and "Already installed" in again.stdout
+
+
+def test_messages_upgrade_from_previous_shared_flow_keeps_session(tmp_path):
+    manifest = json.loads((ROOT / "scripts/audible_messages_vps_manifest.json").read_text())
+    for name in manifest["files"]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    subprocess.run(
+        ["git", "apply", "--reverse", str(ROOT / "scripts/audible_messages_vps.patch")],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
+    shutil.copy2(ROOT / "i18n/__init__.py", tmp_path / "i18n/__init__.py")
+    private = tmp_path / "private-session"
+    private.write_text("keep")
+    command = [sys.executable, str(ROOT / "scripts/install_audible_vps.py"),
+               "--target", str(tmp_path), "--apply", "--diagnose"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "_cancel_keyboard" not in (tmp_path / "handlers/audible.py").read_text()
+    assert private.read_text() == "keep"
+    again = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert again.returncode == 0 and "Already installed" in again.stdout

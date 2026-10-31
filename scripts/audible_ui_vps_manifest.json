@@ -1,14 +1,30 @@
 {
   "base_commit": "c26dccb1ffef361703a37b97d349840f56209055",
-  "patch_sha256": "a4c5705ff9ad41dfa5be0ce3029c8371c6a3dd66a335eee1b1629f9084c2519b",
   "files": {
     "handlers/audible.py": {
       "base_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686",
-      "result_sha256": "c1a750fa4f7f48272f78a0c6ceed191bd219ce11131538abe8e113545d8b2d09"
+      "result_sha256": "d46eea2b851e7303ff9abf24336d434e3694aed8fd7f2c7a4dd319a433d86edd"
     },
     "services/media/audio_flow.py": {
       "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
       "result_sha256": "26ae484f703e3d69903ca791a74c9cca60e537779a0f835ce08a875249077af9"
+    },
+    "i18n/locales/pt.json": {
+      "base_sha256": "a351b23d7d0c0d3a35a000cba98ee5f07f82b6b7e56efda33731baee38d9591f",
+      "result_sha256": "d2687cf0dbd7ed0bac4df395e08f0c4f1f673e08761081bc6485e74d9ab9589e"
+    },
+    "i18n/locales/en.json": {
+      "base_sha256": "c56c332eac2ac664a4d21b73fcffef489d858a8c1b4cc04dc6a80b9ec9133dc3",
+      "result_sha256": "fbfb4e756d523aeeb8fa98aa392131a93583aacb35356851532b90aadaf61c08"
+    },
+    "i18n/locales/es.json": {
+      "base_sha256": "b8d6fa5509dfa8eda3a0414ee8204061711283e9ad674fa88619d365fcb6a794",
+      "result_sha256": "c0a1a86f60d2a6539b0868bc211e543214098730ebb86f013af6a0474f51f64c"
+    },
+    "i18n/locales/de.json": {
+      "base_sha256": "fd4ec810a878933fa9702a814e8bf7efb90fa5f11d4f8d3ebb97000688e355ad",
+      "result_sha256": "7d2530824552ecf24a0611177e8a99dcffd0be0f23b8cd2007fbb5bd8105a2f4"
     }
-  }
+  },
+  "patch_sha256": "b8da5625e630b72b900d672369ad04f0ce599fa1df73fd2df5fb11cb162f41bf"
 }

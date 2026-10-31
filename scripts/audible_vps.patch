@@ -15,10 +15,10 @@ index 9b4d4ed..5fcde6b 100644
      tiktok.router,
 diff --git a/handlers/audible.py b/handlers/audible.py
 new file mode 100644
-index 0000000..f04afc6
+index 0000000..e90d779
 --- /dev/null
 +++ b/handlers/audible.py
-@@ -0,0 +1,475 @@
+@@ -0,0 +1,466 @@
 +"""Per-user Audible authorization and book delivery, exclusively in private chats."""
 +
 +import asyncio
@@ -151,12 +151,19 @@ index 0000000..f04afc6
 +    if flow and flow.status:
 +        if code == "email":
 +            text += "\n\n" + t("audible.email")
-+            markup = _cancel_keyboard()
++            markup = None
 +        elif code == "response":
 +            text += "\n\n" + t("audible.browser")
-+            markup = flow.login_markup or _cancel_keyboard()
++            markup = flow.login_markup
++        elif code == "library":
++            # A missing title does not require reconnecting a valid account.
++            markup = None
 +        else:
-+            markup = _keyboard(flow.market, flow.asin)
++            owner = (flow.source or message).from_user.id
++            markup = _keyboard(
++                flow.market, flow.asin,
++                connected=service.connected(owner, flow.market),
++            )
 +        await safe_edit_text(flow.status, text, reply_markup=markup, parse_mode="HTML")
 +    else:
 +        await message.answer(text)
@@ -252,20 +259,9 @@ index 0000000..f04afc6
 +        source=source,
 +    )
 +    await safe_edit_text(
-+        call.message, t("audible.email"), reply_markup=_cancel_keyboard()
++        call.message, t("audible.email"), reply_markup=None
 +    )
 +
-+
-+def _cancel_keyboard():
-+    return InlineKeyboardMarkup(
-+        inline_keyboard=[
-+            [
-+                InlineKeyboardButton(
-+                    text=t("audible.cancel"), callback_data="audible:cancel"
-+                )
-+            ]
-+        ]
-+    )
 +
 +
 +async def _delete_input(message):
@@ -320,11 +316,6 @@ index 0000000..f04afc6
 +            keyboard = InlineKeyboardMarkup(
 +                inline_keyboard=[
 +                    [InlineKeyboardButton(text=t("audible.amazon"), url=url)],
-+                    [
-+                        InlineKeyboardButton(
-+                            text=t("audible.cancel"), callback_data="audible:cancel"
-+                        )
-+                    ],
 +                ]
 +            )
 +            flow.login_markup = keyboard
@@ -408,9 +399,9 @@ index 0000000..f04afc6
 +        settings = await load_user_settings(db, message)
 +        text = bm.downloading_audio_status(platform="Audible")
 +        if status:
-+            await safe_edit_text(status, text, reply_markup=_cancel_keyboard())
++            await safe_edit_text(status, text, reply_markup=None)
 +        else:
-+            status = await message.reply(text, reply_markup=_cancel_keyboard())
++            status = await message.reply(text, reply_markup=None)
 +        async with AsyncExitStack() as stack:
 +            audio = {}
 +
@@ -436,7 +427,7 @@ index 0000000..f04afc6
 +                await safe_edit_text(
 +                    status,
 +                    bm.uploading_status(platform="Audible"),
-+                    reply_markup=_cancel_keyboard(),
++                    reply_markup=None,
 +                )
 +                await send_chat_action_if_needed(bot, owner, "upload_audio", None)
 +                bot_url = await get_bot_url(bot)
@@ -511,7 +502,7 @@ index 8b66f0f..0f66689 100644
          from handlers import tiktok
          await tiktok.process_tiktok(message, direct_url=url)
 diff --git a/i18n/locales/de.json b/i18n/locales/de.json
-index 909ebc9..b1330bb 100644
+index 909ebc9..746fc7b 100644
 --- a/i18n/locales/de.json
 +++ b/i18n/locales/de.json
 @@ -302,7 +302,7 @@
@@ -535,7 +526,7 @@ index 909ebc9..b1330bb 100644
 +  "audible.cancel": "✖️ Abbrechen",
 +  "audible.cancelled": "Audible-Vorgang abgebrochen.",
 +  "audible.disconnected": "Audible-Konto getrennt. Sitzung und lokale Dateien wurden gelöscht. Du kannst das Gerät auch in deinen Amazon-Einstellungen widerrufen.",
-+  "audible.connected": "✅ Dein Audible-Konto ist verbunden. Sende einen Link zu einem verfügbaren Buch deiner Bibliothek. Mit /audible_logout löschst du die Sitzung.",
++  "audible.connected": "✅ Dein Audible-Konto ist verbunden.\n\nSende den Link zum gewünschten Hörbuch. Das Buch muss in der Bibliothek dieses Kontos gespeichert sein.\n\nZum Trennen verwende /audible_logout.",
 +  "audible.email": "Sende nur die E-Mail-Adresse deines Amazon-/Audible-Kontos. Sende kein Passwort und keinen Bestätigungscode. Die Adresse wird für die Amazon-Anmeldung benötigt.",
 +  "audible.browser": "1. Tippe auf <b>Bei Amazon anmelden</b> und melde dich im Browser an.\n2. Kopiere danach die vollständige URL aus der Adressleiste, auch wenn die letzte Seite einen Fehler anzeigt.\n3. Füge diese URL nur in diesen privaten Chat ein. Der Bot versucht, die Nachricht nach Empfang zu löschen.\n\nDie Anmeldung läuft nach 10 Minuten ab. Sende dem Bot niemals dein Passwort oder deinen Bestätigungscode.",
 +  "audible.amazon": "Bei Amazon anmelden",
@@ -548,7 +539,7 @@ index 909ebc9..b1330bb 100644
 +  "audible.error.busy": "⏳ Für dein Konto läuft bereits ein Vorgang oder alle Audible-Plätze sind belegt. Versuche es in einigen Minuten erneut.",
 +  "audible.error.unavailable": "Der Audible-Dienst ist auf diesem Server nicht verfügbar. Kontaktiere den Support.",
 +  "audible.error.session": "Deine Audible-Sitzung ist abgelaufen oder für dieses Land nicht verbunden. Verwende /audible oder sende den Link erneut, um dein Konto zu verbinden.",
-+  "audible.error.library": "Das Buch wurde in der verbundenen Bibliothek nicht zum Download gefunden oder Audible hat den Zugriff verweigert. Füge es mit demselben Konto hinzu oder kaufe es und versuche es erneut.",
++  "audible.error.library": "🎧 Zum Herunterladen muss dieses Hörbuch in der Bibliothek deines verbundenen Audible-Kontos gespeichert sein.\n\nÖffne Audible, füge das Buch deiner Bibliothek hinzu und sende den Link erneut. Falls es bereits dort ist, prüfe, ob du dasselbe Konto und denselben Marktplatz verwendest.",
 +  "audible.error.timeout": "Audible hat zu lange nicht geantwortet. Der Vorgang wurde beendet; versuche es später erneut.",
 +  "audible.error.too_large": "Das Hörbuch überschreitet das Größenlimit des Bots. Der Download wurde beendet.",
 +  "audible.error.email": "Sende eine gültige E-Mail-Adresse. Sende nicht dein Passwort.",
@@ -558,7 +549,7 @@ index 909ebc9..b1330bb 100644
 +  "audible.error.download": "Download oder Versand des Hörbuchs fehlgeschlagen. Versuche es später erneut. Dein Konto wird nicht mit anderen Nutzern geteilt."
  }
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
-index 4ca0379..05bdf0d 100644
+index 4ca0379..43ecdde 100644
 --- a/i18n/locales/en.json
 +++ b/i18n/locales/en.json
 @@ -302,7 +302,7 @@
@@ -582,7 +573,7 @@ index 4ca0379..05bdf0d 100644
 +  "audible.cancel": "✖️ Cancel",
 +  "audible.cancelled": "Audible operation cancelled.",
 +  "audible.disconnected": "Audible disconnected. Your session and local files were deleted. You can also revoke the device in your Amazon settings.",
-+  "audible.connected": "✅ Your Audible account is connected. Send a link to a book available in your library. Use /audible_logout to delete the session.",
++  "audible.connected": "✅ Your Audible account is connected.\n\nSend the audiobook link to download it. The book must be saved in this account’s library.\n\nTo disconnect, use /audible_logout.",
 +  "audible.email": "Send only your Amazon/Audible account email address. Do not send a password or verification code. The email is used to start Amazon sign-in.",
 +  "audible.browser": "1. Tap <b>Sign in to Amazon</b> and sign in using your browser.\n2. Copy the full address-bar URL when finished, even if the final page shows an error.\n3. Paste that URL only in this private chat. The bot will try to delete the message after receiving it.\n\nSign-in expires in 10 minutes. Never send your password or verification code to the bot.",
 +  "audible.amazon": "Sign in to Amazon",
@@ -595,7 +586,7 @@ index 4ca0379..05bdf0d 100644
 +  "audible.error.busy": "⏳ An operation for your account is already running or the Audible slots are busy. Try again in a few minutes.",
 +  "audible.error.unavailable": "The Audible service is unavailable on this server. Contact support.",
 +  "audible.error.session": "Your Audible session expired or is not connected for this country. Use /audible or send the link again to connect your account.",
-+  "audible.error.library": "The book was not found for download in the connected library, or Audible did not authorize access. Add or purchase it using the same account and try again.",
++  "audible.error.library": "🎧 To download this audiobook, it must be saved in the library of your connected Audible account.\n\nOpen Audible, add the book to your library and send the link again. If it is already there, check that you are using the same account and marketplace.",
 +  "audible.error.timeout": "Audible took too long to respond. The operation was stopped; try again later.",
 +  "audible.error.too_large": "The audiobook exceeds the bot size limit. The download was stopped.",
 +  "audible.error.email": "Send a valid email address. Do not send your password.",
@@ -605,7 +596,7 @@ index 4ca0379..05bdf0d 100644
 +  "audible.error.download": "Could not finish downloading or sending the audiobook. Try again later. Your account will not be shared with other users."
  }
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
-index 95e373c..4e59e3c 100644
+index 95e373c..ae7bd6f 100644
 --- a/i18n/locales/es.json
 +++ b/i18n/locales/es.json
 @@ -302,7 +302,7 @@
@@ -629,7 +620,7 @@ index 95e373c..4e59e3c 100644
 +  "audible.cancel": "✖️ Cancelar",
 +  "audible.cancelled": "Operación de Audible cancelada.",
 +  "audible.disconnected": "Cuenta Audible desconectada. Se borraron la sesión y los archivos locales. También puedes revocar el dispositivo en los ajustes de Amazon.",
-+  "audible.connected": "✅ Tu cuenta Audible está conectada. Envía el enlace de un libro disponible en tu biblioteca. Usa /audible_logout para borrar la sesión.",
++  "audible.connected": "✅ Tu cuenta Audible está conectada.\n\nEnvía el enlace del audiolibro que quieres descargar. El libro debe estar guardado en la biblioteca de esta cuenta.\n\nPara desconectarte, usa /audible_logout.",
 +  "audible.email": "Envía solo el correo de tu cuenta Amazon/Audible. No envíes contraseña ni código de verificación. El correo se usará para iniciar la sesión en Amazon.",
 +  "audible.browser": "1. Toca <b>Iniciar sesión en Amazon</b> y accede desde el navegador.\n2. Copia la URL completa de la barra de direcciones al terminar, aunque la página final muestre un error.\n3. Pega esa URL solo en esta conversación privada. El bot intentará borrar el mensaje al recibirlo.\n\nEl inicio de sesión caduca en 10 minutos. Nunca envíes tu contraseña ni código de verificación al bot.",
 +  "audible.amazon": "Iniciar sesión en Amazon",
@@ -642,7 +633,7 @@ index 95e373c..4e59e3c 100644
 +  "audible.error.busy": "⏳ Ya hay una operación de tu cuenta en curso o los espacios de Audible están ocupados. Inténtalo en unos minutos.",
 +  "audible.error.unavailable": "El servicio Audible no está disponible en este servidor. Contacta con soporte.",
 +  "audible.error.session": "Tu sesión Audible caducó o no está conectada para este país. Usa /audible o vuelve a enviar el enlace para conectar tu cuenta.",
-+  "audible.error.library": "No se encontró el libro para descargar en la biblioteca conectada, o Audible no autorizó el acceso. Añádelo o cómpralo con la misma cuenta e inténtalo de nuevo.",
++  "audible.error.library": "🎧 Para descargar este audiolibro, debe estar guardado en la biblioteca de tu cuenta Audible conectada.\n\nAbre Audible, añade el libro a tu biblioteca y vuelve a enviar el enlace. Si ya está allí, comprueba que usas la misma cuenta y el mismo país.",
 +  "audible.error.timeout": "Audible tardó demasiado en responder. Se detuvo la operación; inténtalo más tarde.",
 +  "audible.error.too_large": "El audiolibro supera el límite de tamaño del bot. Se detuvo la descarga.",
 +  "audible.error.email": "Envía un correo electrónico válido. No envíes tu contraseña.",
@@ -652,7 +643,7 @@ index 95e373c..4e59e3c 100644
 +  "audible.error.download": "No se pudo terminar la descarga o el envío del audiolibro. Inténtalo más tarde. Tu cuenta no se compartirá con otros usuarios."
  }
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
-index a39ab1c..8794027 100644
+index a39ab1c..c4a06f4 100644
 --- a/i18n/locales/pt.json
 +++ b/i18n/locales/pt.json
 @@ -302,7 +302,7 @@
@@ -676,7 +667,7 @@ index a39ab1c..8794027 100644
 +  "audible.cancel": "✖️ Cancelar",
 +  "audible.cancelled": "Operação do Audible cancelada.",
 +  "audible.disconnected": "Conta Audible desconectada. A sessão e os arquivos locais foram apagados. Você também pode revogar o dispositivo nas configurações da Amazon.",
-+  "audible.connected": "✅ Sua conta Audible está conectada. Envie o link de um livro disponível na sua biblioteca. Para apagar a sessão, use /audible_logout.",
++  "audible.connected": "✅ Sua conta Audible está conectada.\n\nEnvie o link do audiolivro que deseja baixar. O livro precisa estar salvo na biblioteca dessa conta.\n\nPara desconectar, use /audible_logout.",
 +  "audible.email": "Envie somente o e-mail da sua conta Amazon/Audible. Não envie senha nem código de verificação. O e-mail será usado para iniciar o login na Amazon.",
 +  "audible.browser": "1. Toque em <b>Entrar na Amazon</b> e faça o login no navegador.\n2. Ao terminar, copie a URL completa da barra de endereços, mesmo se a página final exibir um erro.\n3. Cole essa URL somente nesta conversa privada. O bot tentará apagar essa mensagem após recebê-la.\n\nO login expira em 10 minutos. Nunca envie sua senha ou código de verificação ao bot.",
 +  "audible.amazon": "Entrar na Amazon",
@@ -689,7 +680,7 @@ index a39ab1c..8794027 100644
 +  "audible.error.busy": "⏳ Já existe uma operação da sua conta em andamento ou os slots do Audible estão ocupados. Tente novamente em alguns minutos.",
 +  "audible.error.unavailable": "O serviço Audible não está disponível neste servidor. Informe o suporte.",
 +  "audible.error.session": "Sua sessão Audible expirou ou não está conectada para este país. Use /audible ou envie o link novamente para conectar sua conta.",
-+  "audible.error.library": "O livro não foi encontrado para download na biblioteca conectada, ou a Audible não autorizou o acesso. Adicione ou adquira o título na mesma conta e tente novamente.",
++  "audible.error.library": "🎧 Para baixar este audiolivro, ele precisa estar salvo na biblioteca da sua conta Audible conectada.\n\nAbra a Audible, adicione o livro à sua biblioteca e envie o link novamente. Se ele já estiver lá, confira se está usando a mesma conta e o mesmo país.",
 +  "audible.error.timeout": "A Audible demorou demais para responder. A operação foi encerrada; tente novamente mais tarde.",
 +  "audible.error.too_large": "O audiolivro excede o limite de tamanho do bot. O download foi interrompido.",
 +  "audible.error.email": "Envie um endereço de e-mail válido. Não envie sua senha.",

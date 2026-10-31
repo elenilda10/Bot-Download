@@ -17,7 +17,10 @@ def main():
         changes = prepare(
             target,
             reference=Path(__file__).resolve().parent,
-            bundle="audible_ui_vps"
+            bundle="audible_messages_vps"
+            if (target / "handlers/audible.py").is_file()
+            and "run_audio_flow(" in (target / "handlers/audible.py").read_text()
+            else "audible_ui_vps"
             if (target / "handlers/audible.py").is_file()
             else "audible_vps",
         )

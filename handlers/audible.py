@@ -130,12 +130,19 @@ async def _failure(message, code, *, flow=None):
     if flow and flow.status:
         if code == "email":
             text += "\n\n" + t("audible.email")
-            markup = _cancel_keyboard()
+            markup = None
         elif code == "response":
             text += "\n\n" + t("audible.browser")
-            markup = flow.login_markup or _cancel_keyboard()
+            markup = flow.login_markup
+        elif code == "library":
+            # A missing title does not require reconnecting a valid account.
+            markup = None
         else:
-            markup = _keyboard(flow.market, flow.asin)
+            owner = (flow.source or message).from_user.id
+            markup = _keyboard(
+                flow.market, flow.asin,
+                connected=service.connected(owner, flow.market),
+            )
         await safe_edit_text(flow.status, text, reply_markup=markup, parse_mode="HTML")
     else:
         await message.answer(text)
@@ -231,20 +238,9 @@ async def account_action(call):
         source=source,
     )
     await safe_edit_text(
-        call.message, t("audible.email"), reply_markup=_cancel_keyboard()
+        call.message, t("audible.email"), reply_markup=None
     )
 
-
-def _cancel_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=t("audible.cancel"), callback_data="audible:cancel"
-                )
-            ]
-        ]
-    )
 
 
 async def _delete_input(message):
@@ -299,11 +295,6 @@ async def authorization_input(message):
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text=t("audible.amazon"), url=url)],
-                    [
-                        InlineKeyboardButton(
-                            text=t("audible.cancel"), callback_data="audible:cancel"
-                        )
-                    ],
                 ]
             )
             flow.login_markup = keyboard
@@ -387,9 +378,9 @@ async def process_audible(
         settings = await load_user_settings(db, message)
         text = bm.downloading_audio_status(platform="Audible")
         if status:
-            await safe_edit_text(status, text, reply_markup=_cancel_keyboard())
+            await safe_edit_text(status, text, reply_markup=None)
         else:
-            status = await message.reply(text, reply_markup=_cancel_keyboard())
+            status = await message.reply(text, reply_markup=None)
         async with AsyncExitStack() as stack:
             audio = {}
 
@@ -415,7 +406,7 @@ async def process_audible(
                 await safe_edit_text(
                     status,
                     bm.uploading_status(platform="Audible"),
-                    reply_markup=_cancel_keyboard(),
+                    reply_markup=None,
                 )
                 await send_chat_action_if_needed(bot, owner, "upload_audio", None)
                 bot_url = await get_bot_url(bot)

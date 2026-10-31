@@ -112,6 +112,9 @@ async def test_private_callback_uses_clicking_owner_not_bot_message_author(runti
     email.delete.assert_awaited_once()
     backend.begin_login.assert_awaited_once_with(1, "br", "owner@example.test")
     assert module._flows[1].step == "response"
+    keyboard = module.safe_edit_text.call_args.kwargs["reply_markup"]
+    assert len(keyboard.inline_keyboard) == 1
+    assert keyboard.inline_keyboard[0][0].url.startswith("https://www.amazon.")
     email.answer.assert_not_awaited()
     assert "owner@example.test" not in str(module.safe_edit_text.await_args.args[1])
 
@@ -207,6 +210,8 @@ async def test_library_failure_is_explained_without_returning_raw_vendor_diagnos
     msg = message()
     assert not await module.process_audible(msg)
     assert "library" in module.safe_edit_text.call_args.args[1]
+    assert module.safe_edit_text.call_args.kwargs["reply_markup"] is None
+    backend.disconnect.assert_not_awaited()
 
 
 @pytest.mark.asyncio
