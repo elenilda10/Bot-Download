@@ -1,7 +1,7 @@
 # Português, inglês e espanhol
 
 Esta revisão migra a interface para catálogos locais em `i18n/locales/pt.json`,
-`en.json` e `es.json`. Há 485 chaves com paridade de placeholders e HTML. Nenhuma
+`en.json` e `es.json`. Há 499 chaves com paridade de placeholders e HTML. Nenhuma
 API de tradução é chamada durante o atendimento do bot.
 
 ## Comportamento
@@ -77,7 +77,7 @@ migração de esquema.
 
 ## Validação
 
-Foram executados 244 testes selecionados, incluindo diagnóstico de falhas: mensagens/teclados anteriores, catálogos,
+Foram executados 270 testes selecionados, incluindo diagnóstico de falhas: mensagens/teclados anteriores, catálogos,
 normalização, fallback, HTML/emojis/placeholders, legendas externas intactas,
 escopos privado/grupo, permissões/erros de gravação, isolamento e cancelamento,
 progresso em background, persistência SQLite e preservação da escolha após refresh

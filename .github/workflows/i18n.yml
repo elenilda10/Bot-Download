@@ -7,10 +7,17 @@ permissions:
 jobs:
   catalogs-and-locale-routing:
     runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: '123456:TESTTOKEN'
+      ADMIN_ID: '1'
+      DATABASE_URL: 'sqlite+aiosqlite:///:memory:'
+      CUSTOM_API_URL: 'https://api.example.test'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install 'pytest>=8,<10' 'pytest-asyncio>=0.24,<2' 'aiogram>=3,<4' 'sqlalchemy[asyncio]>=2,<3' aiosqlite httpx pillow colorlog
-      - run: python -m pytest --noconftest -q tests/test_i18n.py tests/test_messages.py tests/test_keyboards.py tests/test_i18n_installer.py tests/test_download_errors.py tests/test_instagram_cookies.py tests/test_reddit_download.py tests/test_youtube_error_diagnostics.py
+      - run: python -m pip install 'pytest>=8,<10' 'pytest-asyncio>=0.24,<2' 'aiogram>=3,<4' 'sqlalchemy[asyncio]>=2,<3' aiosqlite httpx pillow colorlog alembic asyncpg python-dotenv
+      - run: python -m pytest --noconftest -q tests/test_i18n.py tests/test_messages.py tests/test_keyboards.py tests/test_i18n_installer.py tests/test_download_errors.py tests/test_instagram_cookies.py tests/test_reddit_download.py tests/test_youtube_error_diagnostics.py tests/test_media_collections.py tests/test_collection_handler.py tests/test_collections_installer.py
+      - run: python -m pip install fake-useragent aiocron shazamio gallery-dl pydub rapidfuzz yt-dlp mutagen aiofiles cachetools redis psycopg2-binary
+      - run: python -m pytest -q tests/test_collection_items.py

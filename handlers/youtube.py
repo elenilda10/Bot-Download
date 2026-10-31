@@ -2,6 +2,7 @@ from utils.download_errors import best_failure, close_failure_context, failure_c
 from i18n import normalize_locale as _normalize_locale
 from i18n import t as _t
 from services.settings import resolve_video_quality_format
+import secrets
 import asyncio
 import re
 import time
@@ -321,14 +322,20 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
     F.text.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
     | F.caption.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
 )
-async def download_video(message: types.Message, direct_url: Optional[str] = None):
+async def download_video(message: types.Message, direct_url: Optional[str] = None, *, collection_item: bool = False):
     url = direct_url or _extract_youtube_url(
         get_message_text(message), YOUTUBE_VIDEO_URL_REGEX
     )
     if not url:
         return
+    if not collection_item:
+        from services.platforms.media_collections import youtube_collection_url
+        collection_url = youtube_collection_url(url)
+        if collection_url:
+            from handlers.collections import process_collection
+            return await process_collection(message, collection_url, platform='YouTube', audio=False)
     business_id = message.business_connection_id
-    if await should_skip_duplicate_business_message(
+    if not collection_item and await should_skip_duplicate_business_message(
         message, bot, service_name="YouTube video", logger=logging
     ):
         await update_info(message)
@@ -350,7 +357,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
     video_id: Optional[str] = None
 
     try:
-        request_lease = await claim_message_request(message, service="youtube", url=url)
+        if collection_item:
+            from services.media.collection_flow import CollectionItemLease
+            request_lease = CollectionItemLease()
+        else:
+            request_lease = await claim_message_request(message, service="youtube", url=url)
         if request_lease is None:
             return
         await react_to_message(message, "👾", business_id=business_id)
@@ -474,7 +485,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
 
         async def _after_send():
             await maybe_delete_user_message(
-                message, user_settings.get("delete_message")
+                message, "off" if collection_item else user_settings.get("delete_message")
             )
 
         async def _inspect_metrics(metrics):
@@ -484,6 +495,10 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             return True
 
         _handle_backpressure = make_backpressure_handler(message, business_id)
+        if collection_item:
+            async def _collection_backpressure(exc):
+                raise exc
+            _handle_backpressure = _collection_backpressure
 
         cache_key = f"{yt['webpage_url']}#document" if as_document else yt["webpage_url"]
         cache_file_type = "document" if as_document else "video"
@@ -524,6 +539,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
                 summarize_url_for_log(yt["webpage_url"]),
                 sent_message.video.file_id,
             )
+        return bool(sent_message)
     except DownloadTooLargeError:
         await handle_video_too_large(message, business_id=business_id)
     except asyncio.TimeoutError:
@@ -533,6 +549,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
+        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError)):
+            raise
         logging.error("Video download error: %s", e)
         await handle_download_error(message, error=e, business_id=business_id)
     finally:
@@ -553,14 +571,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
     | F.caption.regexp(YOUTUBE_MUSIC_URL_REGEX, mode="search")
 )
 @with_message_logging("youtube", "music_message")
-async def download_music(message: types.Message, direct_url: Optional[str] = None):
+async def download_music(message: types.Message, direct_url: Optional[str] = None, *, collection_item: bool = False):
     url = direct_url or _extract_youtube_url(
         get_message_text(message), YOUTUBE_MUSIC_URL_REGEX
     )
     if not url:
         return
+    if not collection_item:
+        from services.platforms.media_collections import youtube_collection_url
+        collection_url = youtube_collection_url(url)
+        if collection_url:
+            from handlers.collections import process_collection
+            return await process_collection(message, collection_url, platform='YouTube', audio=True)
     business_id = message.business_connection_id
-    if await should_skip_duplicate_business_message(
+    if not collection_item and await should_skip_duplicate_business_message(
         message, bot, service_name="YouTube audio", logger=logging
     ):
         await update_info(message)
@@ -573,9 +597,14 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
     )
     status_message: Optional[types.Message] = None
     request_lease = None
+    collection_prefix = None
     show_service_status = business_id is None
     try:
-        request_lease = await claim_message_request(message, service="youtube", url=url)
+        if collection_item:
+            from services.media.collection_flow import CollectionItemLease
+            request_lease = CollectionItemLease()
+        else:
+            request_lease = await claim_message_request(message, service="youtube", url=url)
         if request_lease is None:
             return
         await react_to_message(message, "👾", business_id=business_id)
@@ -598,6 +627,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
             yt["webpage_url"], variant=AUDIO_CACHE_VARIANT
         )
         base_name = f"{yt['id']}_youtube_audio"
+        if collection_item:
+            base_name += "_" + secrets.token_hex(6)
+            collection_prefix = base_name
 
         async def on_retry_download(failed_attempt: int, total_attempts: int, _error):
             if failed_attempt >= 2:
@@ -677,7 +709,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
 
         async def _after_send(_result):
             await maybe_delete_user_message(
-                message, user_settings.get("delete_message")
+                message, "off" if collection_item else user_settings.get("delete_message")
             )
             request_lease.mark_success()
 
@@ -700,9 +732,10 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
             cleanup_path=remove_file,
             on_after_send=_after_send,
         )
-        if not result or result.from_cache:
-            return
+        return bool(result)
     except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError) as e:
+        if collection_item:
+            raise
         await handle_download_backpressure_error(
             e,
             message=message,
@@ -719,6 +752,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
         logging.error("Audio download error: %s", e)
         await handle_download_error(message, error=e, business_id=business_id)
     finally:
+        if collection_prefix:
+            from services.media.collection_flow import cleanup_collection_audio
+            await cleanup_collection_audio(OUTPUT_DIR, collection_prefix, remove_file)
         if request_lease is not None:
             request_lease.finish()
         await safe_delete_message(status_message)

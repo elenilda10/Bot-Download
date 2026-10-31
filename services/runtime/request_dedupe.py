@@ -48,6 +48,9 @@ def normalize_request_url(service: str, url: str) -> str:
         return _normalize_generic_url(strip_tiktok_tracking(raw_url))
     if normalized_service == "twitter":
         return _normalize_twitter_url(raw_url)
+    if normalized_service == 'youtube_collection':
+        from services.platforms.media_collections import youtube_collection_url
+        return youtube_collection_url(raw_url) or _normalize_generic_url(raw_url)
     if normalized_service.startswith("youtube"):
         return _normalize_youtube_url(raw_url)
     return _normalize_generic_url(raw_url)

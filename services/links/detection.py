@@ -45,7 +45,7 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "spotify",
         re.compile(
-            r"(https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?track/[A-Za-z0-9]+(?:\?\S*)?)",
+            r"(https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?(?:track|playlist|album)/[A-Za-z0-9]+(?:\?\S*)?)",
             re.IGNORECASE,
         ),
     ),
