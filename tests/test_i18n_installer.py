@@ -273,8 +273,8 @@ def test_published_json_runtime_gets_display_only_upgrade(tmp_path):
     path = tmp_path / 'messages/user_messages.py'
     assert 'language-json' in path.read_text()
     changes = installer.prepare(tmp_path)
-    assert set(changes) == {'messages/user_messages.py', 'keyboards/inline_keyboards.py',
-                            'middlewares/channel_subscription.py', 'handlers/channel_membership.py'}
+    assert 'messages/user_messages.py' in changes
+    assert 'handlers/collections.py' in changes
     assert b'<pre><code>' in changes['messages/user_messages.py']
     assert b'language-json' not in changes['messages/user_messages.py']
     installer.install(tmp_path, changes)

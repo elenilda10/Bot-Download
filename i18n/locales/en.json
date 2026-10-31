@@ -483,5 +483,19 @@
   "download_error.reason.too_large": "The file exceeds the size limit allowed by the bot or Telegram.",
   "download_error.reason.delivery": "Telegram refused an operation needed to deliver the response.",
   "download_error.reason.internal": "An internal error occurred while processing the request.",
-  "download_error.reason.verification": "Could not verify that the media belongs to the requested post."
+  "download_error.reason.verification": "Could not verify that the media belongs to the requested post.",
+  "collection.fetching": "🎶 {platform}: reading playlist or album…",
+  "collection.cancel": "✖️ Cancel collection",
+  "collection.expired": "This collection has already finished.",
+  "collection.owner_only": "Only the person who requested the collection can cancel it.",
+  "collection.cancelling": "Cancellation requested. The current item will finish first.",
+  "collection.busy": "⏳ You already have a collection running, or the concurrent collection limit has been reached. Try again later.",
+  "collection.progress": "<b>{title}</b>\nItem {index}/{count}: {item}",
+  "collection.limit": "⚠️ Request limit: first {limit} items.",
+  "collection.partial": "⚠️ The source exposed only a partial public list; some tracks may be missing.",
+  "collection.empty": "No available items were found in this playlist or album.",
+  "collection.finished": "✅ <b>{title}</b>\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+  "collection.cancelled": "⏹️ <b>{title}</b>: processing stopped.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+  "collection.stopped": "⏸️ <b>{title}</b>: stopped due to a service limit or Telegram error.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+  "collection.error": "❌ Could not load or complete this collection."
 }

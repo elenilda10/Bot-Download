@@ -483,5 +483,19 @@
   "download_error.reason.too_large": "El archivo supera el límite de tamaño permitido por el bot o Telegram.",
   "download_error.reason.delivery": "Telegram rechazó una operación necesaria para enviar la respuesta.",
   "download_error.reason.internal": "Se produjo un error interno al procesar la solicitud.",
-  "download_error.reason.verification": "No se pudo verificar que el contenido pertenezca a la publicación enviada."
+  "download_error.reason.verification": "No se pudo verificar que el contenido pertenezca a la publicación enviada.",
+  "collection.fetching": "🎶 {platform}: leyendo lista o álbum…",
+  "collection.cancel": "✖️ Cancelar colección",
+  "collection.expired": "Esta colección ya ha terminado.",
+  "collection.owner_only": "Solo quien solicitó la colección puede cancelarla.",
+  "collection.cancelling": "Cancelación solicitada. El elemento actual terminará primero.",
+  "collection.busy": "⏳ Ya tienes una colección en curso o se alcanzó el límite de colecciones simultáneas. Inténtalo más tarde.",
+  "collection.progress": "<b>{title}</b>\nElemento {index}/{count}: {item}",
+  "collection.limit": "⚠️ Límite de la solicitud: primeros {limit} elementos.",
+  "collection.partial": "⚠️ La fuente solo mostró una lista pública parcial; pueden faltar canciones.",
+  "collection.empty": "No se encontraron elementos disponibles en esta lista o álbum.",
+  "collection.finished": "✅ <b>{title}</b>\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+  "collection.cancelled": "⏹️ <b>{title}</b>: procesamiento interrumpido.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+  "collection.stopped": "⏸️ <b>{title}</b>: envío detenido por un límite del servicio o un error de Telegram.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+  "collection.error": "❌ No se pudo cargar o completar esta colección."
 }

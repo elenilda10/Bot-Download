@@ -1,0 +1,1126 @@
+diff --git a/handlers/__init__.py b/handlers/__init__.py
+index 787c83e..9b4d4ed 100644
+--- a/handlers/__init__.py
++++ b/handlers/__init__.py
+@@ -1,8 +1,9 @@
+ from aiogram import Router
+-from . import user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, reddit, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
++from . import collections, user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, reddit, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
+ 
+ router = Router(name=__name__)
+ router.include_routers(
++    collections.router,
+     user.router,
+     tiktok.router,
+     youtube.router,
+diff --git a/handlers/collections.py b/handlers/collections.py
+new file mode 100644
+index 0000000..dd3cad1
+--- /dev/null
++++ b/handlers/collections.py
+@@ -0,0 +1,237 @@
++"""Playlist/album orchestration; single-item handlers retain cache and delivery logic."""
++
++from __future__ import annotations
++
++import asyncio
++import html
++import os
++import secrets
++import time
++from dataclasses import dataclass, field
++
++from aiogram import F, Router, types
++from aiogram.exceptions import TelegramAPIError
++from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
++
++import messages as bm
++from app_context import bot, db
++from handlers.request_dedupe import claim_message_request
++from handlers.user import update_info
++from handlers.utils import (
++    handle_download_error,
++    load_user_settings,
++    maybe_delete_user_message,
++    safe_edit_text,
++    should_skip_duplicate_business_message,
++)
++from i18n import t
++from services.logger import logger
++from services.media.collection_flow import run_collection
++from services.platforms.media_collections import (
++    collection_limit,
++    get_spotify_collection,
++    get_youtube_collection,
++)
++from utils.download_errors import reset_failures
++from utils.download_manager import DownloadQueueBusyError, DownloadRateLimitError
++
++router = Router(name="media_collections")
++
++
++@dataclass
++class Job:
++    owner: int
++    chat: int
++    business: str | None
++    token: str
++    cancelled: asyncio.Event = field(default_factory=asyncio.Event)
++    status_id: int | None = None
++
++
++_jobs: dict[str, Job] = {}
++_owners: dict[int, str] = {}
++
++
++def _active_limit():
++    try:
++        return max(1, min(10, int(os.getenv("COLLECTION_MAX_ACTIVE", "3"))))
++    except ValueError:
++        return 3
++
++
++def _keyboard(token):
++    return InlineKeyboardMarkup(
++        inline_keyboard=[
++            [
++                InlineKeyboardButton(
++                    text=t("collection.cancel"),
++                    callback_data="collection:cancel:" + token,
++                )
++            ]
++        ]
++    )
++
++
++@router.callback_query(F.data.startswith("collection:cancel:"))
++async def cancel_collection(call: types.CallbackQuery):
++    token = (call.data or "").removeprefix("collection:cancel:")
++    job = _jobs.get(token)
++    message = call.message
++    if not job or not message:
++        await call.answer(t("collection.expired"), show_alert=True)
++    elif (
++        call.from_user.id != job.owner
++        or message.chat.id != job.chat
++        or message.message_id != job.status_id
++        or getattr(message, "business_connection_id", None) != job.business
++    ):
++        await call.answer(t("collection.owner_only"), show_alert=True)
++    else:
++        job.cancelled.set()
++        await call.answer(t("collection.cancelling"), show_alert=True)
++
++
++async def process_collection(message, url, *, platform, audio=False):
++    if not message.from_user:
++        return False
++    if await should_skip_duplicate_business_message(
++        message, bot, service_name=platform, logger=logger
++    ):
++        return False
++    user_id = message.from_user.id
++    if user_id in _owners or len(_jobs) >= _active_limit():
++        await message.reply(t("collection.busy"))
++        return False
++    token = secrets.token_hex(8)
++    job = Job(
++        user_id,
++        message.chat.id,
++        getattr(message, "business_connection_id", None),
++        token,
++    )
++    _jobs[token], _owners[user_id] = job, token
++    status = None
++    lease = None
++    try:
++        lease = await claim_message_request(
++            message, service=platform.lower() + "_collection", url=url
++        )
++        if lease is None:
++            return False
++        settings = await load_user_settings(db, message)
++        status = await message.reply(
++            t("collection.fetching", platform=platform),
++            reply_markup=_keyboard(token),
++            parse_mode="HTML",
++        )
++        job.status_id = status.message_id
++        resolver = (
++            get_spotify_collection if platform == "Spotify" else get_youtube_collection
++        )
++        listing = await resolver(url, limit=collection_limit())
++        if not listing.entries:
++            await safe_edit_text(status, t("collection.empty"), reply_markup=None)
++            return False
++        title = html.escape(listing.title[:150])
++        notes = []
++        if listing.limited:
++            notes.append(t("collection.limit", limit=len(listing.entries)))
++        if listing.partial:
++            notes.append(t("collection.partial"))
++        extra = "\n" + "\n".join(notes) if notes else ""
++        started = time.monotonic()
++
++        async def progress(index, entry):
++            await safe_edit_text(
++                status,
++                bm.media_transfer_status(platform)
++                + "\n"
++                + t(
++                    "collection.progress",
++                    title=title,
++                    index=index,
++                    count=len(listing.entries),
++                    item=html.escape(entry.title[:100]),
++                )
++                + extra,
++                reply_markup=_keyboard(token),
++                parse_mode="HTML",
++            )
++
++        async def deliver(entry):
++            reset_failures()
++            if platform == "Spotify":
++                from handlers.spotify import process_spotify
++
++                return await process_spotify(
++                    message,
++                    direct_url=entry.url,
++                    collection_item=True,
++                    collection_track=entry.metadata,
++                )
++            from handlers.youtube import download_music, download_video
++
++            function = download_music if audio else download_video
++            return await function(message, direct_url=entry.url, collection_item=True)
++
++        def cancelled():
++            return job.cancelled.is_set() or time.monotonic() - started > 3600
++
++        async def on_error(index, exc):
++            logger.warning(
++                "Collection item failed: index=%s error=%s", index, type(exc).__name__
++            )
++
++        result = await run_collection(
++            listing,
++            deliver,
++            progress,
++            cancelled,
++            stop_on=(DownloadQueueBusyError, DownloadRateLimitError, TelegramAPIError),
++            on_error=on_error,
++        )
++        key = (
++            "collection.cancelled"
++            if result.cancelled
++            else "collection.stopped"
++            if result.stopped
++            else "collection.finished"
++        )
++        await safe_edit_text(
++            status,
++            t(
++                key,
++                title=title,
++                sent=result.sent,
++                failed=result.failed,
++                unavailable=result.unavailable,
++                remaining=len(listing.entries)
++                - result.sent
++                - result.failed
++                - result.unavailable,
++            )
++            + extra,
++            reply_markup=None,
++            parse_mode="HTML",
++        )
++        if result.sent:
++            # Partial/cancelled jobs can be retried rather than suppressed as completed.
++            if not result.cancelled and not result.stopped and not result.failed:
++                lease.mark_success()
++            await maybe_delete_user_message(message, settings.get("delete_message"))
++        return bool(result.sent)
++    except asyncio.CancelledError:
++        raise
++    except Exception as exc:
++        if status:
++            await safe_edit_text(status, t("collection.error"), reply_markup=None)
++        await handle_download_error(
++            message, error=exc, platform=platform, business_id=job.business
++        )
++        return False
++    finally:
++        _jobs.pop(token, None)
++        _owners.pop(user_id, None)
++        if lease:
++            lease.finish()
++        await update_info(message)
+diff --git a/handlers/spotify.py b/handlers/spotify.py
+index 187e1b9..d55c348 100644
+--- a/handlers/spotify.py
++++ b/handlers/spotify.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import secrets
+ import asyncio
+ import re
+ from typing import Optional
+@@ -9,7 +10,7 @@ from aiogram.types import FSInputFile
+ 
+ import messages as bm
+ from app_context import bot, db, send_analytics
+-from config import MAX_FILE_SIZE
++from config import MAX_FILE_SIZE, OUTPUT_DIR
+ from handlers.request_dedupe import claim_message_request
+ from handlers.user import update_info
+ from handlers.utils import (
+@@ -50,7 +51,7 @@ from utils.download_manager import (
+ 
+ logging = logging.bind(service="spotify")
+ 
+-SPOTIFY_URL_REGEX = r"https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?track/[A-Za-z0-9]+(?:\?\S*)?"
++SPOTIFY_URL_REGEX = r"https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?(?:track|playlist|album)/[A-Za-z0-9]+(?:\?\S*)?"
+ 
+ router = Router()
+ 
+@@ -71,25 +72,35 @@ def _extract_spotify_url(text: str) -> str | None:
+     | F.caption.regexp(SPOTIFY_URL_REGEX, mode="search")
+ )
+ @with_message_logging("spotify", "message")
+-async def process_spotify(message: types.Message, direct_url: Optional[str] = None):
++async def process_spotify(message: types.Message, direct_url: Optional[str] = None, *, collection_item: bool = False, collection_track: dict | None = None):
+     source_url = strip_spotify_url(direct_url) if direct_url else _extract_spotify_url(
+         get_message_text(message)
+     )
+     if not source_url:
+         return
+ 
++    if not collection_item:
++        from services.platforms.media_collections import spotify_collection_url
++        collection_url = spotify_collection_url(source_url)
++        if collection_url:
++            from handlers.collections import process_collection
++            return await process_collection(message, collection_url, platform='Spotify', audio=True)
+     business_id = message.business_connection_id
++    user_lang = None
+     show_service_status = business_id is None
+     status_message: Optional[types.Message] = None
+     request_lease = None
++    collection_prefix = None
+     try:
+-        if await should_skip_duplicate_business_message(
++        if not collection_item and await should_skip_duplicate_business_message(
+             message, bot, service_name="Spotify", logger=logging
+         ):
+             return
+-        request_lease = await claim_message_request(
+-            message, service="spotify", url=source_url
+-        )
++        if collection_item:
++            from services.media.collection_flow import CollectionItemLease
++            request_lease = CollectionItemLease()
++        else:
++            request_lease = await claim_message_request(message, service="spotify", url=source_url)
+         if request_lease is None:
+             return
+ 
+@@ -105,9 +116,8 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+         )
+         await react_to_message(message, "👾", business_id=business_id)
+         user_settings = await load_user_settings(db, message)
++        user_lang = user_settings.get("language") or await db.get_language(message.from_user.id)
+         bot_url = await get_bot_url(bot)
+-        if show_service_status:
+-            user_lang = await db.get_language(message.from_user.id)
+         if show_service_status:
+             status_message = await message.answer(bm.downloading_audio_status(lang=user_lang, platform='Spotify'))
+ 
+@@ -129,7 +139,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+ 
+         async def _fetch_track() -> bool:
+             nonlocal track, youtube_track
+-            track = await get_spotify_track(source_url)
++            track = collection_track or await get_spotify_track(source_url)
+             query = " - ".join(
+                 value
+                 for value in (track.get("artists"), track.get("title"))
+@@ -142,7 +152,11 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+             return True
+ 
+         async def _download_audio():
++            nonlocal collection_prefix
+             base_name = f"{track['spotify_id']}_spotify_audio"
++            if collection_item:
++                base_name += "_" + secrets.token_hex(6)
++                collection_prefix = base_name
+             return await retry_async_operation(
+                 lambda: download_mp3_with_ytdlp_metrics(
+                     youtube_track["webpage_url"],
+@@ -186,7 +200,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+             )
+ 
+         async def _after_send(_result):
+-            await maybe_delete_user_message(message, user_settings["delete_message"])
++            await maybe_delete_user_message(message, "off" if collection_item else user_settings["delete_message"])
+             request_lease.mark_success()
+ 
+         async def _on_missing_audio():
+@@ -195,7 +209,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+         async def _on_too_large():
+             await message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
+ 
+-        await run_audio_flow(
++        result = await run_audio_flow(
+             cache_key=cache_key,
+             db_service=db,
+             send_cached=_send_cached,
+@@ -209,10 +223,13 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+             cleanup_path=remove_file,
+             on_after_send=_after_send,
+         )
++        return bool(result)
+     except SpotifyError as exc:
+         logging.warning("Spotify metadata error: url=%s error=%s", source_url, exc)
+         await message.answer(bm.spotify_metadata_failed(lang=user_lang), allow_sending_without_reply=True)
+     except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError) as exc:
++        if collection_item:
++            raise
+         await handle_download_backpressure_error(
+             exc,
+             message=message,
+@@ -227,6 +244,9 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+         logging.exception("Spotify download failed: error=%s", exc)
+         await handle_download_error(message, error=exc, business_id=business_id)
+     finally:
++        if collection_prefix:
++            from services.media.collection_flow import cleanup_collection_audio
++            await cleanup_collection_audio(OUTPUT_DIR, collection_prefix, remove_file)
+         if request_lease is not None:
+             request_lease.finish()
+         await safe_delete_message(status_message)
+diff --git a/handlers/youtube.py b/handlers/youtube.py
+index 987d64f..772b291 100644
+--- a/handlers/youtube.py
++++ b/handlers/youtube.py
+@@ -2,6 +2,7 @@ from utils.download_errors import best_failure, close_failure_context, failure_c
+ from i18n import normalize_locale as _normalize_locale
+ from i18n import t as _t
+ from services.settings import resolve_video_quality_format
++import secrets
+ import asyncio
+ import re
+ import time
+@@ -321,14 +322,20 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+     F.text.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
+     | F.caption.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
+ )
+-async def download_video(message: types.Message, direct_url: Optional[str] = None):
++async def download_video(message: types.Message, direct_url: Optional[str] = None, *, collection_item: bool = False):
+     url = direct_url or _extract_youtube_url(
+         get_message_text(message), YOUTUBE_VIDEO_URL_REGEX
+     )
+     if not url:
+         return
++    if not collection_item:
++        from services.platforms.media_collections import youtube_collection_url, youtube_collection_prefers_audio
++        collection_url = youtube_collection_url(url)
++        if collection_url:
++            from handlers.collections import process_collection
++            return await process_collection(message, collection_url, platform='YouTube', audio=youtube_collection_prefers_audio(collection_url))
+     business_id = message.business_connection_id
+-    if await should_skip_duplicate_business_message(
++    if not collection_item and await should_skip_duplicate_business_message(
+         message, bot, service_name="YouTube video", logger=logging
+     ):
+         await update_info(message)
+@@ -350,7 +357,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+     video_id: Optional[str] = None
+ 
+     try:
+-        request_lease = await claim_message_request(message, service="youtube", url=url)
++        if collection_item:
++            from services.media.collection_flow import CollectionItemLease
++            request_lease = CollectionItemLease()
++        else:
++            request_lease = await claim_message_request(message, service="youtube", url=url)
+         if request_lease is None:
+             return
+         await react_to_message(message, "👾", business_id=business_id)
+@@ -474,7 +485,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+ 
+         async def _after_send():
+             await maybe_delete_user_message(
+-                message, user_settings.get("delete_message")
++                message, "off" if collection_item else user_settings.get("delete_message")
+             )
+ 
+         async def _inspect_metrics(metrics):
+@@ -484,6 +495,10 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+             return True
+ 
+         _handle_backpressure = make_backpressure_handler(message, business_id)
++        if collection_item:
++            async def _collection_backpressure(exc):
++                raise exc
++            _handle_backpressure = _collection_backpressure
+ 
+         cache_key = f"{yt['webpage_url']}#document" if as_document else yt["webpage_url"]
+         cache_file_type = "document" if as_document else "video"
+@@ -524,6 +539,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+                 summarize_url_for_log(yt["webpage_url"]),
+                 sent_message.video.file_id,
+             )
++        return bool(sent_message)
+     except DownloadTooLargeError:
+         await handle_video_too_large(message, business_id=business_id)
+     except asyncio.TimeoutError:
+@@ -533,6 +549,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+             message, business_id=business_id, error=TimeoutError(), platform='YouTube'
+         )
+     except Exception as e:
++        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError)):
++            raise
+         logging.error("Video download error: %s", e)
+         await handle_download_error(message, error=e, business_id=business_id)
+     finally:
+@@ -553,14 +571,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+     | F.caption.regexp(YOUTUBE_MUSIC_URL_REGEX, mode="search")
+ )
+ @with_message_logging("youtube", "music_message")
+-async def download_music(message: types.Message, direct_url: Optional[str] = None):
++async def download_music(message: types.Message, direct_url: Optional[str] = None, *, collection_item: bool = False):
+     url = direct_url or _extract_youtube_url(
+         get_message_text(message), YOUTUBE_MUSIC_URL_REGEX
+     )
+     if not url:
+         return
++    if not collection_item:
++        from services.platforms.media_collections import youtube_collection_url
++        collection_url = youtube_collection_url(url)
++        if collection_url:
++            from handlers.collections import process_collection
++            return await process_collection(message, collection_url, platform='YouTube', audio=True)
+     business_id = message.business_connection_id
+-    if await should_skip_duplicate_business_message(
++    if not collection_item and await should_skip_duplicate_business_message(
+         message, bot, service_name="YouTube audio", logger=logging
+     ):
+         await update_info(message)
+@@ -573,9 +597,14 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+     )
+     status_message: Optional[types.Message] = None
+     request_lease = None
++    collection_prefix = None
+     show_service_status = business_id is None
+     try:
+-        request_lease = await claim_message_request(message, service="youtube", url=url)
++        if collection_item:
++            from services.media.collection_flow import CollectionItemLease
++            request_lease = CollectionItemLease()
++        else:
++            request_lease = await claim_message_request(message, service="youtube", url=url)
+         if request_lease is None:
+             return
+         await react_to_message(message, "👾", business_id=business_id)
+@@ -598,6 +627,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+             yt["webpage_url"], variant=AUDIO_CACHE_VARIANT
+         )
+         base_name = f"{yt['id']}_youtube_audio"
++        if collection_item:
++            base_name += "_" + secrets.token_hex(6)
++            collection_prefix = base_name
+ 
+         async def on_retry_download(failed_attempt: int, total_attempts: int, _error):
+             if failed_attempt >= 2:
+@@ -677,7 +709,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+ 
+         async def _after_send(_result):
+             await maybe_delete_user_message(
+-                message, user_settings.get("delete_message")
++                message, "off" if collection_item else user_settings.get("delete_message")
+             )
+             request_lease.mark_success()
+ 
+@@ -700,9 +732,10 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+             cleanup_path=remove_file,
+             on_after_send=_after_send,
+         )
+-        if not result or result.from_cache:
+-            return
++        return bool(result)
+     except (DownloadRateLimitError, DownloadQueueBusyError, DownloadTooLargeError) as e:
++        if collection_item:
++            raise
+         await handle_download_backpressure_error(
+             e,
+             message=message,
+@@ -719,6 +752,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+         logging.error("Audio download error: %s", e)
+         await handle_download_error(message, error=e, business_id=business_id)
+     finally:
++        if collection_prefix:
++            from services.media.collection_flow import cleanup_collection_audio
++            await cleanup_collection_audio(OUTPUT_DIR, collection_prefix, remove_file)
+         if request_lease is not None:
+             request_lease.finish()
+         await safe_delete_message(status_message)
+diff --git a/i18n/locales/en.json b/i18n/locales/en.json
+index 8bb4cec..572a956 100644
+--- a/i18n/locales/en.json
++++ b/i18n/locales/en.json
+@@ -483,5 +483,19 @@
+   "download_error.reason.too_large": "The file exceeds the size limit allowed by the bot or Telegram.",
+   "download_error.reason.delivery": "Telegram refused an operation needed to deliver the response.",
+   "download_error.reason.internal": "An internal error occurred while processing the request.",
+-  "download_error.reason.verification": "Could not verify that the media belongs to the requested post."
++  "download_error.reason.verification": "Could not verify that the media belongs to the requested post.",
++  "collection.fetching": "🎶 {platform}: reading playlist or album…",
++  "collection.cancel": "✖️ Cancel collection",
++  "collection.expired": "This collection has already finished.",
++  "collection.owner_only": "Only the person who requested the collection can cancel it.",
++  "collection.cancelling": "Cancellation requested. The current item will finish first.",
++  "collection.busy": "⏳ You already have a collection running, or the concurrent collection limit has been reached. Try again later.",
++  "collection.progress": "<b>{title}</b>\nItem {index}/{count}: {item}",
++  "collection.limit": "⚠️ Request limit: first {limit} items.",
++  "collection.partial": "⚠️ The source exposed only a partial public list; some tracks may be missing.",
++  "collection.empty": "No available items were found in this playlist or album.",
++  "collection.finished": "✅ <b>{title}</b>\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
++  "collection.cancelled": "⏹️ <b>{title}</b>: processing stopped.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
++  "collection.stopped": "⏸️ <b>{title}</b>: stopped due to a service limit or Telegram error.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
++  "collection.error": "❌ Could not load or complete this collection."
+ }
+diff --git a/i18n/locales/es.json b/i18n/locales/es.json
+index 242b05f..d27449a 100644
+--- a/i18n/locales/es.json
++++ b/i18n/locales/es.json
+@@ -483,5 +483,19 @@
+   "download_error.reason.too_large": "El archivo supera el límite de tamaño permitido por el bot o Telegram.",
+   "download_error.reason.delivery": "Telegram rechazó una operación necesaria para enviar la respuesta.",
+   "download_error.reason.internal": "Se produjo un error interno al procesar la solicitud.",
+-  "download_error.reason.verification": "No se pudo verificar que el contenido pertenezca a la publicación enviada."
++  "download_error.reason.verification": "No se pudo verificar que el contenido pertenezca a la publicación enviada.",
++  "collection.fetching": "🎶 {platform}: leyendo lista o álbum…",
++  "collection.cancel": "✖️ Cancelar colección",
++  "collection.expired": "Esta colección ya ha terminado.",
++  "collection.owner_only": "Solo quien solicitó la colección puede cancelarla.",
++  "collection.cancelling": "Cancelación solicitada. El elemento actual terminará primero.",
++  "collection.busy": "⏳ Ya tienes una colección en curso o se alcanzó el límite de colecciones simultáneas. Inténtalo más tarde.",
++  "collection.progress": "<b>{title}</b>\nElemento {index}/{count}: {item}",
++  "collection.limit": "⚠️ Límite de la solicitud: primeros {limit} elementos.",
++  "collection.partial": "⚠️ La fuente solo mostró una lista pública parcial; pueden faltar canciones.",
++  "collection.empty": "No se encontraron elementos disponibles en esta lista o álbum.",
++  "collection.finished": "✅ <b>{title}</b>\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
++  "collection.cancelled": "⏹️ <b>{title}</b>: procesamiento interrumpido.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
++  "collection.stopped": "⏸️ <b>{title}</b>: envío detenido por un límite del servicio o un error de Telegram.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
++  "collection.error": "❌ No se pudo cargar o completar esta colección."
+ }
+diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
+index 0604960..53f3773 100644
+--- a/i18n/locales/pt.json
++++ b/i18n/locales/pt.json
+@@ -483,5 +483,19 @@
+   "download_error.reason.too_large": "O arquivo ultrapassa o limite de tamanho permitido pelo bot ou pelo Telegram.",
+   "download_error.reason.delivery": "O Telegram recusou uma operação necessária para enviar a resposta.",
+   "download_error.reason.internal": "Ocorreu uma falha interna ao processar a solicitação.",
+-  "download_error.reason.verification": "Não foi possível confirmar que a mídia pertence à publicação enviada."
++  "download_error.reason.verification": "Não foi possível confirmar que a mídia pertence à publicação enviada.",
++  "collection.fetching": "🎶 {platform}: lendo playlist ou álbum…",
++  "collection.cancel": "✖️ Cancelar coleção",
++  "collection.expired": "Esta coleção já terminou.",
++  "collection.owner_only": "Só quem pediu a coleção pode cancelá-la.",
++  "collection.cancelling": "Cancelamento solicitado. O item atual será concluído.",
++  "collection.busy": "⏳ Já existe uma coleção sua em andamento ou o limite de coleções simultâneas foi atingido. Tente mais tarde.",
++  "collection.progress": "<b>{title}</b>\nItem {index}/{count}: {item}",
++  "collection.limit": "⚠️ Limite desta solicitação: primeiros {limit} itens.",
++  "collection.partial": "⚠️ A origem disponibilizou apenas uma lista pública parcial; podem faltar faixas.",
++  "collection.empty": "Não foram encontrados itens disponíveis nesta playlist ou álbum.",
++  "collection.finished": "✅ <b>{title}</b>\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
++  "collection.cancelled": "⏹️ <b>{title}</b>: processamento interrompido.\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
++  "collection.stopped": "⏸️ <b>{title}</b>: envio interrompido por limite de serviço ou falha no Telegram.\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
++  "collection.error": "❌ Não foi possível carregar ou concluir esta coleção."
+ }
+diff --git a/services/links/detection.py b/services/links/detection.py
+index 8d7a4b8..7c81c67 100644
+--- a/services/links/detection.py
++++ b/services/links/detection.py
+@@ -45,7 +45,7 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+     (
+         "spotify",
+         re.compile(
+-            r"(https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?track/[A-Za-z0-9]+(?:\?\S*)?)",
++            r"(https?://(?:(?:open|www)\.)?spotify\.com/(?:intl-[a-z]{2}/)?(?:track|playlist|album)/[A-Za-z0-9]+(?:\?\S*)?)",
+             re.IGNORECASE,
+         ),
+     ),
+diff --git a/services/media/collection_flow.py b/services/media/collection_flow.py
+new file mode 100644
+index 0000000..5e0874d
+--- /dev/null
++++ b/services/media/collection_flow.py
+@@ -0,0 +1,85 @@
++"""Ordered, bounded collection execution independent of Telegram and providers."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from typing import Any
++
++
++@dataclass(frozen=True)
++class CollectionEntry:
++    url: str | None
++    title: str = ""
++    metadata: dict[str, Any] = field(default_factory=dict)
++
++
++@dataclass(frozen=True)
++class CollectionListing:
++    title: str
++    entries: list[CollectionEntry]
++    total: int | None = None
++    partial: bool = False
++    limited: bool = False
++
++
++@dataclass
++class CollectionResult:
++    sent: int = 0
++    failed: int = 0
++    unavailable: int = 0
++    cancelled: bool = False
++    stopped: bool = False
++
++
++class CollectionItemLease:
++    """The parent owns deduplication; repeated tracks remain valid collection items."""
++
++    def mark_success(self):
++        pass
++
++    def finish(self):
++        pass
++
++
++async def run_collection(
++    listing, deliver, progress, cancelled, *, stop_on=(), on_error=None
++):
++    result = CollectionResult()
++    for index, entry in enumerate(listing.entries, 1):
++        if cancelled():
++            result.cancelled = True
++            break
++        await progress(index, entry)
++        if not entry.url:
++            result.unavailable += 1
++            continue
++        try:
++            delivered = await deliver(entry)
++        except stop_on:
++            result.failed += 1
++            result.stopped = True
++            break
++        except Exception as exc:
++            result.failed += 1
++            if on_error:
++                await on_error(index, exc)
++            continue
++        if delivered:
++            result.sent += 1
++        else:
++            result.failed += 1
++    if cancelled():
++        result.cancelled = True
++    return result
++
++
++async def cleanup_collection_audio(output_dir, prefix, remove):
++    """Remove only this item's unique outputs, including partial yt-dlp files."""
++    import re
++    from pathlib import Path
++
++    if not prefix or not re.fullmatch(r"[A-Za-z0-9_-]+", prefix):
++        return
++    for path in Path(output_dir).glob(prefix + ".*"):
++        if path.is_file():
++            await remove(str(path))
+diff --git a/services/platforms/media_collections.py b/services/platforms/media_collections.py
+new file mode 100644
+index 0000000..164fccf
+--- /dev/null
++++ b/services/platforms/media_collections.py
+@@ -0,0 +1,359 @@
++"""Collection metadata only. Item downloads use the existing single-media flows."""
++
++from __future__ import annotations
++
++import asyncio
++import html
++import itertools
++import json
++import os
++import re
++from urllib.parse import parse_qs, urlparse
++
++from services.media.collection_flow import CollectionEntry, CollectionListing
++
++
++class CollectionError(RuntimeError):
++    pass
++
++
++def collection_limit():
++    try:
++        return max(1, min(200, int(os.getenv("COLLECTION_MAX_ITEMS", "50"))))
++    except ValueError:
++        return 50
++
++
++def youtube_collection_url(url):
++    try:
++        parsed = urlparse(url)
++        if (
++            parsed.scheme not in {"https", "http"}
++            or parsed.username
++            or parsed.password
++            or parsed.port not in (None, 80, 443)
++            or parsed.hostname
++            not in {
++                "youtube.com",
++                "www.youtube.com",
++                "m.youtube.com",
++                "music.youtube.com",
++                "youtu.be",
++                "www.youtu.be",
++            }
++        ):
++            return None
++        if parsed.hostname not in {"youtu.be", "www.youtu.be"} and parsed.path.rstrip(
++            "/"
++        ) not in {"/playlist", "/watch", "/embed/videoseries"}:
++            return None
++        playlist = parse_qs(parsed.query).get("list", [""])[0]
++        if not re.fullmatch(r"[A-Za-z0-9_-]{8,100}", playlist):
++            return None
++        host = (
++            "music.youtube.com"
++            if parsed.hostname == "music.youtube.com"
++            else "www.youtube.com"
++        )
++        return f"https://{host}/playlist?list={playlist}"
++    except ValueError:
++        return None
++
++
++def youtube_collection_prefers_audio(url):
++    canonical = youtube_collection_url(url)
++    if not canonical:
++        return False
++    parsed = urlparse(canonical)
++    playlist = parse_qs(parsed.query)["list"][0]
++    return parsed.hostname == "music.youtube.com" or playlist.startswith("OLAK")
++
++
++def spotify_collection_url(url):
++    from services.platforms.spotify_media import parse_spotify_url
++
++    try:
++        source = urlparse(url)
++        if (
++            source.scheme not in {"https", "http", "spotify"}
++            or source.username
++            or source.password
++        ):
++            return None
++        if source.port not in (None, 80, 443):
++            return None
++    except ValueError:
++        return None
++    parsed = parse_spotify_url(url)
++    if parsed and parsed[0] in {"album", "playlist"}:
++        return f"https://open.spotify.com/{parsed[0]}/{parsed[1]}"
++    return None
++
++
++def _positive_int(value):
++    return (
++        value
++        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
++        else None
++    )
++
++
++def extract_youtube_listing(url, limit, factory=None):
++    from services.platforms.youtube_media import build_ytdlp_youtube_options
++
++    if factory is None:
++        from yt_dlp import YoutubeDL
++
++        factory = YoutubeDL
++    canonical = youtube_collection_url(url)
++    if not canonical:
++        raise CollectionError("Invalid YouTube playlist URL")
++    options = build_ytdlp_youtube_options(
++        noplaylist=False,
++        skip_download=True,
++        extract_flat="in_playlist",
++        lazy_playlist=True,
++        playlistend=limit + 1,
++        ignoreerrors=True,
++        retries=1,
++        extractor_retries=1,
++        socket_timeout=10,
++    )
++    with factory(options) as ydl:
++        data = ydl.extract_info(canonical, download=False)
++        expected = parse_qs(urlparse(canonical).query)["list"][0]
++        if not isinstance(data, dict) or data.get("_type") not in {
++            "playlist",
++            "multi_video",
++        }:
++            raise CollectionError("YouTube did not return playlist metadata")
++        if data.get("id") != expected:
++            raise CollectionError("YouTube playlist identity mismatch")
++        raw = list(itertools.islice(data.get("entries") or [], limit + 1))
++        entries = []
++        for item in raw[:limit]:
++            item = item if isinstance(item, dict) else {}
++            video_id = str(item.get("id") or "")
++            unavailable = (
++                item.get("availability")
++                in {"private", "premium_only", "subscriber_only", "needs_auth"}
++                or item.get("title") in {"[Private video]", "[Deleted video]"}
++                or item.get("is_live")
++                or item.get("live_status") in {"is_live", "is_upcoming"}
++            )
++            target = (
++                f"https://www.youtube.com/watch?v={video_id}"
++                if re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) and not unavailable
++                else None
++            )
++            entries.append(CollectionEntry(target, str(item.get("title") or "")))
++        total = _positive_int(data.get("playlist_count")) or _positive_int(
++            data.get("n_entries")
++        )
++        overflow = len(raw) > limit
++        if total is None and not overflow:
++            total = len(raw)
++        return CollectionListing(
++            str(data.get("title") or "YouTube"),
++            entries,
++            total,
++            limited=overflow or (total is not None and total > limit),
++        )
++
++
++async def get_youtube_collection(url, *, limit=None):
++    return await asyncio.wait_for(
++        asyncio.to_thread(extract_youtube_listing, url, limit or collection_limit()), 60
++    )
++
++
++def _spotify_entry(track, *, album=None):
++    from services.media.artist_names import normalize_artist_names
++
++    track = track if isinstance(track, dict) else {}
++    album = track.get("album") or album or {}
++    track_id = str(track.get("id") or "")
++    playable = (
++        re.fullmatch(r"[A-Za-z0-9]{1,96}", track_id)
++        and not track.get("is_local")
++        and track.get("type", "track") == "track"
++        and track.get("is_playable") is not False
++    )
++    url = f"https://open.spotify.com/track/{track_id}" if playable else None
++    images = album.get("images") or []
++    metadata = {
++        "id": f"spotify:{track_id}",
++        "spotify_id": track_id,
++        "title": track.get("name") or "",
++        "artists": normalize_artist_names(track.get("artists")) or "Unknown artist",
++        "album": album.get("name"),
++        "album_artist": normalize_artist_names(album.get("artists")),
++        "date": album.get("release_date"),
++        "duration": round((track.get("duration_ms") or 0) / 1000) or None,
++        "track_number": track.get("track_number"),
++        "disc_number": track.get("disc_number"),
++        "thumbnail": images[0].get("url") if images else None,
++        "url": url,
++        "source_url": url,
++    }
++    return CollectionEntry(url, metadata["title"], metadata)
++
++
++async def _spotify_api_listing(session, kind, spotify_id, limit):
++    from services.platforms.spotify_media import (
++        SPOTIFY_MARKET,
++        _get_token,
++        _read_json_response,
++    )
++
++    token = await _get_token(session)
++    headers = {"Authorization": f"Bearer {token}"}
++
++    async def get(path, **params):
++        async with session.get(
++            "https://api.spotify.com/v1/" + path, headers=headers, params=params
++        ) as response:
++            if response.status >= 400:
++                raise CollectionError(
++                    f"Spotify collection metadata: HTTP {response.status}"
++                )
++            return await _read_json_response(response, "loading collection")
++
++    plural = "albums" if kind == "album" else "playlists"
++    metadata = await get(f"{plural}/{spotify_id}", market=SPOTIFY_MARKET or "UA")
++    if metadata.get("id") != spotify_id:
++        raise CollectionError("Spotify collection identity mismatch")
++    endpoint = "tracks" if kind == "album" else "items"
++    entries, offset, total, more = [], 0, None, True
++    while more and len(entries) <= limit:
++        try:
++            page = await get(
++                f"{plural}/{spotify_id}/{endpoint}",
++                limit=min(50, limit + 1 - len(entries)),
++                offset=offset,
++                market=SPOTIFY_MARKET or "UA",
++            )
++        except CollectionError as exc:
++            # Extended-quota apps may still expose the older playlist endpoint.
++            if endpoint == "items" and offset == 0 and "HTTP 404" in str(exc):
++                endpoint = "tracks"
++                continue
++            raise
++        items = page.get("items")
++        if not isinstance(items, list):
++            raise CollectionError("Spotify returned invalid collection items")
++        total = _positive_int(page.get("total"))
++        if not items:
++            break
++        for item in items:
++            track = (
++                item
++                if kind == "album"
++                else (item.get("item") or item.get("track"))
++                if isinstance(item, dict)
++                else None
++            )
++            if kind == "playlist" and isinstance(item, dict) and item.get("is_local"):
++                track = {**(track or {}), "is_local": True}
++            entries.append(
++                _spotify_entry(track, album=metadata if kind == "album" else None)
++            )
++        offset += len(items)
++        more = bool(page.get("next"))
++        # Never follow a next URL with the bearer token; reconstruct the API path.
++    return CollectionListing(
++        str(metadata.get("name") or "Spotify"),
++        entries[:limit],
++        total,
++        partial=bool(
++            (more or (total is not None and total > len(entries)))
++            and len(entries) <= limit
++        ),
++        limited=len(entries) > limit or (total is not None and total > limit),
++    )
++
++
++def parse_spotify_embed(page, kind, spotify_id, limit):
++    match = re.search(
++        r'<script\b[^>]*\bid=["\x27]__NEXT_DATA__["\x27][^>]*>(.*?)</script>',
++        page,
++        re.S | re.I,
++    )
++    if not match:
++        raise CollectionError("Spotify did not expose public collection metadata")
++    try:
++        data = json.loads(match[1])
++        state = data["props"]["pageProps"]["state"]["data"]
++        entity = state["entity"]
++    except (ValueError, KeyError, TypeError) as exc:
++        raise CollectionError("Spotify returned invalid embedded metadata") from exc
++    if entity.get("uri") != f"spotify:{kind}:{spotify_id}":
++        raise CollectionError("Spotify embedded collection identity mismatch")
++    tracks = entity.get("trackList")
++    if not isinstance(tracks, list):
++        raise CollectionError("Spotify did not expose a public track list")
++    title = str(entity.get("name") or entity.get("title") or "Spotify")
++    cover = (entity.get("coverArt") or {}).get("sources") or []
++    entries = []
++    for item in tracks[:limit]:
++        item = item if isinstance(item, dict) else {}
++        uri = str(item.get("uri") or "")
++        track_id = (
++            uri.removeprefix("spotify:track:")
++            if uri.startswith("spotify:track:")
++            else ""
++        )
++        track = {
++            "id": track_id,
++            "name": html.unescape(str(item.get("title") or "")),
++            "artists": [{"name": str(item.get("subtitle") or "")}],
++            "duration_ms": item.get("duration") or 0,
++            "is_playable": item.get("isPlayable", True),
++        }
++        album = {"name": title if kind == "album" else None, "images": cover}
++        entries.append(_spotify_entry(track, album=album))
++    total = _positive_int(entity.get("totalTrackCount")) or _positive_int(
++        entity.get("trackCount")
++    )
++    # Public embeds can omit tracks. Never claim that this is a complete playlist.
++    return CollectionListing(
++        title,
++        entries,
++        total,
++        partial=True,
++        limited=len(tracks) > limit or (total is not None and total > limit),
++    )
++
++
++async def get_spotify_collection(url, *, limit=None):
++    import aiohttp
++
++    canonical = spotify_collection_url(url)
++    if not canonical:
++        raise CollectionError("Invalid Spotify collection URL")
++    _, kind, spotify_id = urlparse(canonical).path.split("/")
++    maximum = limit or collection_limit()
++    async with aiohttp.ClientSession(
++        timeout=aiohttp.ClientTimeout(total=30)
++    ) as session:
++        try:
++            return await _spotify_api_listing(session, kind, spotify_id, maximum)
++        except (
++            CollectionError,
++            RuntimeError,
++            aiohttp.ClientError,
++            asyncio.TimeoutError,
++        ):
++            pass
++        async with session.get(
++            f"https://open.spotify.com/embed/{kind}/{spotify_id}",
++            headers={"User-Agent": "Mozilla/5.0"},
++        ) as response:
++            if response.status >= 400:
++                raise CollectionError(
++                    f"Spotify public collection: HTTP {response.status}"
++                )
++            page = await response.text()
++            if len(page) > 3_000_000:
++                raise CollectionError("Spotify collection response too large")
++            return parse_spotify_embed(page, kind, spotify_id, maximum)
+diff --git a/services/runtime/request_dedupe.py b/services/runtime/request_dedupe.py
+index 2190168..4f9470e 100644
+--- a/services/runtime/request_dedupe.py
++++ b/services/runtime/request_dedupe.py
+@@ -48,6 +48,9 @@ def normalize_request_url(service: str, url: str) -> str:
+         return _normalize_generic_url(strip_tiktok_tracking(raw_url))
+     if normalized_service == "twitter":
+         return _normalize_twitter_url(raw_url)
++    if normalized_service == 'youtube_collection':
++        from services.platforms.media_collections import youtube_collection_url
++        return youtube_collection_url(raw_url) or _normalize_generic_url(raw_url)
+     if normalized_service.startswith("youtube"):
+         return _normalize_youtube_url(raw_url)
+     return _normalize_generic_url(raw_url)

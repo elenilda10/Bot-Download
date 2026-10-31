@@ -297,22 +297,23 @@ def merge_runtime(target, staging, manifest, patch, reference):
                                   + '\n'.join('CONFLICT ' + name for name in conflicts), '\n\n'.join(details))
 
 
-def prepare(target, *, reference=REFERENCE):
-    # Already migrated runtimes need a base that includes their existing catalogs.
-    # Older runtimes still use the complete migration and its reply-preserving merge.
-    marker = target / 'i18n/__init__.py'
-    upgrade = reference / 'download_errors_vps_manifest.json'
-    use_upgrade = marker.is_file() and upgrade.is_file()
-    bundle = 'download_errors_vps' if use_upgrade else 'i18n_vps'
-    if (target / 'utils/download_errors.py').is_file() and (reference / 'download_errors_json_vps_manifest.json').is_file():
-        bundle = 'download_errors_json_vps'
-    diagnostic_module = target / 'utils/download_errors.py'
-    # The published JSON runtime and this display-only upgrade share the same
-    # diagnostics module. Older runtimes still receive the complete upgrade.
-    if (diagnostic_module.is_file()
-            and (reference / 'download_errors_raw_vps_manifest.json').is_file()
-            and diagnostic_module.read_bytes() == (reference.parent / 'utils/download_errors.py').read_bytes()):
-        bundle = 'download_errors_raw_vps'
+def prepare(target, *, reference=REFERENCE, bundle=None):
+    if bundle is None:
+        # Already migrated runtimes need a base that includes their existing catalogs.
+        # Older runtimes still use the complete migration and its reply-preserving merge.
+        marker = target / 'i18n/__init__.py'
+        upgrade = reference / 'download_errors_vps_manifest.json'
+        use_upgrade = marker.is_file() and upgrade.is_file()
+        bundle = 'download_errors_vps' if use_upgrade else 'i18n_vps'
+        if (target / 'utils/download_errors.py').is_file() and (reference / 'download_errors_json_vps_manifest.json').is_file():
+            bundle = 'download_errors_json_vps'
+        diagnostic_module = target / 'utils/download_errors.py'
+        # The published JSON runtime and this display-only upgrade share the same
+        # diagnostics module. Older runtimes still receive the complete upgrade.
+        if (diagnostic_module.is_file()
+                and (reference / 'download_errors_raw_vps_manifest.json').is_file()
+                and diagnostic_module.read_bytes() == (reference.parent / 'utils/download_errors.py').read_bytes()):
+            bundle = 'download_errors_raw_vps'
     manifest = json.loads((reference / (bundle + '_manifest.json')).read_text())
     patch = (reference / (bundle + '.patch')).resolve()
     if digest(patch.read_bytes()) != manifest['patch_sha256']:
