@@ -385,3 +385,19 @@ def test_collection_request_identity_does_not_drop_playlist_id():
         "youtube_collection", "https://youtube.com/playlist?list=PLdifferent"
     )
     assert first != second
+
+
+@pytest.mark.parametrize(
+    "url,audio",
+    [
+        (
+            "https://youtube.com/playlist?list=OLAK5uy_nC1nxwFjIDN2bz8rYfrRsn7FBf41zsf48&si=NadKbiYVp1OlDmu5",
+            True,
+        ),
+        ("https://music.youtube.com/playlist?list=PLabcdefgh", True),
+        ("https://youtube.com/playlist?list=PLabcdefgh", False),
+        ("https://youtube.com.evil.test/playlist?list=OLAKabcdefgh", False),
+    ],
+)
+def test_collection_audio_preference(url, audio):
+    assert media.youtube_collection_prefers_audio(url) is audio

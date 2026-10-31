@@ -329,11 +329,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
     if not url:
         return
     if not collection_item:
-        from services.platforms.media_collections import youtube_collection_url
+        from services.platforms.media_collections import youtube_collection_url, youtube_collection_prefers_audio
         collection_url = youtube_collection_url(url)
         if collection_url:
             from handlers.collections import process_collection
-            return await process_collection(message, collection_url, platform='YouTube', audio=False)
+            return await process_collection(message, collection_url, platform='YouTube', audio=youtube_collection_prefers_audio(collection_url))
     business_id = message.business_connection_id
     if not collection_item and await should_skip_duplicate_business_message(
         message, bot, service_name="YouTube video", logger=logging

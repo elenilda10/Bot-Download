@@ -1,0 +1,38 @@
+diff --git a/handlers/youtube.py b/handlers/youtube.py
+index 3917170..772b291 100644
+--- a/handlers/youtube.py
++++ b/handlers/youtube.py
+@@ -329,11 +329,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+     if not url:
+         return
+     if not collection_item:
+-        from services.platforms.media_collections import youtube_collection_url
++        from services.platforms.media_collections import youtube_collection_url, youtube_collection_prefers_audio
+         collection_url = youtube_collection_url(url)
+         if collection_url:
+             from handlers.collections import process_collection
+-            return await process_collection(message, collection_url, platform='YouTube', audio=False)
++            return await process_collection(message, collection_url, platform='YouTube', audio=youtube_collection_prefers_audio(collection_url))
+     business_id = message.business_connection_id
+     if not collection_item and await should_skip_duplicate_business_message(
+         message, bot, service_name="YouTube video", logger=logging
+diff --git a/services/platforms/media_collections.py b/services/platforms/media_collections.py
+index 6ea78c9..164fccf 100644
+--- a/services/platforms/media_collections.py
++++ b/services/platforms/media_collections.py
+@@ -60,6 +60,15 @@ def youtube_collection_url(url):
+         return None
+ 
+ 
++def youtube_collection_prefers_audio(url):
++    canonical = youtube_collection_url(url)
++    if not canonical:
++        return False
++    parsed = urlparse(canonical)
++    playlist = parse_qs(parsed.query)["list"][0]
++    return parsed.hostname == "music.youtube.com" or playlist.startswith("OLAK")
++
++
+ def spotify_collection_url(url):
+     from services.platforms.spotify_media import parse_spotify_url
+ 

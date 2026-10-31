@@ -60,6 +60,15 @@ def youtube_collection_url(url):
         return None
 
 
+def youtube_collection_prefers_audio(url):
+    canonical = youtube_collection_url(url)
+    if not canonical:
+        return False
+    parsed = urlparse(canonical)
+    playlist = parse_qs(parsed.query)["list"][0]
+    return parsed.hostname == "music.youtube.com" or playlist.startswith("OLAK")
+
+
 def spotify_collection_url(url):
     from services.platforms.spotify_media import parse_spotify_url
 

@@ -139,3 +139,23 @@ async def test_youtube_music_collection_item_returns_success_on_cache_hit(monkey
     assert youtube.send_audio_with_thumbnail.await_args.kwargs["audio"] == "cached"
     youtube.maybe_delete_user_message.assert_awaited_once_with(msg, "off")
     youtube.claim_message_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "playlist,audio", [("OLAK5uy_abcdefgh", True), ("PLabcdefgh", False)]
+)
+async def test_youtube_routes_album_to_audio_but_keeps_regular_playlist_video(
+    monkeypatch, playlist, audio
+):
+    from handlers import collections
+
+    process = AsyncMock(return_value=True)
+    monkeypatch.setattr(collections, "process_collection", process)
+    assert (
+        await youtube.download_video(
+            message(), direct_url=f"https://youtube.com/playlist?list={playlist}"
+        )
+        is True
+    )
+    assert process.await_args.kwargs["audio"] is audio

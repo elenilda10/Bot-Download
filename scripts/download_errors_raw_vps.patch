@@ -414,7 +414,7 @@ index 187e1b9..d55c348 100644
              request_lease.finish()
          await safe_delete_message(status_message)
 diff --git a/handlers/youtube.py b/handlers/youtube.py
-index 987d64f..3917170 100644
+index 987d64f..772b291 100644
 --- a/handlers/youtube.py
 +++ b/handlers/youtube.py
 @@ -2,6 +2,7 @@ from utils.download_errors import best_failure, close_failure_context, failure_c
@@ -437,11 +437,11 @@ index 987d64f..3917170 100644
      if not url:
          return
 +    if not collection_item:
-+        from services.platforms.media_collections import youtube_collection_url
++        from services.platforms.media_collections import youtube_collection_url, youtube_collection_prefers_audio
 +        collection_url = youtube_collection_url(url)
 +        if collection_url:
 +            from handlers.collections import process_collection
-+            return await process_collection(message, collection_url, platform='YouTube', audio=False)
++            return await process_collection(message, collection_url, platform='YouTube', audio=youtube_collection_prefers_audio(collection_url))
      business_id = message.business_connection_id
 -    if await should_skip_duplicate_business_message(
 +    if not collection_item and await should_skip_duplicate_business_message(
@@ -821,10 +821,10 @@ index 0000000..5e0874d
 +            await remove(str(path))
 diff --git a/services/platforms/media_collections.py b/services/platforms/media_collections.py
 new file mode 100644
-index 0000000..6ea78c9
+index 0000000..164fccf
 --- /dev/null
 +++ b/services/platforms/media_collections.py
-@@ -0,0 +1,350 @@
+@@ -0,0 +1,359 @@
 +"""Collection metadata only. Item downloads use the existing single-media flows."""
 +
 +from __future__ import annotations
@@ -885,6 +885,15 @@ index 0000000..6ea78c9
 +        return f"https://{host}/playlist?list={playlist}"
 +    except ValueError:
 +        return None
++
++
++def youtube_collection_prefers_audio(url):
++    canonical = youtube_collection_url(url)
++    if not canonical:
++        return False
++    parsed = urlparse(canonical)
++    playlist = parse_qs(parsed.query)["list"][0]
++    return parsed.hostname == "music.youtube.com" or playlist.startswith("OLAK")
 +
 +
 +def spotify_collection_url(url):

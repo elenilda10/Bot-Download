@@ -1,6 +1,6 @@
 {
   "base_commit": "557e579126a0b08d453f23a539f9a36d524cc01a",
-  "patch_sha256": "a50c2a30f993c98b036091c173379ac487591d0e73f9318710190ba263b97ea1",
+  "patch_sha256": "663c492e2f0dec74f7a75906ffb249dfce0a430e91603ec86b88ea86753e8f82",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -16,7 +16,7 @@
     },
     "handlers/youtube.py": {
       "base_sha256": "26c703d2ee9e6e89a43d712cbd04e71d16bc4fa2ea95dff943a86c761a8d3bd9",
-      "result_sha256": "1cf4e1135c25036a2766717d4f1a909b46360711ca4407aebc842af92859e12d"
+      "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
     },
     "i18n/locales/en.json": {
       "base_sha256": "14dd711fa5c77bce5030b3ba1457f49eca6e946cc6d92e24b18152dd1439ef45",
@@ -40,7 +40,7 @@
     },
     "services/platforms/media_collections.py": {
       "base_sha256": null,
-      "result_sha256": "a7d4fb66885be35fd0b1dcdc1290fdbea791e910696faff51395a971df25bf77"
+      "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
     },
     "services/runtime/request_dedupe.py": {
       "base_sha256": "abc98a2426e2dadcf4761afa4da4eaf14bbff80e747c013364b8484e9901cd2d",

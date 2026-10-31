@@ -67,3 +67,24 @@ def test_collection_conflict_leaves_every_runtime_file_untouched(baseline):
         if p.is_file()
     }
     assert before == after
+
+
+def test_cli_upgrades_published_collections_to_album_audio(tmp_path):
+    import sys
+    manifest=json.loads((ROOT/'scripts/collections_vps_manifest.json').read_text())
+    for name in manifest['files']:
+        path=tmp_path/name
+        path.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT/name,path)
+    subprocess.run(['git','apply','--reverse',str(ROOT/'scripts/collection_album_audio_vps.patch')],
+                   cwd=tmp_path,check=True,capture_output=True)
+    youtube=tmp_path/'handlers/youtube.py'
+    youtube.write_text(youtube.read_text().replace('.answer(','.reply('))
+    result=subprocess.run([sys.executable,str(ROOT/'scripts/install_collections_vps.py'),
+                           '--target',str(tmp_path),'--apply','--diagnose'],capture_output=True,text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'audio=youtube_collection_prefers_audio(collection_url)' in youtube.read_text()
+    assert '.reply(' in youtube.read_text()
+    again=subprocess.run([sys.executable,str(ROOT/'scripts/install_collections_vps.py'),
+                           '--target',str(tmp_path),'--apply'],capture_output=True,text=True)
+    assert again.returncode == 0 and 'Already installed' in again.stdout

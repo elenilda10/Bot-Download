@@ -1,6 +1,6 @@
 {
   "base_commit": "fc89407d2b44c826da80722a2b3325edba8ccaa3",
-  "patch_sha256": "826c5a8da009c78a14700aba419145711e8fdb3dc8f98129e9fc8e3b13e951f7",
+  "patch_sha256": "c439e35278825706f49464e65b0ddc73f61b88ea4b1df799b9c3a06ec41c868f",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -140,7 +140,7 @@
     },
     "handlers/youtube.py": {
       "base_sha256": "57779a8221191747bdaaec0ac133df16e5e1ab001636e3b180ddae6466556b58",
-      "result_sha256": "1cf4e1135c25036a2766717d4f1a909b46360711ca4407aebc842af92859e12d"
+      "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
     },
     "handlers/youtube_inline.py": {
       "base_sha256": "12f7ac600fcd1687b641ee1fce9f097c0375819ab923eec921820911013872c8",
@@ -224,7 +224,7 @@
     },
     "services/platforms/media_collections.py": {
       "base_sha256": null,
-      "result_sha256": "a7d4fb66885be35fd0b1dcdc1290fdbea791e910696faff51395a971df25bf77"
+      "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
     },
     "services/platforms/reddit_download.py": {
       "base_sha256": "83950ec61d9f115421f583583f3749545156c16a0868814829661bb3e043eea6",

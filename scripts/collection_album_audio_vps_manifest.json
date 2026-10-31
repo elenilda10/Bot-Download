@@ -1,0 +1,14 @@
+{
+  "base_commit": "62d7f3ec5d285f5caf3a16d772c88f1a6444c060",
+  "patch_sha256": "0fd8444ec4a99bc035aa08f0576117f07b92b3bf0b290a1a1d933101687389ee",
+  "files": {
+    "handlers/youtube.py": {
+      "base_sha256": "1cf4e1135c25036a2766717d4f1a909b46360711ca4407aebc842af92859e12d",
+      "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
+    },
+    "services/platforms/media_collections.py": {
+      "base_sha256": "a7d4fb66885be35fd0b1dcdc1290fdbea791e910696faff51395a971df25bf77",
+      "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
+    }
+  }
+}

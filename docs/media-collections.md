@@ -1,7 +1,8 @@
 # Playlists e álbuns
 
 - YouTube: links `/playlist?list=…` e links de vídeo que incluam `list=` são
-  processados como coleções de vídeos. As preferências de qualidade/documento
+  processados como coleções. IDs de álbum `OLAK…` preferem MP3 mesmo no domínio
+  `youtube.com`; as demais playlists usam vídeo. As preferências de qualidade/documento
   existentes continuam valendo por item.
 - YouTube Music: playlists e álbuns compartilhados como playlists são enviados
   como áudios MP3.

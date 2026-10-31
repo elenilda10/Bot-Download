@@ -12,11 +12,14 @@ def main():
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--diagnose", action="store_true")
     args = parser.parse_args()
+    bundle = "collections_vps"
+    if (args.target / "services/platforms/media_collections.py").is_file():
+        bundle = "collection_album_audio_vps"
     try:
         changes = prepare(
             args.target.resolve(),
             reference=Path(__file__).resolve().parent,
-            bundle="collections_vps",
+            bundle=bundle,
         )
     except RuntimeConflict as exc:
         if args.diagnose and exc.details:
