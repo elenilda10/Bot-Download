@@ -34,6 +34,7 @@ from config import (
 from services.download.queue import shutdown_download_queue
 from services.logger import logger as logging
 from services.runtime.analytics_status import record_drop as record_analytics_drop
+from services.runtime.telegram_rate_limit import TelegramRateLimitMiddleware
 from services.storage.db import AnalyticsEvent, DataBase
 from utils.download_manager import close_download_http_clients
 from utils.http_client import close_http_session
@@ -81,6 +82,7 @@ def create_app(
         api=TelegramAPIServer.from_base(api_url),
         timeout=session_timeout,
     )
+    session.middleware(TelegramRateLimitMiddleware())
     default = DefaultBotProperties(parse_mode=ParseMode.HTML)
     bot = Bot(token=bot_token, default=default, session=session)
     dispatcher = Dispatcher()

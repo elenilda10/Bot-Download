@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -45,6 +45,7 @@ def test_create_app_builds_explicit_application_container(monkeypatch):
         assert app.dispatcher is not None
         assert app.bot is not None
         assert app.session is not None
+        assert any(isinstance(m, main.TelegramRateLimitMiddleware) for m in app.session.middleware)
     finally:
         asyncio.run(app.session.close())
 
@@ -55,6 +56,7 @@ def test_create_app_applies_session_limit(monkeypatch):
     class FakeSession:
         def __init__(self, **kwargs):
             captured.update(kwargs)
+            self.middleware = Mock()
 
         async def close(self):
             return None

@@ -159,3 +159,30 @@ async def test_youtube_routes_album_to_audio_but_keeps_regular_playlist_video(
         is True
     )
     assert process.await_args.kwargs["audio"] is audio
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('platform', ['Spotify', 'YouTube'])
+async def test_exhausted_telegram_flood_control_propagates_to_collection(monkeypatch, platform):
+    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.methods import SendAudio
+
+    module = spotify if platform == 'Spotify' else youtube
+    common(monkeypatch, module)
+    msg = message()
+    error = TelegramRetryAfter(SendAudio(chat_id=99, audio='cached'), 'Too Many Requests', 10)
+    monkeypatch.setattr(module, 'handle_download_error', AsyncMock())
+    if platform == 'Spotify':
+        msg.answer_audio.side_effect = error
+        call = spotify.process_spotify(msg, direct_url='https://open.spotify.com/track/abc123', collection_item=True)
+    else:
+        monkeypatch.setattr(youtube, 'get_bot_avatar_thumbnail', AsyncMock(return_value=None))
+        monkeypatch.setattr(youtube, '_get_youtube_video_with_timeout', AsyncMock(return_value={
+            'id': 'abcdefghijk', 'title': 'Song', 'webpage_url': 'https://youtube.com/watch?v=abcdefghijk', 'duration': 120,
+        }))
+        monkeypatch.setattr(youtube, 'send_audio_with_thumbnail', AsyncMock(side_effect=error))
+        call = youtube.download_music(msg, direct_url='https://youtube.com/watch?v=abcdefghijk', collection_item=True)
+    with pytest.raises(TelegramRetryAfter) as caught:
+        await call
+    assert caught.value is error
+    module.handle_download_error.assert_not_awaited()

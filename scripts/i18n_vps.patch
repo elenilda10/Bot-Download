@@ -1995,17 +1995,20 @@ index 69ff3cd..b51f28e 100644
  
              return await soundcloud_service.download_media(
 diff --git a/handlers/spotify.py b/handlers/spotify.py
-index 788ee4c..d55c348 100644
+index 788ee4c..7874e97 100644
 --- a/handlers/spotify.py
 +++ b/handlers/spotify.py
-@@ -1,5 +1,6 @@
+@@ -1,15 +1,17 @@
  from __future__ import annotations
  
 +import secrets
  import asyncio
  import re
  from typing import Optional
-@@ -9,7 +10,7 @@ from aiogram.types import FSInputFile
+ 
+ from aiogram import F, Router, types
++from aiogram.exceptions import TelegramRetryAfter
+ from aiogram.types import FSInputFile
  
  import messages as bm
  from app_context import bot, db, send_analytics
@@ -2014,7 +2017,7 @@ index 788ee4c..d55c348 100644
  from handlers.request_dedupe import claim_message_request
  from handlers.user import update_info
  from handlers.utils import (
-@@ -50,7 +51,7 @@ from utils.download_manager import (
+@@ -50,7 +52,7 @@ from utils.download_manager import (
  
  logging = logging.bind(service="spotify")
  
@@ -2023,7 +2026,7 @@ index 788ee4c..d55c348 100644
  
  router = Router()
  
-@@ -71,25 +72,35 @@ def _extract_spotify_url(text: str) -> str | None:
+@@ -71,25 +73,35 @@ def _extract_spotify_url(text: str) -> str | None:
      | F.caption.regexp(SPOTIFY_URL_REGEX, mode="search")
  )
  @with_message_logging("spotify", "message")
@@ -2064,7 +2067,7 @@ index 788ee4c..d55c348 100644
          if request_lease is None:
              return
  
-@@ -105,9 +116,8 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -105,9 +117,8 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
          )
          await react_to_message(message, "👾", business_id=business_id)
          user_settings = await load_user_settings(db, message)
@@ -2075,7 +2078,7 @@ index 788ee4c..d55c348 100644
          if show_service_status:
              status_message = await message.answer(bm.downloading_audio_status(lang=user_lang, platform='Spotify'))
  
-@@ -129,7 +139,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -129,7 +140,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
  
          async def _fetch_track() -> bool:
              nonlocal track, youtube_track
@@ -2084,7 +2087,7 @@ index 788ee4c..d55c348 100644
              query = " - ".join(
                  value
                  for value in (track.get("artists"), track.get("title"))
-@@ -142,7 +152,11 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -142,7 +153,11 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
              return True
  
          async def _download_audio():
@@ -2096,7 +2099,7 @@ index 788ee4c..d55c348 100644
              return await retry_async_operation(
                  lambda: download_mp3_with_ytdlp_metrics(
                      youtube_track["webpage_url"],
-@@ -186,7 +200,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -186,7 +201,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
              )
  
          async def _after_send(_result):
@@ -2105,7 +2108,7 @@ index 788ee4c..d55c348 100644
              request_lease.mark_success()
  
          async def _on_missing_audio():
-@@ -195,7 +209,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -195,7 +210,7 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
          async def _on_too_large():
              await message.answer(bm.audio_too_large(lang=user_lang), allow_sending_without_reply=True)
  
@@ -2114,7 +2117,7 @@ index 788ee4c..d55c348 100644
              cache_key=cache_key,
              db_service=db,
              send_cached=_send_cached,
-@@ -209,10 +223,13 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -209,10 +224,13 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
              cleanup_path=remove_file,
              on_after_send=_after_send,
          )
@@ -2128,9 +2131,12 @@ index 788ee4c..d55c348 100644
          await handle_download_backpressure_error(
              exc,
              message=message,
-@@ -225,8 +242,11 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+@@ -224,9 +242,14 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
+             message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
          )
      except Exception as exc:
++        if collection_item and isinstance(exc, TelegramRetryAfter):
++            raise
          logging.exception("Spotify download failed: error=%s", exc)
 -        await handle_download_error(message, business_id=business_id)
 +        await handle_download_error(message, error=exc, business_id=business_id)
@@ -2688,10 +2694,10 @@ index 2895c4c..cb12cc2 100644
      finally:
          if status:
 diff --git a/handlers/youtube.py b/handlers/youtube.py
-index 9934f4e..772b291 100644
+index 9934f4e..72be42e 100644
 --- a/handlers/youtube.py
 +++ b/handlers/youtube.py
-@@ -1,4 +1,8 @@
+@@ -1,9 +1,14 @@
 +from utils.download_errors import best_failure, close_failure_context, failure_context, note_failure
 +from i18n import normalize_locale as _normalize_locale
 +from i18n import t as _t
@@ -2700,7 +2706,13 @@ index 9934f4e..772b291 100644
  import asyncio
  import re
  import time
-@@ -86,8 +90,8 @@ def _is_pt(lang: Optional[str]) -> bool:
+ from typing import Any, Optional
+ from aiogram import types, Router, F
++from aiogram.exceptions import TelegramRetryAfter
+ from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+ from yt_dlp import YoutubeDL
+ import keyboards as kb
+@@ -86,8 +91,8 @@ def _is_pt(lang: Optional[str]) -> bool:
  
  
  def _make_progress_keyboard(video_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
@@ -2711,7 +2723,7 @@ index 9934f4e..772b291 100644
      return InlineKeyboardMarkup(
          inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"ytprog:{video_id}:{norm_lang}")]]
      )
-@@ -212,10 +216,20 @@ def search_youtube_track(query: str):
+@@ -212,10 +217,20 @@ def search_youtube_track(query: str):
  
  
  async def _get_youtube_video_with_timeout(url: str):
@@ -2735,7 +2747,7 @@ index 9934f4e..772b291 100644
  
  
  async def _download_youtube_media(
-@@ -266,9 +280,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -266,9 +281,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
  
      if not info:
          text = (
@@ -2747,7 +2759,7 @@ index 9934f4e..772b291 100644
          )
          await call.answer(text, show_alert=True)
          return
-@@ -276,9 +290,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -276,9 +291,9 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
      status = info.get("status")
      if status == "uploading":
          text = (
@@ -2759,7 +2771,7 @@ index 9934f4e..772b291 100644
          )
          await call.answer(text, show_alert=True)
          return
-@@ -290,17 +304,11 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -290,17 +305,11 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
  
      if is_portuguese:
          msg = (
@@ -2779,7 +2791,7 @@ index 9934f4e..772b291 100644
          )
  
      await call.answer(msg, show_alert=True)
-@@ -314,14 +322,20 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
+@@ -314,14 +323,20 @@ async def handle_youtube_progress_callback(call: types.CallbackQuery):
      F.text.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
      | F.caption.regexp(YOUTUBE_VIDEO_URL_REGEX, mode="search")
  )
@@ -2802,7 +2814,7 @@ index 9934f4e..772b291 100644
          message, bot, service_name="YouTube video", logger=logging
      ):
          await update_info(message)
-@@ -343,7 +357,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -343,7 +358,11 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
      video_id: Optional[str] = None
  
      try:
@@ -2815,7 +2827,7 @@ index 9934f4e..772b291 100644
          if request_lease is None:
              return
          await react_to_message(message, "👾", business_id=business_id)
-@@ -356,7 +374,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -356,7 +375,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
          if not yt:
              if status_message:
                  await safe_delete_message(status_message)
@@ -2824,7 +2836,7 @@ index 9934f4e..772b291 100644
              return
  
          video_id = yt.get("id") or "video"
-@@ -385,8 +403,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -385,8 +404,8 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
              await handle_video_too_large(message, business_id=business_id)
              return
  
@@ -2835,7 +2847,7 @@ index 9934f4e..772b291 100644
  
          YOUTUBE_PROGRESS[video_id] = {
              "percent": "0%",
-@@ -460,14 +478,14 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -460,14 +479,14 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
                  caption=bm.captions(user_captions, yt["title"], bot_url),
                  reply_markup_fn=_reply_markup,
                  as_document=as_document,
@@ -2852,7 +2864,7 @@ index 9934f4e..772b291 100644
              )
  
          async def _inspect_metrics(metrics):
-@@ -477,6 +495,10 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -477,6 +496,10 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
              return True
  
          _handle_backpressure = make_backpressure_handler(message, business_id)
@@ -2863,7 +2875,7 @@ index 9934f4e..772b291 100644
  
          cache_key = f"{yt['webpage_url']}#document" if as_document else yt["webpage_url"]
          cache_file_type = "document" if as_document else "video"
-@@ -517,17 +539,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -517,17 +540,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
                  summarize_url_for_log(yt["webpage_url"]),
                  sent_message.video.file_id,
              )
@@ -2878,7 +2890,7 @@ index 9934f4e..772b291 100644
 +            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
          )
      except Exception as e:
-+        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError)):
++        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError, TelegramRetryAfter)):
 +            raise
          logging.error("Video download error: %s", e)
 -        await handle_download_error(message, business_id=business_id)
@@ -2886,7 +2898,7 @@ index 9934f4e..772b291 100644
      finally:
          if video_id and video_id in YOUTUBE_PROGRESS:
              YOUTUBE_PROGRESS.pop(video_id, None)
-@@ -546,14 +571,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
+@@ -546,14 +572,20 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
      | F.caption.regexp(YOUTUBE_MUSIC_URL_REGEX, mode="search")
  )
  @with_message_logging("youtube", "music_message")
@@ -2909,7 +2921,7 @@ index 9934f4e..772b291 100644
          message, bot, service_name="YouTube audio", logger=logging
      ):
          await update_info(message)
-@@ -566,9 +597,14 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -566,9 +598,14 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
      )
      status_message: Optional[types.Message] = None
      request_lease = None
@@ -2925,7 +2937,7 @@ index 9934f4e..772b291 100644
          if request_lease is None:
              return
          await react_to_message(message, "👾", business_id=business_id)
-@@ -581,7 +617,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -581,7 +618,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
  
          yt = await _get_youtube_video_with_timeout(url)
          if not yt:
@@ -2934,7 +2946,7 @@ index 9934f4e..772b291 100644
              return
  
          audio_duration = yt.get("duration")
-@@ -591,6 +627,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -591,6 +628,9 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
              yt["webpage_url"], variant=AUDIO_CACHE_VARIANT
          )
          base_name = f"{yt['id']}_youtube_audio"
@@ -2944,7 +2956,7 @@ index 9934f4e..772b291 100644
  
          async def on_retry_download(failed_attempt: int, total_attempts: int, _error):
              if failed_attempt >= 2:
-@@ -670,7 +709,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -670,7 +710,7 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
  
          async def _after_send(_result):
              await maybe_delete_user_message(
@@ -2953,7 +2965,7 @@ index 9934f4e..772b291 100644
              )
              request_lease.mark_success()
  
-@@ -693,9 +732,10 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -693,9 +733,10 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
              cleanup_path=remove_file,
              on_after_send=_after_send,
          )
@@ -2966,7 +2978,7 @@ index 9934f4e..772b291 100644
          await handle_download_backpressure_error(
              e,
              message=message,
-@@ -706,12 +746,15 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
+@@ -706,12 +747,17 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
          if show_service_status:
              await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
          await handle_download_error(
@@ -2974,6 +2986,8 @@ index 9934f4e..772b291 100644
 +            message, business_id=business_id, error=TimeoutError(), platform='YouTube'
          )
      except Exception as e:
++        if collection_item and isinstance(e, TelegramRetryAfter):
++            raise
          logging.error("Audio download error: %s", e)
 -        await handle_download_error(message, business_id=business_id)
 +        await handle_download_error(message, error=e, business_id=business_id)
@@ -2984,7 +2998,7 @@ index 9934f4e..772b291 100644
          if request_lease is not None:
              request_lease.finish()
          await safe_delete_message(status_message)
-@@ -723,9 +766,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+@@ -723,9 +769,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
      user_lang = await db.get_language(call.from_user.id)
      if not call.message:
          text = (
@@ -2995,7 +3009,7 @@ index 9934f4e..772b291 100644
          )
          await call.answer(text, show_alert=True)
          return
-@@ -862,7 +903,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+@@ -862,7 +906,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
          if show_service_status:
              await safe_edit_text(status_message, bm.timeout_error(lang=user_lang))
          await handle_download_error(
@@ -3004,7 +3018,7 @@ index 9934f4e..772b291 100644
          )
      except Exception as e:
          logging.exception(
-@@ -870,7 +911,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
+@@ -870,7 +914,7 @@ async def download_youtube_mp3_callback(call: types.CallbackQuery):
              summarize_url_for_log(url),
              e,
          )
@@ -5649,7 +5663,7 @@ index 1513cfe..ce7fbb0 100644
                  )
              ],
 diff --git a/main.py b/main.py
-index c0d47e7..42feeb9 100644
+index c0d47e7..e1cd487 100644
 --- a/main.py
 +++ b/main.py
 @@ -20,7 +20,6 @@ from sqlalchemy import insert as sql_insert
@@ -5660,7 +5674,23 @@ index c0d47e7..42feeb9 100644
      BOT_SESSION_CONNECTION_LIMIT,
      BOT_TOKEN,
      CUSTOM_API_URL,
-@@ -371,8 +370,17 @@ async def main():
+@@ -35,6 +34,7 @@ from config import (
+ from services.download.queue import shutdown_download_queue
+ from services.logger import logger as logging
+ from services.runtime.analytics_status import record_drop as record_analytics_drop
++from services.runtime.telegram_rate_limit import TelegramRateLimitMiddleware
+ from services.storage.db import AnalyticsEvent, DataBase
+ from utils.download_manager import close_download_http_clients
+ from utils.http_client import close_http_session
+@@ -82,6 +82,7 @@ def create_app(
+         api=TelegramAPIServer.from_base(api_url),
+         timeout=session_timeout,
+     )
++    session.middleware(TelegramRateLimitMiddleware())
+     default = DefaultBotProperties(parse_mode=ParseMode.HTML)
+     bot = Bot(token=bot_token, default=default, session=session)
+     dispatcher = Dispatcher()
+@@ -371,8 +372,17 @@ async def main():
                  dp.callback_query.outer_middleware(middleware)
                  dp.inline_query.outer_middleware(middleware)
  
@@ -8444,6 +8474,146 @@ index 2190168..4f9470e 100644
      if normalized_service.startswith("youtube"):
          return _normalize_youtube_url(raw_url)
      return _normalize_generic_url(raw_url)
+diff --git a/services/runtime/telegram_rate_limit.py b/services/runtime/telegram_rate_limit.py
+new file mode 100644
+index 0000000..10f5f4d
+--- /dev/null
++++ b/services/runtime/telegram_rate_limit.py
+@@ -0,0 +1,134 @@
++"""Pace outgoing messages and retry explicit Telegram flood-control responses."""
++
++import asyncio
++import logging
++import time
++from collections import OrderedDict
++from dataclasses import dataclass, field
++
++from aiogram.client.session.middlewares.base import BaseRequestMiddleware
++from aiogram.exceptions import TelegramRetryAfter
++
++logger = logging.getLogger(__name__)
++
++
++@dataclass
++class _Destination:
++    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
++    users: int = 0
++    next_send: float = 0.0
++    cooldown: float = 0.0
++    last_error: TelegramRetryAfter | None = None
++
++
++class TelegramRateLimitMiddleware(BaseRequestMiddleware):
++    """Keep 429 waits asynchronous and local to the affected destination.
++
++    Only explicit 429 responses are retried: a network timeout could follow a
++    successful upload, so automatically replaying it might duplicate the media.
++    """
++
++    def __init__(
++        self, *, retries=3, max_wait=300.0, private_interval=1.05,
++        group_interval=3.1, global_interval=0.04, cache_size=4096,
++        clock=time.monotonic, sleep=asyncio.sleep,
++    ):
++        self.retries = retries
++        self.max_wait = max_wait
++        self.private_interval = private_interval
++        self.group_interval = group_interval
++        self.global_interval = global_interval
++        self.cache_size = cache_size
++        self.clock = clock
++        self.sleep = sleep
++        self._destinations = OrderedDict()
++        self._global_lock = asyncio.Lock()
++        self._global_next = 0.0
++
++    async def _global_slot(self, weight):
++        # Reserve a short pacing slot; never hold this lock over network IO or
++        # a Telegram-requested cooldown.
++        async with self._global_lock:
++            now = self.clock()
++            scheduled = max(now, self._global_next)
++            self._global_next = scheduled + self.global_interval * weight
++        if scheduled > now:
++            await self.sleep(scheduled - now)
++
++    def _trim(self):
++        if len(self._destinations) <= self.cache_size:
++            return
++        now = self.clock()
++        for key, state in list(self._destinations.items()):
++            # Never evict a lock with owners/waiters or forget an active cooldown.
++            if not state.users and max(state.next_send, state.cooldown) <= now:
++                del self._destinations[key]
++            if len(self._destinations) <= self.cache_size:
++                break
++
++    async def _request(self, make_request, bot, method, state=None, interval=0.0, weight=1):
++        waited = 0.0
++        for attempt in range(self.retries + 1):
++            if state is not None:
++                delay = max(0.0, state.cooldown - self.clock())
++                if delay:
++                    if waited + delay > self.max_wait:
++                        raise state.last_error
++                    await self.sleep(delay)
++                    waited += delay
++                delay = max(0.0, state.next_send - self.clock())
++                if delay:
++                    await self.sleep(delay)
++                await self._global_slot(weight)
++                state.next_send = self.clock() + interval * weight
++            try:
++                return await make_request(bot, method)
++            except TelegramRetryAfter as exc:
++                delay = max(0.0, float(exc.retry_after)) + 0.25
++                if state is not None:
++                    state.cooldown = max(state.cooldown, self.clock() + delay)
++                    state.last_error = exc
++                logger.warning(
++                    "Telegram flood control: method=%s retry_after=%s attempt=%s",
++                    method.__api_method__, exc.retry_after, attempt + 1,
++                )
++                if attempt >= self.retries or waited + delay > self.max_wait:
++                    raise
++                if state is None:
++                    await self.sleep(delay)
++                    waited += delay
++                # The next iteration waits for the shared chat cooldown.
++
++    async def __call__(self, make_request, bot, method):
++        name = method.__api_method__
++        outgoing = name.startswith(("send", "editMessage", "editEphemeralMessage")) or name in {
++            "copyMessage", "copyMessages", "forwardMessage", "forwardMessages",
++            "deleteMessage", "deleteMessages", "setMessageReaction",
++        }
++        chat_id = getattr(method, "chat_id", None)
++        if isinstance(chat_id, str) and chat_id.lstrip("-").isdigit():
++            chat_id = int(chat_id)
++        inline_id = getattr(method, "inline_message_id", None)
++        destination = ("chat", chat_id) if chat_id is not None else ("inline", inline_id)
++        if not outgoing or (chat_id is None and inline_id is None):
++            return await self._request(make_request, bot, method)
++        key = (bot.id, *destination)
++        state = self._destinations.setdefault(key, _Destination())
++        self._destinations.move_to_end(key)
++        state.users += 1
++        self._trim()
++        group = (isinstance(chat_id, int) and chat_id < 0) or isinstance(chat_id, str)
++        interval = self.group_interval if group else self.private_interval
++        weight = 1
++        if name == "sendMediaGroup":
++            weight = max(1, len(method.media))
++        elif name in {"copyMessages", "forwardMessages"}:
++            weight = max(1, len(method.message_ids))
++        try:
++            async with state.lock:
++                return await self._request(
++                    make_request, bot, method, state, interval, weight
++                )
++        finally:
++            state.users -= 1
++            self._trim()
 diff --git a/services/settings.py b/services/settings.py
 index aeb67d3..c070a34 100644
 --- a/services/settings.py

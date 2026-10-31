@@ -1,10 +1,18 @@
 {
   "base_commit": "4284cb55f20db391080be7c28ef98ad1c3c03876",
-  "patch_sha256": "38cc94edcf53b59291541f4012e8968579a5296d879fccc30f2662d5eb9b0de9",
+  "patch_sha256": "bd0e692b67ab9e2255d9271c61d060464e79b8df59b6aa8374bbcc9f934cc152",
   "files": {
     "handlers/settings_menu.py": {
       "base_sha256": "39063f4a9fb0d7d2dc65ed57cfe5f877d09eada6896adda6578bff3367942ba2",
       "result_sha256": "4ec2a4808bd005fbf8315827b4cbff307030a5f44f5376db29ac3ceddae2ff4a"
+    },
+    "handlers/spotify.py": {
+      "base_sha256": "647f9aa46b038c175b50d8f634e2f3ddefca6d8110106059f2161f6018464646",
+      "result_sha256": "ef6bd034ecdeb06b64e1bb145fd1c6b7c90d43cfb98e836ad08ad4077eabf716"
+    },
+    "handlers/youtube.py": {
+      "base_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374",
+      "result_sha256": "699b4b8de3aeff490ac7cffb1ca4d07114676c2a5a10dd8a0d7b0146750e2096"
     },
     "i18n/__init__.py": {
       "base_sha256": "fc04b8179ce98e5103d1383a4f6190755b9127b1b4842d4163e03ce0698edb60",
@@ -28,7 +36,7 @@
     },
     "main.py": {
       "base_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10",
-      "result_sha256": "10eb6f03c183879523154ae60ca2da3c866040f1b88a43a9aff07edd648fda5b"
+      "result_sha256": "05cfbf02ff4cae172b45d44e489705b8d490ed55e9e4a5d37c19f21d0da74606"
     },
     "middlewares/localization.py": {
       "base_sha256": "bb99e399edfce783fd5255572d79b7cf0367afe1b7f112989be327e23036e62d",
@@ -37,6 +45,10 @@
     "services/runtime/command_menu.py": {
       "base_sha256": null,
       "result_sha256": "54cddca09c9186e3b76fe0e025d79257893f7cabcbb35ef5efea45810d4ce4e7"
+    },
+    "services/runtime/telegram_rate_limit.py": {
+      "base_sha256": null,
+      "result_sha256": "6651abaa101828ac1b82967bba95074cced1dd0be81cab2018455b402a349ae2"
     }
   }
 }
