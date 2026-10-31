@@ -306,3 +306,30 @@ If Downloader-Bot saves you time, you can support ongoing development and infras
 ## License
 
 Released under the [MIT License](./LICENCE).
+# Instagram: alternativa Save Insta na VPS
+
+Para posts públicos (`/p/`, `/reel/`, `/reels/`), a extração tenta gallery-dl,
+Save Insta, yt-dlp e Cobalt, nessa ordem. O Save Insta usa `curl` e `ffprobe`
+instalados no sistema, sem nova dependência Python e sem enviar cookies do
+Instagram ao serviço. Os arquivos passam pelo handler, configurações e cache
+existentes. Álbuns maiores que dez mídias são divididos em grupos do Telegram.
+
+O Save Insta não retornou legenda nos testes. Após baixar suas mídias, a integração
+consulta a incorporação (`/embed/captioned/`) do próprio Instagram para recuperar
+legenda completa e autor. O shortcode do conteúdo estruturado deve corresponder
+ao post solicitado. Essa consulta tem limite de doze segundos; se indisponível,
+o download continua sem legenda. Não são usados cookies nessa consulta.
+gallery-dl continua primeiro para preservar texto e autor quando disponíveis.
+Stories permanecem no fluxo atual,
+incluindo o perfil Firefox. Falha em qualquer item do Save Insta descarta os
+arquivos parciais e permite tentar os próximos extratores.
+
+Para desativar essa alternativa, defina `INSTAGRAM_SAVEINSTA_ENABLED=0` no
+ambiente do serviço e reinicie o bot. A integração depende das rotas internas
+do Save Insta e pode precisar de ajustes se o site mudar.
+
+Validação isolada, sem iniciar o bot nem conectar ao banco:
+
+```bash
+python3 -m unittest discover -s tests -p test_instagram_saveinsta.py -v
+```

@@ -12,6 +12,7 @@ from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from services.platforms.instagram_saveinsta import download_saveinsta, fetch_post_metadata
 from config import COBALT_API_KEY, COBALT_API_URL
 from utils.cobalt_client import fetch_cobalt_data
 
@@ -585,6 +586,34 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
     )
     if res_gdl and res_gdl.media_list:
         return res_gdl
+
+    # Public posts only: keep gallery-dl first for captions and Firefox stories.
+    # The same handler receives local files, so delivery/cache/settings stay shared.
+    if (not story_id and "/stories/" not in clean_url
+            and os.getenv("INSTAGRAM_SAVEINSTA_ENABLED", "1").lower() not in {"0", "false", "off"}):
+        _t = time.monotonic()
+        try:
+            items = await loop.run_in_executor(None, download_saveinsta, clean_url, output_dir)
+            if items:
+                metadata = {}
+                try:
+                    metadata = await loop.run_in_executor(None, fetch_post_metadata, clean_url)
+                except Exception as exc:
+                    # A metadata outage must not discard a successful media download.
+                    logger.warning("Instagram embed metadata unavailable: %s", type(exc).__name__)
+                logger.info("Instagram Save Insta success: items=%s", len(items))
+                return InstagramVideo(
+                    id=post_id, description=metadata.get("description", ""),
+                    author=metadata.get("author") or "instagram_user",
+                    media_list=[InstagramMedia(**item) for item in items],
+                )
+        except Exception as exc:
+            logger.warning("Instagram Save Insta failed: %s", type(exc).__name__)
+        finally:
+            logger.warning(
+                "Instagram fallback timing: stage=saveinsta duration=%.2fs",
+                time.monotonic() - _t,
+            )
 
     # 2. yt-dlp: resolve Reel/vídeo e também foto/carrossel via CDN.
     _t = time.monotonic()
