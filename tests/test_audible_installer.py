@@ -69,3 +69,48 @@ def test_audible_install_preserves_changes_and_is_idempotent(baseline):
     ).read_text() == "private test data"
     again = subprocess.run(command, capture_output=True, text=True, check=False)
     assert again.returncode == 0 and "Already installed" in again.stdout
+
+
+def test_upgrade_from_installed_audible_reuses_shared_flow_without_touching_sessions(
+    tmp_path,
+):
+    manifest = json.loads((ROOT / "scripts/audible_ui_vps_manifest.json").read_text())
+    for name in manifest["files"]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    subprocess.run(
+        ["git", "apply", "--reverse", str(ROOT / "scripts/audible_ui_vps.patch")],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    for name in [
+        "i18n/__init__.py",
+        *[f"i18n/locales/{lang}.json" for lang in ["pt", "en", "es", "de"]],
+    ]:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, path)
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "AccountsSettings.json").write_text("keep")
+    handler = tmp_path / "handlers/audible.py"
+    handler.write_text(handler.read_text() + "\n# VPS LOCAL CUSTOMIZATION\n")
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts/install_audible_vps.py"),
+        "--target",
+        str(tmp_path),
+        "--apply",
+        "--diagnose",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "run_audio_flow(" in handler.read_text()
+        and "# VPS LOCAL CUSTOMIZATION" in handler.read_text()
+    )
+    assert (private / "AccountsSettings.json").read_text() == "keep"
+    again = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    assert again.returncode == 0 and "Already installed" in again.stdout

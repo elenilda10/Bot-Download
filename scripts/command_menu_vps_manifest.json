@@ -1,6 +1,6 @@
 {
   "base_commit": "4284cb55f20db391080be7c28ef98ad1c3c03876",
-  "patch_sha256": "6e8598635dd4f1d06955e075f4cdecdbeb4a8d2053806154894ac36a7ac57d88",
+  "patch_sha256": "20f9ea68bbca315dcfc0b934a3bb7a421cede641976d4181dbbfdedaab7f7379",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2",
@@ -8,7 +8,7 @@
     },
     "handlers/audible.py": {
       "base_sha256": null,
-      "result_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686"
+      "result_sha256": "c1a750fa4f7f48272f78a0c6ceed191bd219ce11131538abe8e113545d8b2d09"
     },
     "handlers/media_download.py": {
       "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
@@ -61,6 +61,10 @@
     "services/links/detection.py": {
       "base_sha256": "8d1fa15a668d4c61e2ae3e100feee886f374abb2e6764c7074d3bce04e0380b0",
       "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+    },
+    "services/media/audio_flow.py": {
+      "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
+      "result_sha256": "26ae484f703e3d69903ca791a74c9cca60e537779a0f835ce08a875249077af9"
     },
     "services/platforms/audible_service.py": {
       "base_sha256": null,

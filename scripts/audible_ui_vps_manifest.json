@@ -1,0 +1,14 @@
+{
+  "base_commit": "c26dccb1ffef361703a37b97d349840f56209055",
+  "patch_sha256": "a4c5705ff9ad41dfa5be0ce3029c8371c6a3dd66a335eee1b1629f9084c2519b",
+  "files": {
+    "handlers/audible.py": {
+      "base_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686",
+      "result_sha256": "c1a750fa4f7f48272f78a0c6ceed191bd219ce11131538abe8e113545d8b2d09"
+    },
+    "services/media/audio_flow.py": {
+      "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
+      "result_sha256": "26ae484f703e3d69903ca791a74c9cca60e537779a0f835ce08a875249077af9"
+    }
+  }
+}

@@ -15,7 +15,11 @@ def main():
     target = args.target.resolve()
     try:
         changes = prepare(
-            target, reference=Path(__file__).resolve().parent, bundle="audible_vps"
+            target,
+            reference=Path(__file__).resolve().parent,
+            bundle="audible_ui_vps"
+            if (target / "handlers/audible.py").is_file()
+            else "audible_vps",
         )
     except RuntimeConflict as exc:
         if args.diagnose and exc.details:

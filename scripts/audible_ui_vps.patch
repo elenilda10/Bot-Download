@@ -1,0 +1,450 @@
+diff --git a/handlers/audible.py b/handlers/audible.py
+index ce70250..f04afc6 100644
+--- a/handlers/audible.py
++++ b/handlers/audible.py
+@@ -1,9 +1,9 @@
+ """Per-user Audible authorization and book delivery, exclusively in private chats."""
+ 
+ import asyncio
+-import html
+ import re
+ import time
++from contextlib import AsyncExitStack
+ from dataclasses import dataclass
+ 
+ from aiogram import F, Router, types
+@@ -12,12 +12,26 @@ from aiogram.filters import Command
+ from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+ 
+ import messages as bm
+-from app_context import bot
++from app_context import bot, db
+ from config import MAX_FILE_SIZE
+-from handlers.utils import get_bot_url, get_bot_username, safe_edit_text
++from handlers.utils import (
++    get_bot_avatar_thumbnail,
++    get_bot_url,
++    get_bot_username,
++    load_user_settings,
++    maybe_delete_user_message,
++    remove_file,
++    safe_delete_message,
++    safe_edit_text,
++    send_chat_action_if_needed,
++)
+ from i18n import t
+ from services.links.audible import MARKETS, book_identity, book_url, extract_audible_url
++from services.media.audio_flow import run_audio_flow
++from services.media.audio_metadata import PreparedAudioMetadata, build_audio_filename
++from services.media.delivery import send_audio_with_thumbnail
+ from services.platforms.audible_service import AudibleError, service
++from utils.download_manager import DownloadMetrics
+ 
+ router = Router(name="audible")
+ 
+@@ -28,6 +42,9 @@ class Flow:
+     asin: str = ""
+     step: str = "consent"
+     deadline: float = 0
++    status: types.Message | None = None
++    source: types.Message | None = None
++    login_markup: InlineKeyboardMarkup | None = None
+ 
+ 
+ _flows = {}
+@@ -66,12 +83,36 @@ def _keyboard(market="br", asin="", *, connected=False):
+ 
+ 
+ async def _explain(message, market="br", asin=""):
+-    await message.answer(
+-        t("audible.explain"), reply_markup=_keyboard(market, asin), parse_mode="HTML"
+-    )
++    owner = message.from_user.id
++    for user, flow in list(_flows.items()):
++        if flow.deadline < time.monotonic():
++            _flows.pop(user, None)
++    if len(_flows) >= 256 and owner not in _flows:
++        await _failure(message, "busy")
++        return
++    previous = _flows.get(owner)
++    if previous and previous.step not in {"consent", "email"}:
++        await _failure(message, "busy", flow=previous)
++        return
++    flow = Flow(market, asin, "consent", time.monotonic() + 600, source=message)
++    if previous and previous.status:
++        flow.status = previous.status
++        await safe_edit_text(
++            flow.status,
++            t("audible.explain"),
++            reply_markup=_keyboard(market, asin),
++            parse_mode="HTML",
++        )
++    else:
++        flow.status = await message.reply(
++            t("audible.explain"),
++            reply_markup=_keyboard(market, asin),
++            parse_mode="HTML",
++        )
++    _flows[owner] = flow
+ 
+ 
+-async def _failure(message, code):
++async def _failure(message, code, *, flow=None):
+     known = {
+         "busy",
+         "unavailable",
+@@ -85,7 +126,19 @@ async def _failure(message, code):
+         "login",
+         "download",
+     }
+-    await message.answer(t("audible.error." + (code if code in known else "download")))
++    text = t("audible.error." + (code if code in known else "download"))
++    if flow and flow.status:
++        if code == "email":
++            text += "\n\n" + t("audible.email")
++            markup = _cancel_keyboard()
++        elif code == "response":
++            text += "\n\n" + t("audible.browser")
++            markup = flow.login_markup or _cancel_keyboard()
++        else:
++            markup = _keyboard(flow.market, flow.asin)
++        await safe_edit_text(flow.status, text, reply_markup=markup, parse_mode="HTML")
++    else:
++        await message.answer(text)
+ 
+ 
+ @router.business_message(Command("audible_logout"))
+@@ -142,10 +195,14 @@ async def account_action(call):
+         _flows.pop(owner, None)
+         if action[1] == "logout":
+             await service.disconnect(owner)
+-            await call.message.answer(t("audible.disconnected"))
++            await safe_edit_text(
++                call.message, t("audible.disconnected"), reply_markup=None
++            )
+         else:
+             await service.cancel(owner)
+-            await call.message.answer(t("audible.cancelled"))
++            await safe_edit_text(
++                call.message, t("audible.cancelled"), reply_markup=None
++            )
+         return
+     if len(action) != 4 or action[1] != "connect" or action[2] not in MARKETS.values():
+         return
+@@ -161,8 +218,21 @@ async def account_action(call):
+     if len(_flows) >= 256 and owner not in _flows:
+         await _failure(call.message, "busy")
+         return
+-    _flows[owner] = Flow(action[2], action[3], "email", time.monotonic() + 600)
+-    await call.message.answer(t("audible.email"), reply_markup=_cancel_keyboard())
++    previous = _flows.get(owner)
++    source = (
++        previous.source if previous else getattr(call.message, "reply_to_message", None)
++    )
++    _flows[owner] = Flow(
++        action[2],
++        action[3],
++        "email",
++        time.monotonic() + 600,
++        status=call.message,
++        source=source,
++    )
++    await safe_edit_text(
++        call.message, t("audible.email"), reply_markup=_cancel_keyboard()
++    )
+ 
+ 
+ def _cancel_keyboard():
+@@ -188,7 +258,9 @@ def _auth_input(message):
+     if not message.from_user or not message.text or message.text.startswith("/"):
+         return False
+     return (
+-        message.from_user.id in _flows and _private(message)
++        message.from_user.id in _flows
++        and _private(message)
++        and _flows[message.from_user.id].step != "consent"
+     ) or "openid.oa2.authorization_code=" in message.text
+ 
+ 
+@@ -206,7 +278,7 @@ async def authorization_input(message):
+     if not flow or flow.deadline < time.monotonic():
+         _flows.pop(owner, None)
+         await service.cancel_login(owner)
+-        await _failure(message, "expired")
++        await _failure(message, "expired", flow=flow)
+         return
+     try:
+         if flow.step == "email":
+@@ -220,7 +292,7 @@ async def authorization_input(message):
+                 raise
+             if not url:
+                 _flows.pop(owner, None)
+-                await _failure(message, "login")
++                await _failure(message, "login", flow=flow)
+                 return
+             flow.step = "response"
+             flow.deadline = time.monotonic() + 600
+@@ -234,8 +306,12 @@ async def authorization_input(message):
+                     ],
+                 ]
+             )
+-            await message.answer(
+-                t("audible.browser"), reply_markup=keyboard, parse_mode="HTML"
++            flow.login_markup = keyboard
++            await safe_edit_text(
++                flow.status,
++                t("audible.browser"),
++                reply_markup=keyboard,
++                parse_mode="HTML",
+             )
+         elif flow.step == "response":
+             flow.step = "finishing"
+@@ -245,25 +321,32 @@ async def authorization_input(message):
+                 flow.step = "response" if str(exc) == "response" else "email"
+                 raise
+             _flows.pop(owner, None)
+-            await message.answer(
+-                t("audible.connected"),
+-                reply_markup=_keyboard(flow.market, connected=True),
+-            )
+             if flow.asin:
++                source = (
++                    flow.source if flow.source and _private(flow.source) else message
++                )
+                 await process_audible(
+-                    message, direct_url=book_url(flow.market, flow.asin)
++                    source,
++                    direct_url=book_url(flow.market, flow.asin),
++                    status_message=flow.status,
++                )
++            else:
++                await safe_edit_text(
++                    flow.status,
++                    t("audible.connected"),
++                    reply_markup=_keyboard(flow.market, connected=True),
+                 )
+         else:
+-            await _failure(message, "busy")
++            await _failure(message, "busy", flow=flow)
+     except AudibleError as exc:
+-        await _failure(message, str(exc))
++        await _failure(message, str(exc), flow=flow)
+     except TimeoutError:
+         _flows.pop(owner, None)
+-        await _failure(message, "expired")
++        await _failure(message, "expired", flow=flow)
+     except OSError:
+         _flows.pop(owner, None)
+         await service.cancel_login(owner)
+-        await _failure(message, "unavailable")
++        await _failure(message, "unavailable", flow=flow)
+ 
+ 
+ @router.business_message(
+@@ -272,7 +355,9 @@ async def authorization_input(message):
+ @router.message(
+     lambda message: bool(extract_audible_url(message.text or message.caption))
+ )
+-async def process_audible(message: types.Message, direct_url=None):
++async def process_audible(
++    message: types.Message, direct_url=None, *, status_message=None
++):
+     url = direct_url or extract_audible_url(message.text or message.caption)
+     identity = book_identity(url or "")
+     if not identity or not message.from_user:
+@@ -296,36 +381,95 @@ async def process_audible(message: types.Message, direct_url=None):
+     if not service.connected(owner, market):
+         await _explain(message, market, asin)
+         return False
+-    status = await message.answer(
+-        t("audible.checking"), reply_markup=_cancel_keyboard()
+-    )
++    status = status_message
++    sent = False
+     try:
+-        async with service.book(owner, market, asin, max_size=MAX_FILE_SIZE) as (
+-            path,
+-            title,
+-        ):
+-            await safe_edit_text(
+-                status,
+-                bm.uploading_status(platform="Audible"),
+-                reply_markup=_cancel_keyboard(),
+-            )
+-            bot_url = await get_bot_url(bot)
+-            await message.answer_audio(
+-                audio=FSInputFile(path, filename=asin + ".m4a"),
+-                title=title[:100],
+-                caption=bm.captions("on", html.escape(title[:600]), bot_url),
+-                parse_mode="HTML",
++        settings = await load_user_settings(db, message)
++        text = bm.downloading_audio_status(platform="Audible")
++        if status:
++            await safe_edit_text(status, text, reply_markup=_cancel_keyboard())
++        else:
++            status = await message.reply(text, reply_markup=_cancel_keyboard())
++        async with AsyncExitStack() as stack:
++            audio = {}
++
++            async def download_audio():
++                path, title = await stack.enter_async_context(
++                    service.book(owner, market, asin, max_size=MAX_FILE_SIZE)
++                )
++                audio["title"] = title
++                return DownloadMetrics(
++                    url=book_url(market, asin),
++                    path=str(path),
++                    size=path.stat().st_size,
++                    elapsed=0,
++                    used_multipart=False,
++                    resumed=False,
++                )
++
++            async def prepare_metadata(_path):
++                # Libation already prepared the M4A. Do not write MP3 ID3 tags.
++                return PreparedAudioMetadata(tagged=False)
++
++            async def send_downloaded(path, _metadata):
++                await safe_edit_text(
++                    status,
++                    bm.uploading_status(platform="Audible"),
++                    reply_markup=_cancel_keyboard(),
++                )
++                await send_chat_action_if_needed(bot, owner, "upload_audio", None)
++                bot_url = await get_bot_url(bot)
++                source = extract_audible_url(message.text or message.caption)
++                reply = book_identity(source or "") == identity
++                sender = message.reply_audio if reply else message.answer_audio
++                return await send_audio_with_thumbnail(
++                    sender,
++                    audio=FSInputFile(
++                        path,
++                        filename=build_audio_filename(audio["title"])[:-4] + ".m4a",
++                    ),
++                    title=audio["title"][:100],
++                    audio_path=path,
++                    bot_avatar=await get_bot_avatar_thumbnail(bot),
++                    bot_url=bot_url,
++                    caption=bm.captions(settings.get("captions", "on"), None, bot_url),
++                    embed_thumbnail=False,
++                    parse_mode="HTML",
++                )
++
++            async def unavailable(*_args):
++                raise AudibleError("library")
++
++            async def too_large():
++                raise AudibleError("too_large")
++
++            result = await run_audio_flow(
++                cache_key=f"audible:{owner}:{market}:{asin}",
++                db_service=db,
++                cache_enabled=False,
++                send_cached=unavailable,
++                download_audio=download_audio,
++                on_missing_audio=unavailable,
++                max_file_size=MAX_FILE_SIZE,
++                on_too_large=too_large,
++                prepare_metadata=prepare_metadata,
++                send_downloaded=send_downloaded,
++                cleanup_path=remove_file,
+             )
+-        await safe_edit_text(status, t("audible.finished"), reply_markup=None)
+-        return True
++            sent = bool(result)
++        if sent:
++            await maybe_delete_user_message(message, settings.get("delete_message"))
++        return sent
+     except AudibleError as exc:
+         if str(exc) == "session":
+             (service.profile(owner, market) / ".connected").unlink(missing_ok=True)
+-        await safe_edit_text(status, t("audible.stopped"), reply_markup=None)
+-        await _failure(message, str(exc))
++        flow = Flow(market, asin, status=status, source=message)
++        await _failure(message, str(exc), flow=flow)
+     except asyncio.CancelledError:
+         raise
+     except (OSError, TimeoutError, TelegramAPIError):
+-        await safe_edit_text(status, t("audible.stopped"), reply_markup=None)
+-        await _failure(message, "download")
++        await _failure(message, "download", flow=Flow(market, asin, status=status))
++    finally:
++        if sent:
++            await safe_delete_message(status)
+     return False
+diff --git a/services/media/audio_flow.py b/services/media/audio_flow.py
+index ff64863..256bb98 100644
+--- a/services/media/audio_flow.py
++++ b/services/media/audio_flow.py
+@@ -6,20 +6,21 @@ size check, MP3 metadata preparation, upload, cache store, and temp-file
+ cleanup in ``finally``.
+ """
+ 
++from collections.abc import Awaitable, Callable
+ from dataclasses import dataclass
+-from typing import Any, Awaitable, Callable, Optional
++from typing import Any
+ 
+ from utils.download_manager import DownloadMetrics
+ 
+ 
+-def _default_extract_file_id(sent: Any) -> Optional[str]:
++def _default_extract_file_id(sent: Any) -> str | None:
+     audio = getattr(sent, "audio", None)
+     return audio.file_id if audio else None
+ 
+ 
+ @dataclass
+ class AudioFlowResult:
+-    file_id: Optional[str]
++    file_id: str | None
+     sent_message: Any = None
+     from_cache: bool = False
+ 
+@@ -29,27 +30,29 @@ async def run_audio_flow(
+     cache_key: str,
+     db_service: Any,
+     send_cached: Callable[[str], Awaitable[Any]],
+-    download_audio: Callable[[], Awaitable[Optional[DownloadMetrics]]],
++    download_audio: Callable[[], Awaitable[DownloadMetrics | None]],
+     on_missing_audio: Callable[[], Awaitable[None]],
+     max_file_size: int,
+     on_too_large: Callable[[], Awaitable[None]],
+     prepare_metadata: Callable[[str], Awaitable[Any]],
+     send_downloaded: Callable[[str, Any], Awaitable[Any]],
+     cleanup_path: Callable[[str], Awaitable[None]],
+-    fetch_metadata: Optional[Callable[[], Awaitable[bool]]] = None,
+-    extract_file_id: Callable[[Any], Optional[str]] = _default_extract_file_id,
++    fetch_metadata: Callable[[], Awaitable[bool]] | None = None,
++    extract_file_id: Callable[[Any], str | None] = _default_extract_file_id,
+     cache_file_type: str = "audio",
+-    on_cache_store_error: Optional[Callable[[Exception], Awaitable[None]]] = None,
+-    on_after_send: Optional[Callable[[AudioFlowResult], Awaitable[None]]] = None,
+-) -> Optional[AudioFlowResult]:
++    on_cache_store_error: Callable[[Exception], Awaitable[None]] | None = None,
++    on_after_send: Callable[[AudioFlowResult], Awaitable[None]] | None = None,
++    cache_enabled: bool = True,
++) -> AudioFlowResult | None:
+     """Run the shared audio pipeline and return the delivery result.
+ 
+     Returns ``None`` when the flow ended early (missing media, oversized
+     file, or an aborted ``fetch_metadata``); the corresponding callback has
+     already produced user feedback in that case. Backpressure and unexpected
+-    errors propagate to the caller unchanged.
++    errors propagate to the caller unchanged. Set cache_enabled=False for private
++    licensed sources that must revalidate access and must not share file IDs.
+     """
+-    cached_file_id = await db_service.get_file_id(cache_key)
++    cached_file_id = await db_service.get_file_id(cache_key) if cache_enabled else None
+     if cached_file_id:
+         sent = await send_cached(cached_file_id)
+         result = AudioFlowResult(
+@@ -76,7 +79,7 @@ async def run_audio_flow(
+         try:
+             sent = await send_downloaded(metrics.path, prepared_metadata)
+             file_id = extract_file_id(sent)
+-            if file_id:
++            if file_id and cache_enabled:
+                 try:
+                     await db_service.add_file(cache_key, file_id, cache_file_type)
+                 except Exception as exc:

@@ -76,3 +76,17 @@ próprio navegador e verificar que um livro presente só em uma biblioteca não 
 entregue pela sessão da outra. Os testes automatizados usam um processo CLI
 simulado com PTY e arquivos temporários, sem autenticar contas reais, além de
 um teste de preparação com FFmpeg/FFprobe reais.
+
+## Interface e envio compartilhados
+
+O aviso inicial responde ao link do livro e é editado durante e-mail, login no
+navegador, download e upload. A referência ao link original é mantida separada
+das mensagens sensíveis apagadas. Ao terminar o envio, o aviso é removido.
+O bot não cria uma mensagem adicional de confirmação de envio.
+
+A entrega usa `run_audio_flow` e `send_audio_with_thumbnail`, como os outros
+handlers de áudio, com legenda conforme configurações, duração e thumbnail de
+fallback do bot. O arquivo responde ao link original quando disponível, nunca à
+URL de autorização. O cache da pipeline é explicitamente desabilitado para
+continuar verificando a licença individual e não compartilhar file_ids.
+O instalador escolhe a atualização incremental quando o handler já existe.

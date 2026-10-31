@@ -1,6 +1,6 @@
 {
   "base_commit": "57234221ad7df86a1888b7063f1897c7f71a3271",
-  "patch_sha256": "1df0f8cd94357012ab430030c35416481063904b2db6de2274d5db722161869e",
+  "patch_sha256": "38595d701159394338f0a4ecd6ad3bc741b8d379c8d2a04d12c64ce03b00e5ef",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -8,7 +8,7 @@
     },
     "handlers/audible.py": {
       "base_sha256": null,
-      "result_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686"
+      "result_sha256": "c1a750fa4f7f48272f78a0c6ceed191bd219ce11131538abe8e113545d8b2d09"
     },
     "handlers/channel_membership.py": {
       "base_sha256": "8f3df93c7db71a93326b246b4e85298142a6cfbdec4f712489bd9e60dcdfc01e",
@@ -85,6 +85,10 @@
     "services/links/detection.py": {
       "base_sha256": "4721943998e3ad3b5adbd199dd007ce2a226efeca00b16ca8163a61c16c91c5e",
       "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+    },
+    "services/media/audio_flow.py": {
+      "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
+      "result_sha256": "26ae484f703e3d69903ca791a74c9cca60e537779a0f835ce08a875249077af9"
     },
     "services/media/collection_flow.py": {
       "base_sha256": null,

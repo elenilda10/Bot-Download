@@ -28,6 +28,8 @@ def message(owner=1, text=URL, group=False):
         delete=AsyncMock(),
         answer=AsyncMock(return_value=SimpleNamespace(edit_text=AsyncMock())),
         answer_audio=AsyncMock(),
+        reply_audio=AsyncMock(),
+        reply=AsyncMock(return_value=SimpleNamespace(edit_text=AsyncMock())),
     )
 
 
@@ -37,6 +39,14 @@ def runtime(monkeypatch, tmp_path):
     ui.get_bot_username = AsyncMock(return_value="testbot")
     ui.get_bot_url = AsyncMock(return_value="https://t.me/testbot")
     ui.safe_edit_text = AsyncMock()
+    ui.safe_delete_message = AsyncMock()
+    ui.load_user_settings = AsyncMock(
+        return_value={"captions": "on", "delete_message": "off"}
+    )
+    ui.maybe_delete_user_message = AsyncMock()
+    ui.remove_file = AsyncMock()
+    ui.get_bot_avatar_thumbnail = AsyncMock(return_value=None)
+    ui.send_chat_action_if_needed = AsyncMock()
     monkeypatch.setitem(sys.modules, "handlers.utils", ui)
     spec = importlib.util.spec_from_file_location(
         "isolated_audible_handler", ROOT / "handlers/audible.py"
@@ -59,6 +69,11 @@ def runtime(monkeypatch, tmp_path):
         profile=lambda *args: tmp_path,
     )
     module.service = backend
+
+    async def send(sender, **kwargs):
+        return await sender(**kwargs)
+
+    module.send_audio_with_thumbnail = AsyncMock(side_effect=send)
     return module, backend, ui
 
 
@@ -69,12 +84,12 @@ async def test_first_link_explains_why_login_is_needed_without_using_vps_account
     module, backend, _ = runtime
     msg = message()
     assert not await module.process_audible(msg)
-    text = msg.answer.call_args.args[0]
+    text = msg.reply.call_args.args[0]
     assert "library" in text and "password" in text and "/audible_logout" in text
-    assert not module._flows
+    assert module._flows[1].step == "consent"
     backend.begin_login.assert_not_awaited()
     assert (
-        msg.answer.call_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
+        msg.reply.call_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data
         == f"audible:connect:br:{ASIN}"
     )
 
@@ -97,7 +112,8 @@ async def test_private_callback_uses_clicking_owner_not_bot_message_author(runti
     email.delete.assert_awaited_once()
     backend.begin_login.assert_awaited_once_with(1, "br", "owner@example.test")
     assert module._flows[1].step == "response"
-    assert "owner@example.test" not in email.answer.call_args.args[0]
+    email.answer.assert_not_awaited()
+    assert "owner@example.test" not in str(module.safe_edit_text.await_args.args[1])
 
 
 @pytest.mark.asyncio
@@ -160,6 +176,7 @@ async def test_return_message_is_deleted_and_original_book_retried_for_same_owne
     assert 1 not in module._flows and cleaned == [True]
     msg.delete.assert_awaited_once()
     msg.answer_audio.assert_awaited_once()
+    module.safe_delete_message.assert_awaited_once()
     assert all("authorization_code" not in str(c) for c in msg.answer.call_args_list)
     assert msg.answer_audio.call_args.kwargs["title"] == "Book"
 
@@ -189,4 +206,55 @@ async def test_library_failure_is_explained_without_returning_raw_vendor_diagnos
     backend.book = book
     msg = message()
     assert not await module.process_audible(msg)
-    assert "library" in msg.answer.call_args.args[0]
+    assert "library" in module.safe_edit_text.call_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_login_reuses_notice_and_delivers_in_reply_to_original_book(
+    runtime, tmp_path
+):
+    module, backend, _ = runtime
+    original = message()
+    await module.process_audible(original)
+    notice = module._flows[1].status
+    call = SimpleNamespace(
+        message=notice,
+        from_user=SimpleNamespace(id=1),
+        data=f"audible:connect:br:{ASIN}",
+        answer=AsyncMock(),
+    )
+    notice.chat = original.chat
+    notice.business_connection_id = None
+    await module.account_action(call)
+    email = message(text="owner@example.test")
+    await module.authorization_input(email)
+    backend.finish_login.side_effect = lambda *args: setattr(
+        backend, "connected", lambda *args: True
+    )
+
+    @asynccontextmanager
+    async def book(*args, **kwargs):
+        path = tmp_path / "audio.m4a"
+        path.write_bytes(b"audio")
+        try:
+            yield path, "Book"
+        finally:
+            path.unlink(missing_ok=True)
+
+    backend.book = book
+    handoff = message(
+        text="https://www.audible.com.br/ap/maplanding?openid.oa2.authorization_code=private"
+    )
+    await module.authorization_input(handoff)
+    original.reply.assert_awaited_once()  # only the initial consent notice
+    email.answer.assert_not_awaited()
+    handoff.answer.assert_not_awaited()
+    assert all(c.args[0] is notice for c in module.safe_edit_text.await_args_list)
+    original.reply_audio.assert_awaited_once()
+    handoff.answer_audio.assert_not_awaited()
+    handoff.reply_audio.assert_not_awaited()
+    assert module.send_audio_with_thumbnail.await_args.args[0] is original.reply_audio
+    assert (
+        module.send_audio_with_thumbnail.await_args.kwargs["caption"].count("Book") == 0
+    )
+    module.safe_delete_message.assert_awaited_once_with(notice)

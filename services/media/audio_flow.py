@@ -6,20 +6,21 @@ size check, MP3 metadata preparation, upload, cache store, and temp-file
 cleanup in ``finally``.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from utils.download_manager import DownloadMetrics
 
 
-def _default_extract_file_id(sent: Any) -> Optional[str]:
+def _default_extract_file_id(sent: Any) -> str | None:
     audio = getattr(sent, "audio", None)
     return audio.file_id if audio else None
 
 
 @dataclass
 class AudioFlowResult:
-    file_id: Optional[str]
+    file_id: str | None
     sent_message: Any = None
     from_cache: bool = False
 
@@ -29,27 +30,29 @@ async def run_audio_flow(
     cache_key: str,
     db_service: Any,
     send_cached: Callable[[str], Awaitable[Any]],
-    download_audio: Callable[[], Awaitable[Optional[DownloadMetrics]]],
+    download_audio: Callable[[], Awaitable[DownloadMetrics | None]],
     on_missing_audio: Callable[[], Awaitable[None]],
     max_file_size: int,
     on_too_large: Callable[[], Awaitable[None]],
     prepare_metadata: Callable[[str], Awaitable[Any]],
     send_downloaded: Callable[[str, Any], Awaitable[Any]],
     cleanup_path: Callable[[str], Awaitable[None]],
-    fetch_metadata: Optional[Callable[[], Awaitable[bool]]] = None,
-    extract_file_id: Callable[[Any], Optional[str]] = _default_extract_file_id,
+    fetch_metadata: Callable[[], Awaitable[bool]] | None = None,
+    extract_file_id: Callable[[Any], str | None] = _default_extract_file_id,
     cache_file_type: str = "audio",
-    on_cache_store_error: Optional[Callable[[Exception], Awaitable[None]]] = None,
-    on_after_send: Optional[Callable[[AudioFlowResult], Awaitable[None]]] = None,
-) -> Optional[AudioFlowResult]:
+    on_cache_store_error: Callable[[Exception], Awaitable[None]] | None = None,
+    on_after_send: Callable[[AudioFlowResult], Awaitable[None]] | None = None,
+    cache_enabled: bool = True,
+) -> AudioFlowResult | None:
     """Run the shared audio pipeline and return the delivery result.
 
     Returns ``None`` when the flow ended early (missing media, oversized
     file, or an aborted ``fetch_metadata``); the corresponding callback has
     already produced user feedback in that case. Backpressure and unexpected
-    errors propagate to the caller unchanged.
+    errors propagate to the caller unchanged. Set cache_enabled=False for private
+    licensed sources that must revalidate access and must not share file IDs.
     """
-    cached_file_id = await db_service.get_file_id(cache_key)
+    cached_file_id = await db_service.get_file_id(cache_key) if cache_enabled else None
     if cached_file_id:
         sent = await send_cached(cached_file_id)
         result = AudioFlowResult(
@@ -76,7 +79,7 @@ async def run_audio_flow(
         try:
             sent = await send_downloaded(metrics.path, prepared_metadata)
             file_id = extract_file_id(sent)
-            if file_id:
+            if file_id and cache_enabled:
                 try:
                     await db_service.add_file(cache_key, file_id, cache_file_type)
                 except Exception as exc:

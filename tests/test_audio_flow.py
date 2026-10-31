@@ -200,3 +200,18 @@ async def test_run_audio_flow_cache_store_error_propagates_without_handler(tmp_p
 
     prepared.cleanup.assert_called_once_with()
     kwargs["cleanup_path"].assert_awaited_once_with(metrics.path)
+
+
+@pytest.mark.asyncio
+async def test_private_audio_bypasses_cache_reads_and_writes(tmp_path):
+    db = _make_db(cached_file_id="must-not-use-another-account")
+    kwargs = _make_flow_kwargs(
+        db, download_audio=AsyncMock(return_value=_make_metrics(tmp_path))
+    )
+    result = await run_audio_flow(**kwargs, cache_enabled=False)
+    assert result and not result.from_cache
+    db.get_file_id.assert_not_awaited()
+    db.add_file.assert_not_awaited()
+    kwargs["send_cached"].assert_not_awaited()
+    kwargs["send_downloaded"].assert_awaited_once()
+    kwargs["cleanup_path"].assert_awaited_once()
