@@ -1,5 +1,7 @@
 """Save Insta fallback for public posts. Uses the same curl flow as the VPS test."""
 
+import base64
+import binascii
 import json
 import os
 import re
@@ -7,7 +9,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urlparse
+from urllib.parse import urlencode, urlparse, parse_qs, unquote
 
 BASE_URL = "https://saveinsta.to"
 
@@ -16,6 +18,32 @@ BASE_URL = "https://saveinsta.to"
 class SaveInstaItem:
     type: str
     links: list[tuple[str, str]] = field(default_factory=list)
+    media_ids: set[str] = field(default_factory=set)
+
+
+def _proxy_media_id(link: str) -> str | None:
+    """Read the media PK from the Instagram cache key, including video posters.
+
+    MP4 URLs often lack the PK. Their thumbnail in the same Save Insta <li>
+    carries it. File basenames are upload IDs and must not be treated as PKs.
+    """
+    try:
+        proxy = urlparse(link)
+        if proxy.scheme != "https" or proxy.hostname not in {"dl.snapcdn.app", "i.snapcdn.app"}:
+            return None
+        token = parse_qs(proxy.query).get("token", [""])[0].split(".")[1]
+        payload = json.loads(base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)))
+        cdn = urlparse(payload.get("url", ""))
+        host = cdn.hostname or ""
+        if not (host.endswith(".cdninstagram.com") or host.endswith(".fbcdn.net")):
+            return None
+        cache_key = parse_qs(cdn.query).get("ig_cache_key", [""])[0]
+        cache_key = unquote(unquote(cache_key)).split(".")[0]
+        decoded = base64.urlsafe_b64decode(cache_key + "=" * (-len(cache_key) % 4)).decode()
+        media_id = decoded.split("_")[0]
+        return media_id if media_id.isdigit() else None
+    except (ValueError, TypeError, AttributeError, IndexError, binascii.Error, UnicodeError):
+        return None
 
 
 class _MediaParser(HTMLParser):
@@ -32,6 +60,9 @@ class _MediaParser(HTMLParser):
             self.current = SaveInstaItem("photo")
         if self.current is None:
             return
+        media_id = _proxy_media_id(attrs.get("src", "") if tag == "img" else attrs.get("href", ""))
+        if media_id:
+            self.current.media_ids.add(media_id)
         if "icon-dlvideo" in attrs.get("class", "").split():
             self.current.type = "video"
         if tag == "a":
@@ -55,17 +86,21 @@ class _MediaParser(HTMLParser):
             self.current = None
 
 
-def parse_media_links(markup: str) -> list[tuple[str, str]]:
+def parse_media_links(markup: str, story_id: str | None = None) -> list[tuple[str, str]]:
     parser = _MediaParser()
     parser.feed(markup)
     result = []
     for item in parser.items:
+        if story_id is not None and item.media_ids != {story_id}:
+            continue
         label = "download video" if item.type == "video" else "download image"
         candidates = [url for url, text in item.links if label in text]
         if not candidates:
             # Reject incomplete albums instead of silently returning a subset.
             raise ValueError("Save Insta returned an item without a media link")
         result.append((item.type, candidates[0]))
+    if story_id is not None and len(result) != 1:
+        raise ValueError("Requested Story ID not uniquely found; refusing other stories")
     return result
 
 
@@ -207,18 +242,26 @@ def _probe(path: str, kind: str) -> dict:
 
 
 def download_saveinsta(url: str, output_dir: str) -> list[dict]:
-    """Download an entire public post in response order; clean up on failure.
+    """Download a public post or the exact requested Story; clean up on failure.
 
-    Stories and share redirects are deliberately left to the existing extractors.
+    A Story must have a numeric ID. Username-only URLs and highlights are excluded.
     No Instagram credentials are sent to this third-party service.
     """
     parsed = urlparse(url)
     match = re.fullmatch(r"/(p|reel|reels)/([A-Za-z0-9_-]+)/?", parsed.path)
+    story = re.fullmatch(r"/stories/([A-Za-z0-9_.]+)/(\d+)/?", parsed.path)
     if (parsed.scheme != "https" or parsed.hostname not in {"instagram.com", "www.instagram.com"}
-            or parsed.username or parsed.password or parsed.port not in (None, 443) or not match):
+            or parsed.username or parsed.password or parsed.port not in (None, 443)
+            or not (match or story) or (story and story.group(1).lower() == "highlights")):
         return []
-    kind, post_id = match.groups()
-    canonical = f"https://www.instagram.com/{'reel' if kind == 'reels' else kind}/{post_id}/"
+    story_id = None
+    if story:
+        username, story_id = story.groups()
+        post_id = story_id
+        canonical = f"https://www.instagram.com/stories/{username}/"
+    else:
+        kind, post_id = match.groups()
+        canonical = f"https://www.instagram.com/{'reel' if kind == 'reels' else kind}/{post_id}/"
     page = _curl(BASE_URL + "/en1")
     tokens = {}
     for key in ("k_exp", "k_token"):
@@ -235,7 +278,7 @@ def download_saveinsta(url: str, output_dir: str) -> list[dict]:
     }))
     if payload.get("status") != "ok" or not isinstance(payload.get("data"), str):
         raise ValueError("Save Insta search failed")
-    links = parse_media_links(payload["data"])
+    links = parse_media_links(payload["data"], story_id=story_id)
     paths = []
     media = []
     os.makedirs(output_dir, exist_ok=True)

@@ -1,6 +1,7 @@
 """Standalone tests: python -m unittest discover -s tests -p test_instagram_saveinsta.py"""
 
 import json
+import base64
 import importlib.util
 import sys
 import types
@@ -82,14 +83,56 @@ class SaveInstaTests(unittest.TestCase):
         self.assertEqual(source.parse_embed_metadata('<div class="Caption">Text</div>', "abc"), {})
 
     @patch.object(source, "_curl")
-    def test_stories_and_other_hosts_never_reach_saveinsta(self, curl):
+    def test_unsupported_urls_never_reach_saveinsta(self, curl):
         for url in (
-            "https://www.instagram.com/stories/alice/123/",
+            "https://www.instagram.com/stories/alice/",
+            "https://www.instagram.com/stories/highlights/123/",
             "https://www.instagram.com/share/abc/",
             "https://www.instagram.com.evil.test/p/abc/",
         ):
             self.assertEqual(source.download_saveinsta(url, "/unused"), [])
         curl.assert_not_called()
+
+    def story_markup(self, media_id, video=False):
+        cache = base64.urlsafe_b64encode(str(media_id).encode()).decode()
+        def proxy(url):
+            payload = base64.urlsafe_b64encode(json.dumps({"url": url}).encode()).decode().rstrip("=")
+            return "https://dl.snapcdn.app/saveinsta?token=header." + payload + ".signature"
+        poster = proxy("https://scontent.cdninstagram.com/image.jpg?ig_cache_key=" + cache)
+        if not video:
+            return f'<li><a href="{poster}">Download Image</a></li>'
+        mp4 = proxy("https://scontent.cdninstagram.com/video.mp4")
+        return f'<li><i class="icon-dlvideo"></i><a href="{poster}">Download Thumbnail</a><a href="{mp4}">Download Video</a></li>'
+
+    def test_story_video_matches_id_from_its_own_poster(self):
+        markup = self.story_markup(123) + self.story_markup(456, video=True)
+        links = source.parse_media_links(markup, story_id="456")
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0][0], "video")
+
+    def test_missing_unknown_or_duplicate_story_ids_fail_closed(self):
+        for markup in (self.story_markup(123), MIXED, self.story_markup(456) * 2):
+            with self.subTest(markup=markup), self.assertRaises(ValueError):
+                source.parse_media_links(markup, story_id="456")
+
+    @patch.object(source, "_probe", return_value={"width": 720, "height": 900, "duration": 1})
+    def test_story_download_only_sends_selected_item_and_profile_query(self, probe):
+        calls = []
+        base = self.fake_curl(calls)
+        def curl(url, **kwargs):
+            if url.endswith("/ajaxSearch"):
+                calls.append((url, kwargs["data"]))
+                return json.dumps({"status": "ok", "data": self.story_markup(123) + self.story_markup(456, True)})
+            if kwargs.get("destination"):
+                Path(kwargs["destination"]).write_bytes(b"video")
+                return "video/mp4"
+            return base(url, **kwargs)
+        with tempfile.TemporaryDirectory() as folder, patch.object(source, "_curl", side_effect=curl):
+            items = source.download_saveinsta("https://www.instagram.com/stories/alice/456/?tracking=1", folder)
+            self.assertEqual([item["type"] for item in items], ["video"])
+            self.assertEqual(len(list(Path(folder).iterdir())), 1)
+        query = next(data for url, data in calls if url.endswith("/ajaxSearch"))
+        self.assertEqual(query["q"], "https://www.instagram.com/stories/alice/")
 
     def fake_curl(self, calls, *, fail_video=False):
         def curl(url, *, data=None, destination=None):
@@ -194,7 +237,6 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         cases = [
             ("https://www.instagram.com/p/abc/", "1", 1),
             ("https://www.instagram.com/p/abc/", "0", 0),
-            ("https://www.instagram.com/stories/alice/123/", "1", 0),
         ]
         for url, enabled, calls in cases:
             with self.subTest(url=url, enabled=enabled), tempfile.TemporaryDirectory() as folder:
@@ -202,6 +244,18 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
                     result = await service.fetch_instagram_media(url, folder)
                 self.assertIs(result, original)
                 self.assertEqual(save.call_count, calls)
+
+    async def test_story_route_bypasses_gallery_and_firefox(self):
+        service = self.service
+        handler = types.ModuleType("services.platforms.instagram_stories")
+        handler.fetch_public_instagram_story = AsyncMock(return_value=None)
+        with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules, {handler.__name__: handler}):
+            with patch.object(service, "_run_gallery_dl") as gallery, patch.object(service, "_run_ytdlp") as ytdlp:
+                result = await service.fetch_instagram_media("https://www.instagram.com/stories/alice/456/", folder)
+        self.assertIsNone(result)
+        handler.fetch_public_instagram_story.assert_awaited_once()
+        gallery.assert_not_called()
+        ytdlp.assert_not_called()
 
 
 if __name__ == "__main__":

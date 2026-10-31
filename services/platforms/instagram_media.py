@@ -570,6 +570,10 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
 
 
 async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
+    # INSTAGRAM_PUBLIC_STORIES_V1: never fall through to the blocked Firefox account.
+    if urlparse(url).path.startswith("/stories/"):
+        from services.platforms.instagram_stories import fetch_public_instagram_story
+        return await fetch_public_instagram_story(url, output_dir)
     story_id = _extract_story_target_id(url)
     clean_url = strip_instagram_url(url)
     post_id = _extract_instagram_post_id(url) or hashlib.blake2s(

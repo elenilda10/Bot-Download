@@ -321,9 +321,17 @@ comentários e conferindo a identidade da publicação. Também recupera legenda
 ausentes em mídias antigas do cache e em resultados de outros extratores. Essa consulta tem limite de doze segundos; se indisponível,
 o download continua sem legenda. Não são usados cookies nessa consulta.
 gallery-dl continua primeiro para preservar texto e autor quando disponíveis.
-Stories permanecem no fluxo atual,
-incluindo o perfil Firefox. Falha em qualquer item do Save Insta descarta os
-arquivos parciais e permite tentar os próximos extratores.
+Stories públicos com link `/stories/usuario/ID/` usam diretamente o Save Insta,
+sem Firefox nem cookies. O ID é conferido pela chave de cache do CDN na própria
+mídia ou na miniatura associada ao vídeo. Apenas o item com o ID solicitado é
+baixado; ID ausente ou ambíguo não retorna outros Stories da conta. Não há
+tentativa posterior com a conta Firefox. Stories privados e expirados podem
+permanecer indisponíveis. Falha em qualquer item de um post descarta os arquivos
+parciais e permite tentar os próximos extratores.
+
+`scripts/apply_instagram_public_stories.py` instala essa rota na VPS preservando
+o restante de `fetch_instagram_media`, verifica clientes conhecidos, cria backup,
+valida a sintaxe e restaura os arquivos em caso de falha.
 
 Para desativar essa alternativa, defina `INSTAGRAM_SAVEINSTA_ENABLED=0` no
 ambiente do serviço e reinicie o bot. A integração depende das rotas internas
