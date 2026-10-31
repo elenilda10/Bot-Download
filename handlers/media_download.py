@@ -67,6 +67,11 @@ async def _process_pending_message(message: types.Message) -> None:
 
 
 async def _process_supported_link(message: types.Message, service: str, url: str) -> None:
+    if service == "audible":
+        from handlers import audible
+        await audible.process_audible(message, direct_url=url)
+        return
+
     if service == "tiktok":
         from handlers import tiktok
         await tiktok.process_tiktok(message, direct_url=url)

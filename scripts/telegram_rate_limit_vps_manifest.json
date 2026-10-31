@@ -1,7 +1,19 @@
 {
   "base_commit": "d62da13c5b57e44d98909c5d8f296e91890770bb",
-  "patch_sha256": "d74bb949b49aef8b7118fa420e8835edbf0ea023b46aa9654bce23bab9900c1e",
+  "patch_sha256": "d473684561b1887e1f1fd43c7cb33d088ed99a3f6fc51ca8df1aa0135633a7ed",
   "files": {
+    "handlers/__init__.py": {
+      "base_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2",
+      "result_sha256": "e5f9100b160eb6b430a56c5bb93d048cfb6aed8370b08744ded4d089abe13406"
+    },
+    "handlers/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686"
+    },
+    "handlers/media_download.py": {
+      "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
+      "result_sha256": "e8de32e812abe4c63066eb5eb0d552ebdfe3062c5b9618d4a989ee61c6d56eba"
+    },
     "handlers/spotify.py": {
       "base_sha256": "647f9aa46b038c175b50d8f634e2f3ddefca6d8110106059f2161f6018464646",
       "result_sha256": "ef6bd034ecdeb06b64e1bb145fd1c6b7c90d43cfb98e836ad08ad4077eabf716"
@@ -10,13 +22,45 @@
       "base_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374",
       "result_sha256": "699b4b8de3aeff490ac7cffb1ca4d07114676c2a5a10dd8a0d7b0146750e2096"
     },
+    "i18n/locales/de.json": {
+      "base_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2",
+      "result_sha256": "fd4ec810a878933fa9702a814e8bf7efb90fa5f11d4f8d3ebb97000688e355ad"
+    },
+    "i18n/locales/en.json": {
+      "base_sha256": "295f57b5c3779aa2fbd207ecc8adbf532d8a223132730af5a9d3c2b793b918d3",
+      "result_sha256": "c56c332eac2ac664a4d21b73fcffef489d858a8c1b4cc04dc6a80b9ec9133dc3"
+    },
+    "i18n/locales/es.json": {
+      "base_sha256": "d608bcfb8e745bd5ca83484f1935e41cdd8f4a347b636c3e5d35b72f3519c103",
+      "result_sha256": "b8d6fa5509dfa8eda3a0414ee8204061711283e9ad674fa88619d365fcb6a794"
+    },
+    "i18n/locales/pt.json": {
+      "base_sha256": "377339edee52e0803283edb7dc8fc8282f16b4ade9c5b0650ff2ba23a3d92e00",
+      "result_sha256": "a351b23d7d0c0d3a35a000cba98ee5f07f82b6b7e56efda33731baee38d9591f"
+    },
     "main.py": {
       "base_sha256": "10eb6f03c183879523154ae60ca2da3c866040f1b88a43a9aff07edd648fda5b",
       "result_sha256": "05cfbf02ff4cae172b45d44e489705b8d490ed55e9e4a5d37c19f21d0da74606"
     },
+    "services/links/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "baf923aa9b9f08b8edd503fb5d3e26e8f2190031889f28527e392e3cb75d53e9"
+    },
+    "services/links/detection.py": {
+      "base_sha256": "8d1fa15a668d4c61e2ae3e100feee886f374abb2e6764c7074d3bce04e0380b0",
+      "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+    },
+    "services/platforms/audible_service.py": {
+      "base_sha256": null,
+      "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
+    },
     "services/runtime/telegram_rate_limit.py": {
       "base_sha256": null,
       "result_sha256": "6651abaa101828ac1b82967bba95074cced1dd0be81cab2018455b402a349ae2"
+    },
+    "services/stats/constants.py": {
+      "base_sha256": "f742a9f395e10e416ad1f3c61e5a6e16b828b9ab966b3d0db0da26629165a8d1",
+      "result_sha256": "356623d731bc1d133145434c66bbf90832b015df9daf26bd0bed366a9bc0a709"
     }
   }
 }

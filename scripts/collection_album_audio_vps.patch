@@ -1,3 +1,371 @@
+diff --git a/handlers/__init__.py b/handlers/__init__.py
+index 9b4d4ed..5fcde6b 100644
+--- a/handlers/__init__.py
++++ b/handlers/__init__.py
+@@ -1,8 +1,9 @@
+ from aiogram import Router
+-from . import collections, user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, reddit, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
++from . import audible, collections, user, tiktok, youtube, spotify, admin, twitter, instagram, soundcloud, pinterest, threads, deezer, facebook, kwai, reddit, universal, music, guest, mediafire, mega, google_drive, xvideos, xvideos_actions, pornhub, eporner
+ 
+ router = Router(name=__name__)
+ router.include_routers(
++    audible.router,
+     collections.router,
+     user.router,
+     tiktok.router,
+diff --git a/handlers/audible.py b/handlers/audible.py
+new file mode 100644
+index 0000000..ce70250
+--- /dev/null
++++ b/handlers/audible.py
+@@ -0,0 +1,331 @@
++"""Per-user Audible authorization and book delivery, exclusively in private chats."""
++
++import asyncio
++import html
++import re
++import time
++from dataclasses import dataclass
++
++from aiogram import F, Router, types
++from aiogram.exceptions import TelegramAPIError
++from aiogram.filters import Command
++from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
++
++import messages as bm
++from app_context import bot
++from config import MAX_FILE_SIZE
++from handlers.utils import get_bot_url, get_bot_username, safe_edit_text
++from i18n import t
++from services.links.audible import MARKETS, book_identity, book_url, extract_audible_url
++from services.platforms.audible_service import AudibleError, service
++
++router = Router(name="audible")
++
++
++@dataclass
++class Flow:
++    market: str
++    asin: str = ""
++    step: str = "consent"
++    deadline: float = 0
++
++
++_flows = {}
++
++
++def _private(message):
++    return bool(
++        message.from_user
++        and message.chat.type == "private"
++        and message.chat.id == message.from_user.id
++        and not getattr(message, "business_connection_id", None)
++    )
++
++
++def _keyboard(market="br", asin="", *, connected=False):
++    buttons = (
++        []
++        if connected
++        else [
++            [
++                InlineKeyboardButton(
++                    text=t("audible.connect"),
++                    callback_data=f"audible:connect:{market}:{asin}",
++                )
++            ]
++        ]
++    )
++    buttons.append(
++        [
++            InlineKeyboardButton(
++                text=t("audible.disconnect"), callback_data="audible:logout"
++            )
++        ]
++    )
++    return InlineKeyboardMarkup(inline_keyboard=buttons)
++
++
++async def _explain(message, market="br", asin=""):
++    await message.answer(
++        t("audible.explain"), reply_markup=_keyboard(market, asin), parse_mode="HTML"
++    )
++
++
++async def _failure(message, code):
++    known = {
++        "busy",
++        "unavailable",
++        "session",
++        "library",
++        "timeout",
++        "too_large",
++        "email",
++        "expired",
++        "response",
++        "login",
++        "download",
++    }
++    await message.answer(t("audible.error." + (code if code in known else "download")))
++
++
++@router.business_message(Command("audible_logout"))
++@router.message(Command("audible_logout"))
++async def disconnect(message):
++    if not _private(message):
++        await message.answer(t("audible.private"))
++        return
++    _flows.pop(message.from_user.id, None)
++    await service.disconnect(message.from_user.id)
++    await message.answer(t("audible.disconnected"))
++
++
++@router.business_message(Command("audible"))
++@router.message(Command("audible"))
++async def account_menu(message):
++    if not _private(message):
++        await message.answer(t("audible.private"))
++        return
++    parts = (message.text or "").split()
++    market = parts[1].lower() if len(parts) == 2 else "br"
++    if market not in MARKETS.values():
++        await message.answer(t("audible.market"))
++        return
++    if service.connected(message.from_user.id, market):
++        await message.answer(
++            t("audible.connected"), reply_markup=_keyboard(market, connected=True)
++        )
++    else:
++        await _explain(message, market)
++
++
++@router.message(F.text.regexp(r"^/start(?:@\w+)? audible_[a-z]{2}_[A-Z0-9]{10}$"))
++async def private_book_start(message):
++    payload = message.text.split()[-1].split("_")
++    if payload[1] in MARKETS.values():
++        await process_audible(message, direct_url=book_url(payload[1], payload[2]))
++
++
++@router.callback_query(F.data.startswith("audible:"))
++async def account_action(call):
++    if (
++        not call.message
++        or call.message.chat.type != "private"
++        or call.message.chat.id != call.from_user.id
++        or getattr(call.message, "business_connection_id", None)
++    ):
++        await call.answer(t("audible.private"), show_alert=True)
++        return
++    owner = call.from_user.id
++    action = (call.data or "").split(":")
++    await call.answer()
++    if action[1] in {"logout", "cancel"}:
++        _flows.pop(owner, None)
++        if action[1] == "logout":
++            await service.disconnect(owner)
++            await call.message.answer(t("audible.disconnected"))
++        else:
++            await service.cancel(owner)
++            await call.message.answer(t("audible.cancelled"))
++        return
++    if len(action) != 4 or action[1] != "connect" or action[2] not in MARKETS.values():
++        return
++    if action[3] and not re.fullmatch("[A-Z0-9]{10}", action[3]):
++        return
++    if owner in service.jobs or owner in service.starting:
++        await _failure(call.message, "busy")
++        return
++    await service.cancel_login(owner)
++    for user, flow in list(_flows.items()):
++        if flow.deadline < time.monotonic():
++            _flows.pop(user, None)
++    if len(_flows) >= 256 and owner not in _flows:
++        await _failure(call.message, "busy")
++        return
++    _flows[owner] = Flow(action[2], action[3], "email", time.monotonic() + 600)
++    await call.message.answer(t("audible.email"), reply_markup=_cancel_keyboard())
++
++
++def _cancel_keyboard():
++    return InlineKeyboardMarkup(
++        inline_keyboard=[
++            [
++                InlineKeyboardButton(
++                    text=t("audible.cancel"), callback_data="audible:cancel"
++                )
++            ]
++        ]
++    )
++
++
++async def _delete_input(message):
++    try:
++        await message.delete()
++    except TelegramAPIError:
++        pass
++
++
++def _auth_input(message):
++    if not message.from_user or not message.text or message.text.startswith("/"):
++        return False
++    return (
++        message.from_user.id in _flows and _private(message)
++    ) or "openid.oa2.authorization_code=" in message.text
++
++
++@router.business_message(_auth_input)
++@router.message(_auth_input)
++async def authorization_input(message):
++    # Never decorate this handler with message-content/error logging. Never quote
++    # the return URL in replies. Delete sensitive input before processing it.
++    await _delete_input(message)
++    if not _private(message):
++        await message.answer(t("audible.private"))
++        return
++    owner = message.from_user.id
++    flow = _flows.get(owner)
++    if not flow or flow.deadline < time.monotonic():
++        _flows.pop(owner, None)
++        await service.cancel_login(owner)
++        await _failure(message, "expired")
++        return
++    try:
++        if flow.step == "email":
++            flow.step = "starting"
++            try:
++                url = await service.begin_login(
++                    owner, flow.market, message.text.strip()
++                )
++            except AudibleError:
++                flow.step = "email"
++                raise
++            if not url:
++                _flows.pop(owner, None)
++                await _failure(message, "login")
++                return
++            flow.step = "response"
++            flow.deadline = time.monotonic() + 600
++            keyboard = InlineKeyboardMarkup(
++                inline_keyboard=[
++                    [InlineKeyboardButton(text=t("audible.amazon"), url=url)],
++                    [
++                        InlineKeyboardButton(
++                            text=t("audible.cancel"), callback_data="audible:cancel"
++                        )
++                    ],
++                ]
++            )
++            await message.answer(
++                t("audible.browser"), reply_markup=keyboard, parse_mode="HTML"
++            )
++        elif flow.step == "response":
++            flow.step = "finishing"
++            try:
++                await service.finish_login(owner, message.text.strip())
++            except AudibleError as exc:
++                flow.step = "response" if str(exc) == "response" else "email"
++                raise
++            _flows.pop(owner, None)
++            await message.answer(
++                t("audible.connected"),
++                reply_markup=_keyboard(flow.market, connected=True),
++            )
++            if flow.asin:
++                await process_audible(
++                    message, direct_url=book_url(flow.market, flow.asin)
++                )
++        else:
++            await _failure(message, "busy")
++    except AudibleError as exc:
++        await _failure(message, str(exc))
++    except TimeoutError:
++        _flows.pop(owner, None)
++        await _failure(message, "expired")
++    except OSError:
++        _flows.pop(owner, None)
++        await service.cancel_login(owner)
++        await _failure(message, "unavailable")
++
++
++@router.business_message(
++    lambda message: bool(extract_audible_url(message.text or message.caption))
++)
++@router.message(
++    lambda message: bool(extract_audible_url(message.text or message.caption))
++)
++async def process_audible(message: types.Message, direct_url=None):
++    url = direct_url or extract_audible_url(message.text or message.caption)
++    identity = book_identity(url or "")
++    if not identity or not message.from_user:
++        return False
++    market, asin = identity
++    if not _private(message):
++        username = await get_bot_username(bot)
++        keyboard = InlineKeyboardMarkup(
++            inline_keyboard=[
++                [
++                    InlineKeyboardButton(
++                        text=t("audible.open_private"),
++                        url=f"https://t.me/{username}?start=audible_{market}_{asin}",
++                    )
++                ]
++            ]
++        )
++        await message.answer(t("audible.private"), reply_markup=keyboard)
++        return False
++    owner = message.from_user.id
++    if not service.connected(owner, market):
++        await _explain(message, market, asin)
++        return False
++    status = await message.answer(
++        t("audible.checking"), reply_markup=_cancel_keyboard()
++    )
++    try:
++        async with service.book(owner, market, asin, max_size=MAX_FILE_SIZE) as (
++            path,
++            title,
++        ):
++            await safe_edit_text(
++                status,
++                bm.uploading_status(platform="Audible"),
++                reply_markup=_cancel_keyboard(),
++            )
++            bot_url = await get_bot_url(bot)
++            await message.answer_audio(
++                audio=FSInputFile(path, filename=asin + ".m4a"),
++                title=title[:100],
++                caption=bm.captions("on", html.escape(title[:600]), bot_url),
++                parse_mode="HTML",
++            )
++        await safe_edit_text(status, t("audible.finished"), reply_markup=None)
++        return True
++    except AudibleError as exc:
++        if str(exc) == "session":
++            (service.profile(owner, market) / ".connected").unlink(missing_ok=True)
++        await safe_edit_text(status, t("audible.stopped"), reply_markup=None)
++        await _failure(message, str(exc))
++    except asyncio.CancelledError:
++        raise
++    except (OSError, TimeoutError, TelegramAPIError):
++        await safe_edit_text(status, t("audible.stopped"), reply_markup=None)
++        await _failure(message, "download")
++    return False
+diff --git a/handlers/media_download.py b/handlers/media_download.py
+index 8b66f0f..0f66689 100644
+--- a/handlers/media_download.py
++++ b/handlers/media_download.py
+@@ -67,6 +67,11 @@ async def _process_pending_message(message: types.Message) -> None:
+ 
+ 
+ async def _process_supported_link(message: types.Message, service: str, url: str) -> None:
++    if service == "audible":
++        from handlers import audible
++        await audible.process_audible(message, direct_url=url)
++        return
++
+     if service == "tiktok":
+         from handlers import tiktok
+         await tiktok.process_tiktok(message, direct_url=url)
 diff --git a/handlers/settings_menu.py b/handlers/settings_menu.py
 index 5599834..7ff7058 100644
 --- a/handlers/settings_menu.py
@@ -119,10 +487,10 @@ index e9bc783..2e037b1 100644
  def effective_locale(lang: str | None = None) -> str:
 diff --git a/i18n/locales/de.json b/i18n/locales/de.json
 new file mode 100644
-index 0000000..909ebc9
+index 0000000..b1330bb
 --- /dev/null
 +++ b/i18n/locales/de.json
-@@ -0,0 +1,502 @@
+@@ -0,0 +1,529 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "Der Ordner '{p0}' existiert nicht.",
 +  "handlers.admin._format_age.eb04b447": " her",
@@ -427,7 +795,7 @@ index 0000000..909ebc9
 +  "messages.user_messages.guest_unavailable_message.cf3bfbe9": "dieser Dienst",
 +  "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} im Gastmodus",
 +  "messages.user_messages.guest_unavailable_title.e33214d1": "Gastmodus",
-+  "messages.user_messages.help_message.9640b060": "<b>📖 Hilfe und Anleitung für Save Vídeo DL Bot</b>\n\nSende einen Link oder füge mehrere Links in eine Nachricht ein. Der Bot ruft die Medien automatisch ab und sendet sie dir.\n\n<blockquote expandable><b>📷 Instagram und Threads</b>\n• Beiträge, Reels, IGTV und Stories herunterladen\n• Fotokarussells und Alben mit mehreren Medien\n• Link über Teilen → Link kopieren abrufen</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Videos ohne Wasserzeichen herunterladen\n• Fotokarussells und Diashows\n• Audioextraktion als MP3 wird unterstützt</blockquote>\n\n<blockquote expandable><b>▶️ YouTube und YouTube Music</b>\n• YouTube Shorts und normale Videos\n• Hochwertige Audio- und Videostreams\n• Tippe zum Herunterladen von Audio auf die MP3-Schaltfläche</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter und 📌 Pinterest</b>\n• Videos, GIFs und Bilder von X / Twitter\n• Video- und Bild-Pins von Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud und 🟢 Spotify</b>\n• Hochwertige Audiotitel von SoundCloud\n• Passende Audioquellen für Spotify-Titel suchen und herunterladen</blockquote>\n\n<blockquote expandable><b>⚡ Inline-Modus</b>\n• Gib in einem beliebigen Chat <code>@{p0} [link]</code> ein\n• Sofortige Vorschau und direktes Teilen von Medien</blockquote>\n\n<blockquote expandable><b>📦 Stapeldownloads</b>\n• Füge bis zu 6 Links in eine Nachricht ein\n• Die Medien werden für einen übersichtlichen Chat nacheinander gesendet</blockquote>",
++  "messages.user_messages.help_message.9640b060": "<b>📖 Hilfe und Anleitung für Save Vídeo DL Bot</b>\n\nSende einen Link oder füge mehrere Links in eine Nachricht ein. Der Bot ruft die Medien automatisch ab und sendet sie dir.\n\n<blockquote expandable><b>📷 Instagram und Threads</b>\n• Beiträge, Reels, IGTV und Stories herunterladen\n• Fotokarussells und Alben mit mehreren Medien\n• Link über Teilen → Link kopieren abrufen</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Videos ohne Wasserzeichen herunterladen\n• Fotokarussells und Diashows\n• Audioextraktion als MP3 wird unterstützt</blockquote>\n\n<blockquote expandable><b>▶️ YouTube und YouTube Music</b>\n• YouTube Shorts und normale Videos\n• Hochwertige Audio- und Videostreams\n• Tippe zum Herunterladen von Audio auf die MP3-Schaltfläche</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter und 📌 Pinterest</b>\n• Videos, GIFs und Bilder von X / Twitter\n• Video- und Bild-Pins von Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud und 🟢 Spotify</b>\n• Hochwertige Audiotitel von SoundCloud\n• Passende Audioquellen für Spotify-Titel suchen und herunterladen</blockquote>\n\n<blockquote expandable><b>⚡ Inline-Modus</b>\n• Gib in einem beliebigen Chat <code>@{p0} [link]</code> ein\n• Sofortige Vorschau und direktes Teilen von Medien</blockquote>\n\n<blockquote expandable><b>📦 Stapeldownloads</b>\n• Füge bis zu 6 Links in eine Nachricht ein\n• Die Medien werden für einen übersichtlichen Chat nacheinander gesendet</blockquote>\\n\\n🎧 Audible: Sende den Link privat und verbinde dein eigenes Konto mit /audible. Zugriff auf das Buch in deiner Bibliothek ist erforderlich. Mit /audible_logout trennst du das Konto.",
 +  "messages.user_messages.inline_album_description.504ad33c": "Vollständiges Album im Bot öffnen",
 +  "messages.user_messages.inline_album_link_invalid.8d2d8799": "Dieser Albumlink ist abgelaufen oder ungültig.",
 +  "messages.user_messages.inline_album_title.44a7cb63": "{p0}-Album",
@@ -623,12 +991,48 @@ index 0000000..909ebc9
 +  "collection.finished": "✅ <b>{title}</b>\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
 +  "collection.cancelled": "⏹️ <b>{title}</b>: Verarbeitung angehalten.\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
 +  "collection.stopped": "⏸️ <b>{title}</b>: Versand wegen eines Dienstlimits oder Telegram-Fehlers angehalten.\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
-+  "collection.error": "❌ Diese Sammlung konnte nicht geladen oder abgeschlossen werden."
++  "collection.error": "❌ Diese Sammlung konnte nicht geladen oder abgeschlossen werden.",
++  "audible.explain": "🎧 <b>Audible-Konto verbinden</b>\n\nAudible erfordert eine Anmeldung, um die Bücher deiner Bibliothek zu prüfen und Downloads zu erlauben. Ein Link allein gewährt keinen Zugriff.\n\nJeder Nutzer verbindet sein eigenes Konto. Melde dich nur auf der Amazon-Seite an: Sende dem Bot niemals dein Passwort oder deinen Bestätigungscode. Danach fragt der Bot nur nach der Rückleitungs-URL, um die Autorisierung abzuschließen.\n\nDeine Sitzung wird getrennt von anderen Konten auf dem Server gespeichert, bis du sie trennst. Der Bot kann damit auf deine Bibliothek zugreifen. Mit /audible_logout löschst du die Sitzung und lokale Dateien. Downloads funktionieren nur im privaten Chat.",
++  "audible.connect": "🔐 Mein Konto verbinden",
++  "audible.disconnect": "🔓 Audible trennen",
++  "audible.cancel": "✖️ Abbrechen",
++  "audible.cancelled": "Audible-Vorgang abgebrochen.",
++  "audible.disconnected": "Audible-Konto getrennt. Sitzung und lokale Dateien wurden gelöscht. Du kannst das Gerät auch in deinen Amazon-Einstellungen widerrufen.",
++  "audible.connected": "✅ Dein Audible-Konto ist verbunden. Sende einen Link zu einem verfügbaren Buch deiner Bibliothek. Mit /audible_logout löschst du die Sitzung.",
++  "audible.email": "Sende nur die E-Mail-Adresse deines Amazon-/Audible-Kontos. Sende kein Passwort und keinen Bestätigungscode. Die Adresse wird für die Amazon-Anmeldung benötigt.",
++  "audible.browser": "1. Tippe auf <b>Bei Amazon anmelden</b> und melde dich im Browser an.\n2. Kopiere danach die vollständige URL aus der Adressleiste, auch wenn die letzte Seite einen Fehler anzeigt.\n3. Füge diese URL nur in diesen privaten Chat ein. Der Bot versucht, die Nachricht nach Empfang zu löschen.\n\nDie Anmeldung läuft nach 10 Minuten ab. Sende dem Bot niemals dein Passwort oder deinen Bestätigungscode.",
++  "audible.amazon": "Bei Amazon anmelden",
++  "audible.private": "🔐 Audible funktioniert nur im privaten Chat. Jede Person muss ihr eigenes Konto verbinden, um auf ihre Bibliothek zuzugreifen.",
++  "audible.open_private": "🎧 Privat fortfahren",
++  "audible.market": "Verwende /audible mit dem Land deines Kontos: br, us, uk, de, fr, it, es, ca, au, jp oder in.",
++  "audible.checking": "🎧 Audible: Bibliothek wird geprüft und Download vorbereitet…",
++  "audible.finished": "✅ Hörbuch gesendet.",
++  "audible.stopped": "Das Hörbuch konnte nicht fertiggestellt werden.",
++  "audible.error.busy": "⏳ Für dein Konto läuft bereits ein Vorgang oder alle Audible-Plätze sind belegt. Versuche es in einigen Minuten erneut.",
++  "audible.error.unavailable": "Der Audible-Dienst ist auf diesem Server nicht verfügbar. Kontaktiere den Support.",
++  "audible.error.session": "Deine Audible-Sitzung ist abgelaufen oder für dieses Land nicht verbunden. Verwende /audible oder sende den Link erneut, um dein Konto zu verbinden.",
++  "audible.error.library": "Das Buch wurde in der verbundenen Bibliothek nicht zum Download gefunden oder Audible hat den Zugriff verweigert. Füge es mit demselben Konto hinzu oder kaufe es und versuche es erneut.",
++  "audible.error.timeout": "Audible hat zu lange nicht geantwortet. Der Vorgang wurde beendet; versuche es später erneut.",
++  "audible.error.too_large": "Das Hörbuch überschreitet das Größenlimit des Bots. Der Download wurde beendet.",
++  "audible.error.email": "Sende eine gültige E-Mail-Adresse. Sende nicht dein Passwort.",
++  "audible.error.expired": "Die Anmeldung ist abgelaufen oder der Bot wurde neu gestartet. Beginne mit /audible erneut.",
++  "audible.error.response": "Ungültige Rückleitungs-URL. Kopiere die vollständige URL der letzten Amazon-/Audible-Seite und sende sie hier im privaten Chat.",
++  "audible.error.login": "Die Anmeldung konnte nicht abgeschlossen werden. Starte mit /audible eine neue Autorisierung.",
++  "audible.error.download": "Download oder Versand des Hörbuchs fehlgeschlagen. Versuche es später erneut. Dein Konto wird nicht mit anderen Nutzern geteilt."
 +}
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
-index 572a956..4ca0379 100644
+index 572a956..05bdf0d 100644
 --- a/i18n/locales/en.json
 +++ b/i18n/locales/en.json
+@@ -302,7 +302,7 @@
+   "messages.user_messages.guest_unavailable_message.cf3bfbe9": "this service",
+   "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} in Guest Mode",
+   "messages.user_messages.guest_unavailable_title.e33214d1": "Guest Mode",
+-  "messages.user_messages.help_message.9640b060": "<b>📖 Save Vídeo DL Bot Help & Guide</b>\n\nSend one link or paste multiple links in one message. The bot will automatically extract and deliver the media.\n\n<blockquote expandable><b>📷 Instagram & Threads</b>\n• Download Posts, Reels, IGTV & Stories\n• Photo carousels & multi-media albums\n• Copy link via Share → Copy link</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Watermark-free video downloads\n• Photo carousels & slideshows\n• MP3 audio extraction supported</blockquote>\n\n<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n• YouTube Shorts & regular Videos\n• High quality audio & video streams\n• Tap MP3 button to download audio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n• X / Twitter videos, GIFs & images\n• Pinterest video and image Pins</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n• High quality SoundCloud audio tracks\n• Spotify track matching & audio download</blockquote>\n\n<blockquote expandable><b>⚡ Inline Mode</b>\n• Type <code>@{p0} [link]</code> in any chat\n• Instant preview and direct media sharing</blockquote>\n\n<blockquote expandable><b>📦 Batch Downloading</b>\n• Paste up to 6 links in a single message\n• Delivered one by one to keep chat clean</blockquote>",
++  "messages.user_messages.help_message.9640b060": "<b>📖 Save Vídeo DL Bot Help & Guide</b>\n\nSend one link or paste multiple links in one message. The bot will automatically extract and deliver the media.\n\n<blockquote expandable><b>📷 Instagram & Threads</b>\n• Download Posts, Reels, IGTV & Stories\n• Photo carousels & multi-media albums\n• Copy link via Share → Copy link</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Watermark-free video downloads\n• Photo carousels & slideshows\n• MP3 audio extraction supported</blockquote>\n\n<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n• YouTube Shorts & regular Videos\n• High quality audio & video streams\n• Tap MP3 button to download audio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n• X / Twitter videos, GIFs & images\n• Pinterest video and image Pins</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud & 🟢 Spotify</b>\n• High quality SoundCloud audio tracks\n• Spotify track matching & audio download</blockquote>\n\n<blockquote expandable><b>⚡ Inline Mode</b>\n• Type <code>@{p0} [link]</code> in any chat\n• Instant preview and direct media sharing</blockquote>\n\n<blockquote expandable><b>📦 Batch Downloading</b>\n• Paste up to 6 links in a single message\n• Delivered one by one to keep chat clean</blockquote>\\n\\n🎧 Audible: send the link in private and connect your own account with /audible. Requires access to the book in your library. Use /audible_logout to disconnect.",
+   "messages.user_messages.inline_album_description.504ad33c": "Open full album in bot",
+   "messages.user_messages.inline_album_link_invalid.8d2d8799": "This album link is expired or invalid.",
+   "messages.user_messages.inline_album_title.44a7cb63": "{p0} Album",
 @@ -409,7 +409,7 @@
    "services.stats.chart.render_stats_chart.dcc563b7": "Downloads Overview",
    "language.prompt": "🌐 <b>Choose the bot language:</b>",
@@ -646,10 +1050,53 @@ index 572a956..4ca0379 100644
    "stats.month.1": "Jan",
    "stats.month.2": "Feb",
    "stats.month.3": "Mar",
+@@ -497,5 +498,32 @@
+   "collection.finished": "✅ <b>{title}</b>\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+   "collection.cancelled": "⏹️ <b>{title}</b>: processing stopped.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+   "collection.stopped": "⏸️ <b>{title}</b>: stopped due to a service limit or Telegram error.\nSent: {sent} · Failed: {failed} · Unavailable: {unavailable} · Remaining: {remaining}",
+-  "collection.error": "❌ Could not load or complete this collection."
++  "collection.error": "❌ Could not load or complete this collection.",
++  "audible.explain": "🎧 <b>Connect your Audible account</b>\n\nAudible requires sign-in to check the books in your library and authorize downloads. A link alone does not grant access.\n\nEach user connects their own account. Sign in only on the Amazon page: never send your password or verification code to the bot. Afterwards, the bot asks only for the return URL to complete authorization.\n\nYour session is stored on the server, separately from other accounts, until you disconnect. The bot can access your library with that session. Use /audible_logout to delete the session and local files. Downloads work in private chats only.",
++  "audible.connect": "🔐 Connect my account",
++  "audible.disconnect": "🔓 Disconnect Audible",
++  "audible.cancel": "✖️ Cancel",
++  "audible.cancelled": "Audible operation cancelled.",
++  "audible.disconnected": "Audible disconnected. Your session and local files were deleted. You can also revoke the device in your Amazon settings.",
++  "audible.connected": "✅ Your Audible account is connected. Send a link to a book available in your library. Use /audible_logout to delete the session.",
++  "audible.email": "Send only your Amazon/Audible account email address. Do not send a password or verification code. The email is used to start Amazon sign-in.",
++  "audible.browser": "1. Tap <b>Sign in to Amazon</b> and sign in using your browser.\n2. Copy the full address-bar URL when finished, even if the final page shows an error.\n3. Paste that URL only in this private chat. The bot will try to delete the message after receiving it.\n\nSign-in expires in 10 minutes. Never send your password or verification code to the bot.",
++  "audible.amazon": "Sign in to Amazon",
++  "audible.private": "🔐 Audible works only in private chats. Each person must connect their own account to access their library.",
++  "audible.open_private": "🎧 Continue in private",
++  "audible.market": "Use /audible followed by your account country: br, us, uk, de, fr, it, es, ca, au, jp or in.",
++  "audible.checking": "🎧 Audible: checking your library and preparing the download…",
++  "audible.finished": "✅ Audiobook sent.",
++  "audible.stopped": "Could not complete the audiobook.",
++  "audible.error.busy": "⏳ An operation for your account is already running or the Audible slots are busy. Try again in a few minutes.",
++  "audible.error.unavailable": "The Audible service is unavailable on this server. Contact support.",
++  "audible.error.session": "Your Audible session expired or is not connected for this country. Use /audible or send the link again to connect your account.",
++  "audible.error.library": "The book was not found for download in the connected library, or Audible did not authorize access. Add or purchase it using the same account and try again.",
++  "audible.error.timeout": "Audible took too long to respond. The operation was stopped; try again later.",
++  "audible.error.too_large": "The audiobook exceeds the bot size limit. The download was stopped.",
++  "audible.error.email": "Send a valid email address. Do not send your password.",
++  "audible.error.expired": "Sign-in expired or the bot restarted. Use /audible to start again.",
++  "audible.error.response": "Invalid return URL. Copy the full URL from the final Amazon/Audible page and send it here in private.",
++  "audible.error.login": "Could not complete sign-in. Use /audible to start a new authorization.",
++  "audible.error.download": "Could not finish downloading or sending the audiobook. Try again later. Your account will not be shared with other users."
+ }
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
-index d27449a..95e373c 100644
+index d27449a..4e59e3c 100644
 --- a/i18n/locales/es.json
 +++ b/i18n/locales/es.json
+@@ -302,7 +302,7 @@
+   "messages.user_messages.guest_unavailable_message.cf3bfbe9": "este servicio",
+   "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} en modo invitado",
+   "messages.user_messages.guest_unavailable_title.e33214d1": "Modo invitado",
+-  "messages.user_messages.help_message.9640b060": "<b>📖 Ayuda y guía de Save Vídeo DL Bot</b>\n\nEnvía uno o varios enlaces en un mensaje. El bot extraerá y enviará automáticamente el contenido multimedia.\n\n<blockquote expandable><b>📷 Instagram y Threads</b>\n• Descarga publicaciones, Reels, IGTV y Stories\n• Carruseles de fotos y álbumes multimedia\n• Copia el enlace mediante Compartir → Copiar enlace</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Vídeos sin marca de agua\n• Carruseles de fotos y presentaciones\n• Extracción de audio MP3</blockquote>\n\n<blockquote expandable><b>▶️ YouTube y YouTube Music</b>\n• Shorts y vídeos normales\n• Audio y vídeo de alta calidad\n• Pulsa MP3 para descargar el audio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter y 📌 Pinterest</b>\n• Vídeos, GIFs e imágenes de X / Twitter\n• Pines de vídeo e imagen de Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud y 🟢 Spotify</b>\n• Pistas de SoundCloud de alta calidad\n• Búsqueda de pistas de Spotify y descarga de audio</blockquote>\n\n<blockquote expandable><b>⚡ Modo inline</b>\n• Escribe <code>@{p0} [link]</code> en cualquier chat\n• Vista previa y envío directo del contenido</blockquote>\n\n<blockquote expandable><b>📦 Descarga por lotes</b>\n• Pega hasta 6 enlaces en un mensaje\n• Se envían uno por uno para mantener el chat organizado</blockquote>",
++  "messages.user_messages.help_message.9640b060": "<b>📖 Ayuda y guía de Save Vídeo DL Bot</b>\n\nEnvía uno o varios enlaces en un mensaje. El bot extraerá y enviará automáticamente el contenido multimedia.\n\n<blockquote expandable><b>📷 Instagram y Threads</b>\n• Descarga publicaciones, Reels, IGTV y Stories\n• Carruseles de fotos y álbumes multimedia\n• Copia el enlace mediante Compartir → Copiar enlace</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Vídeos sin marca de agua\n• Carruseles de fotos y presentaciones\n• Extracción de audio MP3</blockquote>\n\n<blockquote expandable><b>▶️ YouTube y YouTube Music</b>\n• Shorts y vídeos normales\n• Audio y vídeo de alta calidad\n• Pulsa MP3 para descargar el audio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter y 📌 Pinterest</b>\n• Vídeos, GIFs e imágenes de X / Twitter\n• Pines de vídeo e imagen de Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud y 🟢 Spotify</b>\n• Pistas de SoundCloud de alta calidad\n• Búsqueda de pistas de Spotify y descarga de audio</blockquote>\n\n<blockquote expandable><b>⚡ Modo inline</b>\n• Escribe <code>@{p0} [link]</code> en cualquier chat\n• Vista previa y envío directo del contenido</blockquote>\n\n<blockquote expandable><b>📦 Descarga por lotes</b>\n• Pega hasta 6 enlaces en un mensaje\n• Se envían uno por uno para mantener el chat organizado</blockquote>\\n\\n🎧 Audible: envía el enlace en privado y conecta tu propia cuenta con /audible. Requiere acceso al libro en tu biblioteca. Usa /audible_logout para desconectar.",
+   "messages.user_messages.inline_album_description.504ad33c": "Abrir el álbum completo en el bot",
+   "messages.user_messages.inline_album_link_invalid.8d2d8799": "El enlace de este álbum ha caducado o no es válido.",
+   "messages.user_messages.inline_album_title.44a7cb63": "Álbum de {p0}",
 @@ -409,7 +409,7 @@
    "services.stats.chart.render_stats_chart.dcc563b7": "Resumen de descargas",
    "language.prompt": "🌐 <b>Selecciona el idioma del bot:</b>",
@@ -667,10 +1114,53 @@ index d27449a..95e373c 100644
    "stats.month.1": "ene",
    "stats.month.2": "feb",
    "stats.month.3": "mar",
+@@ -497,5 +498,32 @@
+   "collection.finished": "✅ <b>{title}</b>\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+   "collection.cancelled": "⏹️ <b>{title}</b>: procesamiento interrumpido.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+   "collection.stopped": "⏸️ <b>{title}</b>: envío detenido por un límite del servicio o un error de Telegram.\nEnviados: {sent} · Fallidos: {failed} · No disponibles: {unavailable} · Restantes: {remaining}",
+-  "collection.error": "❌ No se pudo cargar o completar esta colección."
++  "collection.error": "❌ No se pudo cargar o completar esta colección.",
++  "audible.explain": "🎧 <b>Conecta tu cuenta de Audible</b>\n\nAudible exige iniciar sesión para comprobar los libros de tu biblioteca y autorizar la descarga. El enlace por sí solo no da acceso.\n\nCada usuario conecta su propia cuenta. Inicia sesión únicamente en la página de Amazon: nunca envíes tu contraseña ni código de verificación al bot. Después, el bot pedirá solo la URL de retorno para completar la autorización.\n\nLa sesión se guardará en el servidor, separada de otras cuentas, hasta que la desconectes. El bot podrá acceder a tu biblioteca con esa sesión. Usa /audible_logout para borrar la sesión y los archivos locales. Las descargas funcionan solo en privado.",
++  "audible.connect": "🔐 Conectar mi cuenta",
++  "audible.disconnect": "🔓 Desconectar Audible",
++  "audible.cancel": "✖️ Cancelar",
++  "audible.cancelled": "Operación de Audible cancelada.",
++  "audible.disconnected": "Cuenta Audible desconectada. Se borraron la sesión y los archivos locales. También puedes revocar el dispositivo en los ajustes de Amazon.",
++  "audible.connected": "✅ Tu cuenta Audible está conectada. Envía el enlace de un libro disponible en tu biblioteca. Usa /audible_logout para borrar la sesión.",
++  "audible.email": "Envía solo el correo de tu cuenta Amazon/Audible. No envíes contraseña ni código de verificación. El correo se usará para iniciar la sesión en Amazon.",
++  "audible.browser": "1. Toca <b>Iniciar sesión en Amazon</b> y accede desde el navegador.\n2. Copia la URL completa de la barra de direcciones al terminar, aunque la página final muestre un error.\n3. Pega esa URL solo en esta conversación privada. El bot intentará borrar el mensaje al recibirlo.\n\nEl inicio de sesión caduca en 10 minutos. Nunca envíes tu contraseña ni código de verificación al bot.",
++  "audible.amazon": "Iniciar sesión en Amazon",
++  "audible.private": "🔐 Audible funciona solo en privado. Cada persona debe conectar su propia cuenta para acceder a su biblioteca.",
++  "audible.open_private": "🎧 Continuar en privado",
++  "audible.market": "Usa /audible seguido del país de tu cuenta: br, us, uk, de, fr, it, es, ca, au, jp o in.",
++  "audible.checking": "🎧 Audible: comprobando tu biblioteca y preparando la descarga…",
++  "audible.finished": "✅ Audiolibro enviado.",
++  "audible.stopped": "No se pudo completar el audiolibro.",
++  "audible.error.busy": "⏳ Ya hay una operación de tu cuenta en curso o los espacios de Audible están ocupados. Inténtalo en unos minutos.",
++  "audible.error.unavailable": "El servicio Audible no está disponible en este servidor. Contacta con soporte.",
++  "audible.error.session": "Tu sesión Audible caducó o no está conectada para este país. Usa /audible o vuelve a enviar el enlace para conectar tu cuenta.",
++  "audible.error.library": "No se encontró el libro para descargar en la biblioteca conectada, o Audible no autorizó el acceso. Añádelo o cómpralo con la misma cuenta e inténtalo de nuevo.",
++  "audible.error.timeout": "Audible tardó demasiado en responder. Se detuvo la operación; inténtalo más tarde.",
++  "audible.error.too_large": "El audiolibro supera el límite de tamaño del bot. Se detuvo la descarga.",
++  "audible.error.email": "Envía un correo electrónico válido. No envíes tu contraseña.",
++  "audible.error.expired": "El inicio de sesión caducó o el bot se reinició. Usa /audible para empezar de nuevo.",
++  "audible.error.response": "URL de retorno no válida. Copia la URL completa de la página final de Amazon/Audible y envíala aquí en privado.",
++  "audible.error.login": "No se pudo completar el inicio de sesión. Usa /audible para iniciar una nueva autorización.",
++  "audible.error.download": "No se pudo terminar la descarga o el envío del audiolibro. Inténtalo más tarde. Tu cuenta no se compartirá con otros usuarios."
+ }
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
-index 53f3773..a39ab1c 100644
+index 53f3773..8794027 100644
 --- a/i18n/locales/pt.json
 +++ b/i18n/locales/pt.json
+@@ -302,7 +302,7 @@
+   "messages.user_messages.guest_unavailable_message.cf3bfbe9": "este serviço",
+   "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} no modo convidado",
+   "messages.user_messages.guest_unavailable_title.e33214d1": "Modo Convidado",
+-  "messages.user_messages.help_message.9640b060": "<b>📖 Guia & Ajuda do Save Vídeo DL Bot</b>\n\nEnvie um link ou cole vários links na mesma mensagem. O bot extrairá e entregará a mídia automaticamente.\n\n<blockquote expandable><b>📷 Instagram & Threads</b>\n• Download de Posts, Reels, IGTV & Stories\n• Carrosséis de fotos e álbuns multimídia\n• Copie o link via Compartilhar → Copiar link</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Downloads de vídeo sem marca d'água\n• Carrosséis de fotos e apresentações\n• Extração de áudio MP3 suportada</blockquote>\n\n<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n• YouTube Shorts e Vídeos convencionais\n• Áudio e vídeo em alta definição\n• Toque no botão MP3 para baixar o áudio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n• Vídeos, GIFs e imagens do X / Twitter\n• Pins de vídeo e imagem do Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud &  🟢 Spotify</b>\n• Faixas de áudio do SoundCloud em alta qualidade\n• Identificação de faixas e download do Spotify</blockquote>\n\n<blockquote expandable><b>⚡ Inline Mode</b>\n• Digite <code>@{p0} [link]</code> em qualquer chat\n• Prévia instantânea e envio direto de mídia</blockquote>\n\n<blockquote expandable><b>📦 Download em Lote (Batch)</b>\n• Envie até 6 links em uma única mensagem\n• Entregues um a um para manter o chat organizado</blockquote>",
++  "messages.user_messages.help_message.9640b060": "<b>📖 Guia & Ajuda do Save Vídeo DL Bot</b>\n\nEnvie um link ou cole vários links na mesma mensagem. O bot extrairá e entregará a mídia automaticamente.\n\n<blockquote expandable><b>📷 Instagram & Threads</b>\n• Download de Posts, Reels, IGTV & Stories\n• Carrosséis de fotos e álbuns multimídia\n• Copie o link via Compartilhar → Copiar link</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Downloads de vídeo sem marca d'água\n• Carrosséis de fotos e apresentações\n• Extração de áudio MP3 suportada</blockquote>\n\n<blockquote expandable><b>▶️ YouTube & YouTube Music</b>\n• YouTube Shorts e Vídeos convencionais\n• Áudio e vídeo em alta definição\n• Toque no botão MP3 para baixar o áudio</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter & 📌 Pinterest</b>\n• Vídeos, GIFs e imagens do X / Twitter\n• Pins de vídeo e imagem do Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud &  🟢 Spotify</b>\n• Faixas de áudio do SoundCloud em alta qualidade\n• Identificação de faixas e download do Spotify</blockquote>\n\n<blockquote expandable><b>⚡ Inline Mode</b>\n• Digite <code>@{p0} [link]</code> em qualquer chat\n• Prévia instantânea e envio direto de mídia</blockquote>\n\n<blockquote expandable><b>📦 Download em Lote (Batch)</b>\n• Envie até 6 links em uma única mensagem\n• Entregues um a um para manter o chat organizado</blockquote>\\n\\n🎧 Audible: envie o link no privado e conecte sua própria conta com /audible. Requer acesso ao livro na sua biblioteca. Use /audible_logout para desconectar.",
+   "messages.user_messages.inline_album_description.504ad33c": "Abrir álbum completo no bot",
+   "messages.user_messages.inline_album_link_invalid.8d2d8799": "Este link de álbum expirou ou é inválido.",
+   "messages.user_messages.inline_album_title.44a7cb63": "Álbum do {p0}",
 @@ -409,7 +409,7 @@
    "services.stats.chart.render_stats_chart.dcc563b7": "Visão geral dos downloads",
    "language.prompt": "🌐 <b>Escolha o idioma do bot:</b>",
@@ -688,6 +1178,40 @@ index 53f3773..a39ab1c 100644
    "stats.month.1": "jan",
    "stats.month.2": "fev",
    "stats.month.3": "mar",
+@@ -497,5 +498,32 @@
+   "collection.finished": "✅ <b>{title}</b>\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
+   "collection.cancelled": "⏹️ <b>{title}</b>: processamento interrompido.\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
+   "collection.stopped": "⏸️ <b>{title}</b>: envio interrompido por limite de serviço ou falha no Telegram.\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
+-  "collection.error": "❌ Não foi possível carregar ou concluir esta coleção."
++  "collection.error": "❌ Não foi possível carregar ou concluir esta coleção.",
++  "audible.explain": "🎧 <b>Conectar sua conta Audible</b>\n\nA Audible exige login para verificar os livros da sua biblioteca e autorizar o download. O link sozinho não libera acesso ao livro.\n\nCada usuário conecta a própria conta. Faça o login apenas na página da Amazon: nunca envie sua senha ou código de verificação ao bot. Depois, o bot solicitará somente a URL de retorno para concluir a autorização.\n\nSua sessão ficará salva no servidor, separada das outras contas, até você desconectar. O bot poderá acessar sua biblioteca com essa sessão. Use /audible_logout para apagar a sessão e os arquivos locais. O download funciona apenas no privado.",
++  "audible.connect": "🔐 Conectar minha conta",
++  "audible.disconnect": "🔓 Desconectar Audible",
++  "audible.cancel": "✖️ Cancelar",
++  "audible.cancelled": "Operação do Audible cancelada.",
++  "audible.disconnected": "Conta Audible desconectada. A sessão e os arquivos locais foram apagados. Você também pode revogar o dispositivo nas configurações da Amazon.",
++  "audible.connected": "✅ Sua conta Audible está conectada. Envie o link de um livro disponível na sua biblioteca. Para apagar a sessão, use /audible_logout.",
++  "audible.email": "Envie somente o e-mail da sua conta Amazon/Audible. Não envie senha nem código de verificação. O e-mail será usado para iniciar o login na Amazon.",
++  "audible.browser": "1. Toque em <b>Entrar na Amazon</b> e faça o login no navegador.\n2. Ao terminar, copie a URL completa da barra de endereços, mesmo se a página final exibir um erro.\n3. Cole essa URL somente nesta conversa privada. O bot tentará apagar essa mensagem após recebê-la.\n\nO login expira em 10 minutos. Nunca envie sua senha ou código de verificação ao bot.",
++  "audible.amazon": "Entrar na Amazon",
++  "audible.private": "🔐 O Audible funciona somente no privado. Cada pessoa precisa conectar a própria conta para acessar sua biblioteca.",
++  "audible.open_private": "🎧 Continuar no privado",
++  "audible.market": "Use /audible seguido do país da conta: br, us, uk, de, fr, it, es, ca, au, jp ou in.",
++  "audible.checking": "🎧 Audible: verificando sua biblioteca e preparando o download…",
++  "audible.finished": "✅ Audiolivro enviado.",
++  "audible.stopped": "Não foi possível concluir o audiolivro.",
++  "audible.error.busy": "⏳ Já existe uma operação da sua conta em andamento ou os slots do Audible estão ocupados. Tente novamente em alguns minutos.",
++  "audible.error.unavailable": "O serviço Audible não está disponível neste servidor. Informe o suporte.",
++  "audible.error.session": "Sua sessão Audible expirou ou não está conectada para este país. Use /audible ou envie o link novamente para conectar sua conta.",
++  "audible.error.library": "O livro não foi encontrado para download na biblioteca conectada, ou a Audible não autorizou o acesso. Adicione ou adquira o título na mesma conta e tente novamente.",
++  "audible.error.timeout": "A Audible demorou demais para responder. A operação foi encerrada; tente novamente mais tarde.",
++  "audible.error.too_large": "O audiolivro excede o limite de tamanho do bot. O download foi interrompido.",
++  "audible.error.email": "Envie um endereço de e-mail válido. Não envie sua senha.",
++  "audible.error.expired": "O login expirou ou o bot reiniciou. Use /audible para começar novamente.",
++  "audible.error.response": "A URL de retorno não é válida. Copie a URL completa da página final da Amazon/Audible e envie aqui no privado.",
++  "audible.error.login": "Não foi possível concluir o login. Use /audible para iniciar uma nova autorização.",
++  "audible.error.download": "Não foi possível concluir o download ou envio do audiolivro. Tente novamente mais tarde. Sua conta não será compartilhada com outros usuários."
+ }
 diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
 index b134310..ce7fbb0 100644
 --- a/keyboards/inline_keyboards.py
@@ -766,6 +1290,565 @@ index 3e53db6..67ddc39 100644
              return await handler(event, data)
          finally:
              reset_locale(token)
+diff --git a/services/links/audible.py b/services/links/audible.py
+new file mode 100644
+index 0000000..35a93e8
+--- /dev/null
++++ b/services/links/audible.py
+@@ -0,0 +1,81 @@
++"""Recognize book identities only; authentication URLs are never media links."""
++
++import re
++from urllib.parse import parse_qs, urlparse
++
++MARKETS = {
++    "com.br": "br",
++    "com": "us",
++    "co.uk": "uk",
++    "de": "de",
++    "fr": "fr",
++    "it": "it",
++    "es": "es",
++    "ca": "ca",
++    "com.au": "au",
++    "co.jp": "jp",
++    "in": "in",
++}
++AUDIBLE_URL_REGEX = r"https://(?:www\.)?audible\.(?:com\.br|com\.au|co\.uk|co\.jp|com|de|fr|it|es|ca|in)/pd/[^\s<>\x27\"]+"
++
++
++def book_identity(url):
++    try:
++        p = urlparse(url)
++        host = (p.hostname or "").removeprefix("www.")
++        market = (
++            MARKETS.get(host.removeprefix("audible."))
++            if host.startswith("audible.")
++            else None
++        )
++        if (
++            p.scheme != "https"
++            or p.username
++            or p.password
++            or p.port not in (None, 443)
++            or not market
++        ):
++            return None
++        match = re.fullmatch(r"/pd/(?:[^/]+/)?([A-Za-z0-9]{10})/?", p.path)
++        return (market, match[1].upper()) if match else None
++    except ValueError:
++        return None
++
++
++def extract_audible_url(text):
++    for match in re.finditer(AUDIBLE_URL_REGEX, text or "", re.IGNORECASE):
++        url = match[0].rstrip(".,;!?)\"']}>")
++        if book_identity(url):
++            return url
++    return None
++
++
++def book_url(market, asin):
++    suffix = next((suffix for suffix, code in MARKETS.items() if code == market), None)
++    if not suffix or not re.fullmatch(r"[A-Z0-9]{10}", asin):
++        raise ValueError("Invalid Audible identity")
++    return f"https://www.audible.{suffix}/pd/{asin}"
++
++
++def valid_auth_url(url, *, response=False):
++    """Validate locally; never fetch a URL supplied in the OAuth handoff."""
++    try:
++        p = urlparse(url)
++        host = (p.hostname or "").removeprefix("www.")
++        allowed = any(
++            host in {"amazon." + suffix, "audible." + suffix} for suffix in MARKETS
++        )
++        if len(url) > 8192 or any(c.isspace() for c in url) or not allowed:
++            return False
++        if p.scheme != "https" or p.username or p.password or p.port not in (None, 443):
++            return False
++        if response:
++            codes = parse_qs(p.query).get("openid.oa2.authorization_code", [])
++            return (
++                p.path == "/ap/maplanding"
++                and len(codes) == 1
++                and 1 <= len(codes[0]) <= 2048
++            )
++        return p.path.startswith("/ap/")
++    except ValueError:
++        return False
+diff --git a/services/links/detection.py b/services/links/detection.py
+index 7c81c67..4af818b 100644
+--- a/services/links/detection.py
++++ b/services/links/detection.py
+@@ -3,10 +3,13 @@ from __future__ import annotations
+ import re
+ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+ 
++from services.links.audible import AUDIBLE_URL_REGEX
++
+ 
+ _TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
+ 
+ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
++    ("audible", re.compile("(" + AUDIBLE_URL_REGEX + ")", re.IGNORECASE)),
+     (
+         "tiktok",
+         re.compile(r"(https?://(www\.|vm\.|vt\.|vn\.)?tiktok\.com/\S+)", re.IGNORECASE),
+diff --git a/services/platforms/audible_service.py b/services/platforms/audible_service.py
+new file mode 100644
+index 0000000..8f4cc26
+--- /dev/null
++++ b/services/platforms/audible_service.py
+@@ -0,0 +1,448 @@
++"""Private, per-Telegram-user Libation sessions; no shared account or media cache."""
++
++import asyncio
++import json
++import os
++import pty
++import re
++import shutil
++import signal
++import termios
++from contextlib import asynccontextmanager
++from dataclasses import dataclass
++from pathlib import Path
++
++from services.links.audible import MARKETS, valid_auth_url
++
++
++class AudibleError(Exception):
++    """Only stable error codes cross the process boundary; never raw CLI output."""
++
++
++@dataclass
++class Login:
++    process: asyncio.subprocess.Process
++    master: int
++    url: asyncio.Future
++    task: asyncio.Task | None = None
++    submitted: bool = False
++
++
++class AudibleService:
++    def __init__(
++        self, root=None, binary=None, *, auth_ttl=600, start_timeout=30, timeout=1200
++    ):
++        self.root = Path(
++            root
++            or os.getenv(
++                "AUDIBLE_DATA_DIR",
++                str(Path.home() / ".local/share/savevid-audible/users"),
++            )
++        ).absolute()
++        self.binary = binary or os.getenv("LIBATION_CLI", "libationcli")
++        self.auth_ttl, self.start_timeout, self.timeout = (
++            auth_ttl,
++            start_timeout,
++            timeout,
++        )
++        self.pending = {}
++        self.jobs = {}
++        self.starting = {}
++
++    def profile(self, owner, market):
++        if type(owner) is not int or owner <= 0 or market not in MARKETS.values():
++            raise AudibleError("identity")
++        path = self.root / str(owner) / market
++        for folder in (self.root, path.parent, path):
++            if folder.is_symlink():
++                raise AudibleError("configuration")
++        return path
++
++    def _initialize(self, owner, market):
++        path = self.profile(owner, market)
++        for folder in (
++            self.root,
++            path.parent,
++            path,
++            path / "books",
++            path / "work",
++            path / "home",
++        ):
++            folder.mkdir(parents=True, exist_ok=True, mode=0o700)
++            if folder.is_symlink():
++                raise AudibleError("configuration")
++            folder.chmod(0o700)
++        key = path / "master.key"
++        if key.is_symlink():
++            raise AudibleError("configuration")
++        try:
++            fd = os.open(key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
++        except FileExistsError:
++            if key.stat().st_size != 32:
++                raise AudibleError("configuration") from None
++            key.chmod(0o600)
++        else:
++            with os.fdopen(fd, "wb") as file:
++                file.write(os.urandom(32))
++        settings = path / "Settings.json"
++        if settings.is_symlink():
++            raise AudibleError("configuration")
++        settings.write_text(
++            json.dumps(
++                {
++                    "Books": str(path / "books"),
++                    "InProgress": str(path / "work"),
++                    "TokenStorageMethod": "Encrypted",
++                    "ImportEpisodes": False,
++                    # Prevent CLI/SDK diagnostics containing credentials from reaching disk.
++                    "Serilog": {
++                        "MinimumLevel": "Fatal",
++                        "WriteTo": [{"Name": "File", "Args": {"path": "/dev/null"}}],
++                    },
++                }
++            )
++        )
++        settings.chmod(0o600)
++        return path
++
++    def _env(self, path):
++        env = {k: v for k, v in os.environ.items() if not k.startswith("LIBATION_")}
++        env.update(
++            LIBATION_FILES_DIR=str(path),
++            LIBATION_MASTER_KEY_FILE=str(path / "master.key"),
++            HOME=str(path / "home"),
++            XDG_DATA_HOME=str(path / "home/.local/share"),
++            XDG_CONFIG_HOME=str(path / "home/.config"),
++        )
++        return env
++
++    def connected(self, owner, market):
++        path = self.profile(owner, market)
++        return (path / ".connected").is_file() and (
++            path / "AccountsSettings.json"
++        ).is_file()
++
++    @staticmethod
++    async def _stop(process):
++        # Also reap descendants if the launcher exited while a child still owns
++        # a pipe. Drain pipes after killing so a full stdout buffer cannot keep
++        # asyncio's subprocess transport waiting forever.
++        try:
++            os.killpg(process.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        try:
++            await asyncio.wait_for(process.communicate(), 5)
++        except TimeoutError:
++            # The process group has already been killed; cleanup must be bounded.
++            pass
++
++    async def _spawn(self, *args, **kwargs):
++        task = asyncio.create_task(asyncio.create_subprocess_exec(*args, **kwargs))
++        try:
++            return await asyncio.shield(task)
++        except asyncio.CancelledError:
++            process = await task
++            await self._stop(process)
++            raise
++
++    async def _capture(self, process, on_output=None, quota=None):
++        tail = b""
++        while True:
++            try:
++                chunk = await asyncio.wait_for(process.stdout.read(4096), 1)
++            except TimeoutError:
++                if quota and await asyncio.to_thread(self._bytes, quota[0]) > quota[1]:
++                    raise AudibleError("too_large")
++                continue
++            if not chunk:
++                break
++            tail = (tail + chunk)[-65536:]
++            if on_output:
++                on_output(tail.decode(errors="replace"))
++            if quota and await asyncio.to_thread(self._bytes, quota[0]) > quota[1]:
++                raise AudibleError("too_large")
++        await process.wait()
++        return tail.decode(errors="replace")
++
++    @staticmethod
++    def _bytes(path):
++        return sum(
++            p.stat().st_size
++            for p in path.rglob("*")
++            if p.is_file() and not p.is_symlink()
++        )
++
++    async def _run(self, path, *args, timeout=None, quota=None):
++        try:
++            process = await self._spawn(
++                self.binary,
++                *args,
++                env=self._env(path),
++                cwd=path,
++                stdin=asyncio.subprocess.DEVNULL,
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.STDOUT,
++                start_new_session=True,
++            )
++        except OSError:
++            raise AudibleError("unavailable") from None
++        try:
++            output = await asyncio.wait_for(
++                self._capture(process, quota=quota), timeout or self.timeout
++            )
++            if process.returncode:
++                raise AudibleError(
++                    "session" if "login is required" in output.lower() else "download"
++                )
++            return output
++        except TimeoutError:
++            raise AudibleError("timeout") from None
++        finally:
++            await self._stop(process)
++
++    async def begin_login(self, owner, market, email):
++        if not re.fullmatch(r"[^\s@<>]{1,128}@[^\s@<>]{1,128}\.[A-Za-z]{2,24}", email):
++            raise AudibleError("email")
++        if owner in self.jobs or owner in self.starting:
++            raise AudibleError("busy")
++        if owner in self.pending:
++            await self.cancel_login(owner)
++        if len(self.pending) + len(self.starting) >= 4:
++            raise AudibleError("busy")
++        self.starting[owner] = asyncio.current_task()
++        master = slave = None
++        try:
++            path = self._initialize(owner, market)
++            # Start a fresh account only inside this user's chosen marketplace.
++            (path / ".connected").unlink(missing_ok=True)
++            (path / "AccountsSettings.json").unlink(missing_ok=True)
++            master, slave = pty.openpty()
++            os.set_blocking(master, False)
++            attributes = termios.tcgetattr(slave)
++            attributes[3] &= ~termios.ECHO
++            termios.tcsetattr(slave, termios.TCSANOW, attributes)
++            process = await self._spawn(
++                self.binary,
++                "login-external",
++                "--account",
++                email,
++                "--locale",
++                market,
++                stdin=slave,
++                stdout=asyncio.subprocess.PIPE,
++                stderr=asyncio.subprocess.STDOUT,
++                env=self._env(path),
++                cwd=path,
++                start_new_session=True,
++            )
++            os.close(slave)
++            slave = None
++            login = Login(process, master, asyncio.get_running_loop().create_future())
++            self.pending[owner] = login
++            master = None
++            login.task = asyncio.create_task(self._watch_login(owner, path, login))
++            return await asyncio.wait_for(asyncio.shield(login.url), self.start_timeout)
++        except OSError:
++            await self.cancel_login(owner)
++            raise AudibleError("unavailable") from None
++        except (TimeoutError, asyncio.CancelledError):
++            await self.cancel_login(owner)
++            raise
++        finally:
++            self.starting.pop(owner, None)
++            for descriptor in (master, slave):
++                if descriptor is not None:
++                    os.close(descriptor)
++
++    async def _watch_login(self, owner, path, login):
++        def find_url(output):
++            if login.url.done():
++                return
++            for url in re.findall(r'https://[^\s<>"\x27]+', output):
++                # Read only complete printed lines, never a partial URL chunk.
++                if valid_auth_url(url) and (
++                    url + "\n" in output or url + "\r" in output
++                ):
++                    login.url.set_result(url)
++                    return
++
++        try:
++            output = await asyncio.wait_for(
++                self._capture(login.process, find_url), self.auth_ttl
++            )
++            success = login.process.returncode == 0 and (
++                "Successfully authenticated account" in output
++                or "already authenticated." in output
++            )
++            if success and (path / "AccountsSettings.json").is_file():
++                (path / "AccountsSettings.json").chmod(0o600)
++                marker = path / ".connected"
++                marker.write_text("1")
++                marker.chmod(0o600)
++                return True
++            return False
++        except (TimeoutError, OSError, AudibleError):
++            return False
++        finally:
++            await self._stop(login.process)
++            os.close(login.master)
++            if not login.url.done():
++                login.url.set_result(None)
++            if self.pending.get(owner) is login:
++                self.pending.pop(owner, None)
++
++    async def finish_login(self, owner, response):
++        login = self.pending.get(owner)
++        if not login or login.submitted:
++            raise AudibleError("expired")
++        if not valid_auth_url(response, response=True):
++            raise AudibleError("response")
++        login.submitted = True
++
++        # Input is a small, validated URL; echo was disabled on this PTY.
++        async def feed():
++            payload = (response + "\n").encode()
++            while payload:
++                try:
++                    payload = payload[os.write(login.master, payload) :]
++                except BlockingIOError:
++                    await asyncio.sleep(0.02)
++
++        try:
++            await asyncio.wait_for(feed(), 5)
++        except (OSError, TimeoutError):
++            await self.cancel_login(owner)
++            raise AudibleError("login") from None
++        if not await login.task:
++            raise AudibleError("login")
++
++    async def cancel_login(self, owner):
++        login = self.pending.get(owner)
++        if login and login.task:
++            login.task.cancel()
++            await asyncio.gather(login.task, return_exceptions=True)
++
++    async def cancel(self, owner):
++        await self.cancel_login(owner)
++        job = self.jobs.get(owner) or self.starting.get(owner)
++        if job and job is not asyncio.current_task():
++            job.cancel()
++            await asyncio.gather(job, return_exceptions=True)
++
++    async def disconnect(self, owner):
++        await self.cancel(owner)
++        path = self.profile(owner, "br").parent
++        if path.exists():
++            await asyncio.to_thread(shutil.rmtree, path)
++
++    async def _audio(self, path, source, max_size):
++        probe = await self._spawn(
++            "ffprobe",
++            "-v",
++            "error",
++            "-select_streams",
++            "a:0",
++            "-show_entries",
++            "stream=codec_name",
++            "-of",
++            "json",
++            str(source),
++            stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.STDOUT,
++            start_new_session=True,
++        )
++        try:
++            raw = await asyncio.wait_for(self._capture(probe), 30)
++            try:
++                codec = json.loads(raw)["streams"][0]["codec_name"]
++            except (ValueError, KeyError, IndexError, TypeError):
++                raise AudibleError("download") from None
++            if probe.returncode:
++                raise AudibleError("download")
++        finally:
++            await self._stop(probe)
++        encoding = (
++            ["-c:a", "copy"] if codec == "aac" else ["-c:a", "aac", "-b:a", "64k"]
++        )
++        output = path / "work/audio.m4a"
++        process = await self._spawn(
++            "ffmpeg",
++            "-hide_banner",
++            "-loglevel",
++            "error",
++            "-nostdin",
++            "-y",
++            "-i",
++            str(source),
++            "-map",
++            "0:a:0",
++            "-vn",
++            "-sn",
++            "-dn",
++            "-map_chapters",
++            "-1",
++            *encoding,
++            str(output),
++            stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.STDOUT,
++            start_new_session=True,
++        )
++        try:
++            await asyncio.wait_for(
++                self._capture(process, quota=(path / "work", max_size)), self.timeout
++            )
++            if process.returncode or not output.is_file() or output.stat().st_size == 0:
++                raise AudibleError("download")
++            if output.stat().st_size > max_size:
++                raise AudibleError("too_large")
++            return output
++        finally:
++            await self._stop(process)
++
++    @asynccontextmanager
++    async def book(self, owner, market, asin, *, max_size):
++        if not re.fullmatch("[A-Z0-9]{10}", asin):
++            raise AudibleError("identity")
++        if (
++            owner in self.jobs
++            or owner in self.pending
++            or owner in self.starting
++            or len(self.jobs) >= 2
++        ):
++            raise AudibleError("busy")
++        if not self.connected(owner, market):
++            raise AudibleError("session")
++        path = self._initialize(owner, market)
++        self.jobs[owner] = asyncio.current_task()
++        try:
++            # A restart may leave partial files. Never deliver a previous run's
++            # output when a new license/download attempt produces no media.
++            for folder in (path / "books", path / "work"):
++                await asyncio.to_thread(shutil.rmtree, folder)
++                folder.mkdir(mode=0o700)
++            await self._run(path, "scan", timeout=180)
++            await self._run(path, "liberate", "--id", asin, quota=(path, max_size * 3))
++            files = [
++                p
++                for p in (path / "books").rglob("*")
++                if p.suffix.lower() in {".m4b", ".m4a", ".mp3"}
++                and p.is_file()
++                and not p.is_symlink()
++                and f"[{asin}]" in str(p.relative_to(path / "books"))
++            ]
++            if len(files) != 1:
++                raise AudibleError("library")
++            output = await self._audio(path, files[0], max_size)
++            yield output, files[0].stem.split(" [")[0]
++        finally:
++            # Authentication remains; every downloaded/converted media file is private and temporary.
++            try:
++                for folder in (path / "books", path / "work"):
++                    if folder.exists():
++                        await asyncio.to_thread(shutil.rmtree, folder)
++            finally:
++                self.jobs.pop(owner, None)
++
++
++service = AudibleService()
 diff --git a/services/platforms/media_collections.py b/services/platforms/media_collections.py
 index 6ea78c9..164fccf 100644
 --- a/services/platforms/media_collections.py
@@ -978,3 +2061,15 @@ index 0000000..10f5f4d
 +        finally:
 +            state.users -= 1
 +            self._trim()
+diff --git a/services/stats/constants.py b/services/stats/constants.py
+index d2655d6..efc3be4 100644
+--- a/services/stats/constants.py
++++ b/services/stats/constants.py
+@@ -12,6 +12,7 @@ SERVICE_EMOJI = {
+     "Other": "📦",
+ }
+ SERVICE_DISPLAY_NAMES = {
++    "audible": "Audible",
+     "instagram": "Instagram",
+     "threads": "Threads",
+     "tiktok": "TikTok",

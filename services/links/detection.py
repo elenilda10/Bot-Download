@@ -3,10 +3,13 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from services.links.audible import AUDIBLE_URL_REGEX
+
 
 _TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
 
 _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("audible", re.compile("(" + AUDIBLE_URL_REGEX + ")", re.IGNORECASE)),
     (
         "tiktok",
         re.compile(r"(https?://(www\.|vm\.|vt\.|vn\.)?tiktok\.com/\S+)", re.IGNORECASE),

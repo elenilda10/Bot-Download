@@ -1,10 +1,14 @@
 {
   "base_commit": "57234221ad7df86a1888b7063f1897c7f71a3271",
-  "patch_sha256": "aa73d882e2b0056be563096eddb302ee798d4ecdd692307911ba33bcc758d9c0",
+  "patch_sha256": "1df0f8cd94357012ab430030c35416481063904b2db6de2274d5db722161869e",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
-      "result_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2"
+      "result_sha256": "e5f9100b160eb6b430a56c5bb93d048cfb6aed8370b08744ded4d089abe13406"
+    },
+    "handlers/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "2ed77b556e50377bed9bb26b95f7df892055d2c12573f75da2520064e4c84686"
     },
     "handlers/channel_membership.py": {
       "base_sha256": "8f3df93c7db71a93326b246b4e85298142a6cfbdec4f712489bd9e60dcdfc01e",
@@ -13,6 +17,10 @@
     "handlers/collections.py": {
       "base_sha256": null,
       "result_sha256": "a463264e65bf9a86aca1df32e362229286e3a2cc3fc35e0a2c25ecb17dac0edb"
+    },
+    "handlers/media_download.py": {
+      "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
+      "result_sha256": "e8de32e812abe4c63066eb5eb0d552ebdfe3062c5b9618d4a989ee61c6d56eba"
     },
     "handlers/settings_menu.py": {
       "base_sha256": "39063f4a9fb0d7d2dc65ed57cfe5f877d09eada6896adda6578bff3367942ba2",
@@ -36,19 +44,19 @@
     },
     "i18n/locales/de.json": {
       "base_sha256": null,
-      "result_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2"
+      "result_sha256": "fd4ec810a878933fa9702a814e8bf7efb90fa5f11d4f8d3ebb97000688e355ad"
     },
     "i18n/locales/en.json": {
       "base_sha256": "14dd711fa5c77bce5030b3ba1457f49eca6e946cc6d92e24b18152dd1439ef45",
-      "result_sha256": "295f57b5c3779aa2fbd207ecc8adbf532d8a223132730af5a9d3c2b793b918d3"
+      "result_sha256": "c56c332eac2ac664a4d21b73fcffef489d858a8c1b4cc04dc6a80b9ec9133dc3"
     },
     "i18n/locales/es.json": {
       "base_sha256": "d901d7776e31edaba8087dda293aeb812d4c16238ec56a8b6260e4b89b298ad4",
-      "result_sha256": "d608bcfb8e745bd5ca83484f1935e41cdd8f4a347b636c3e5d35b72f3519c103"
+      "result_sha256": "b8d6fa5509dfa8eda3a0414ee8204061711283e9ad674fa88619d365fcb6a794"
     },
     "i18n/locales/pt.json": {
       "base_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730",
-      "result_sha256": "377339edee52e0803283edb7dc8fc8282f16b4ade9c5b0650ff2ba23a3d92e00"
+      "result_sha256": "a351b23d7d0c0d3a35a000cba98ee5f07f82b6b7e56efda33731baee38d9591f"
     },
     "keyboards/inline_keyboards.py": {
       "base_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a",
@@ -70,13 +78,21 @@
       "base_sha256": "bb99e399edfce783fd5255572d79b7cf0367afe1b7f112989be327e23036e62d",
       "result_sha256": "d6214a2b67f78306608f6672e11c2ed3171ec2cb736bae47a587aaeec1154fcb"
     },
+    "services/links/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "baf923aa9b9f08b8edd503fb5d3e26e8f2190031889f28527e392e3cb75d53e9"
+    },
     "services/links/detection.py": {
       "base_sha256": "4721943998e3ad3b5adbd199dd007ce2a226efeca00b16ca8163a61c16c91c5e",
-      "result_sha256": "8d1fa15a668d4c61e2ae3e100feee886f374abb2e6764c7074d3bce04e0380b0"
+      "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
     },
     "services/media/collection_flow.py": {
       "base_sha256": null,
       "result_sha256": "53c92ef7df60af18dffdcfd753ba952d894f135ce59695ef0ed46d4e103a4cea"
+    },
+    "services/platforms/audible_service.py": {
+      "base_sha256": null,
+      "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
     },
     "services/platforms/media_collections.py": {
       "base_sha256": null,
@@ -97,6 +113,10 @@
     "services/runtime/telegram_rate_limit.py": {
       "base_sha256": null,
       "result_sha256": "6651abaa101828ac1b82967bba95074cced1dd0be81cab2018455b402a349ae2"
+    },
+    "services/stats/constants.py": {
+      "base_sha256": "f742a9f395e10e416ad1f3c61e5a6e16b828b9ab966b3d0db0da26629165a8d1",
+      "result_sha256": "356623d731bc1d133145434c66bbf90832b015df9daf26bd0bed366a9bc0a709"
     },
     "utils/download_errors.py": {
       "base_sha256": "1db27d610ceb77b9f6e391d3958fa6831143701556c2a9e6b83213732248827e",
