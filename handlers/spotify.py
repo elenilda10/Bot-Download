@@ -6,6 +6,7 @@ import re
 from typing import Optional
 
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import FSInputFile
 
 import messages as bm
@@ -241,6 +242,8 @@ async def process_spotify(message: types.Message, direct_url: Optional[str] = No
             message, business_id=business_id, text=bm.timeout_error(lang=user_lang)
         )
     except Exception as exc:
+        if collection_item and isinstance(exc, TelegramRetryAfter):
+            raise
         logging.exception("Spotify download failed: error=%s", exc)
         await handle_download_error(message, error=exc, business_id=business_id)
     finally:

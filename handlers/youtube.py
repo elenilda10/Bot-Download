@@ -8,6 +8,7 @@ import re
 import time
 from typing import Any, Optional
 from aiogram import types, Router, F
+from aiogram.exceptions import TelegramRetryAfter
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from yt_dlp import YoutubeDL
 import keyboards as kb
@@ -549,7 +550,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
-        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError)):
+        if collection_item and isinstance(e, (DownloadQueueBusyError, DownloadRateLimitError, TelegramRetryAfter)):
             raise
         logging.error("Video download error: %s", e)
         await handle_download_error(message, error=e, business_id=business_id)
@@ -749,6 +750,8 @@ async def download_music(message: types.Message, direct_url: Optional[str] = Non
             message, business_id=business_id, error=TimeoutError(), platform='YouTube'
         )
     except Exception as e:
+        if collection_item and isinstance(e, TelegramRetryAfter):
+            raise
         logging.error("Audio download error: %s", e)
         await handle_download_error(message, error=e, business_id=business_id)
     finally:

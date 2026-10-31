@@ -1,6 +1,6 @@
 {
   "base_commit": "f88a0902dc220bad72d9a013d7db3f2a8ffdd3e6",
-  "patch_sha256": "e184e2798131a83ad23c461092eeb6b01b1dbfd0a258fe00806b4adbde781db7",
+  "patch_sha256": "be05035b03861af68175edac0ff7cede118fa9c828a927711b56202609b6344e",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -20,11 +20,11 @@
     },
     "handlers/spotify.py": {
       "base_sha256": "7480bd7d4097836867c1d00743286c989dc44024c84697475d011623acc43cbd",
-      "result_sha256": "647f9aa46b038c175b50d8f634e2f3ddefca6d8110106059f2161f6018464646"
+      "result_sha256": "ef6bd034ecdeb06b64e1bb145fd1c6b7c90d43cfb98e836ad08ad4077eabf716"
     },
     "handlers/youtube.py": {
       "base_sha256": "26c703d2ee9e6e89a43d712cbd04e71d16bc4fa2ea95dff943a86c761a8d3bd9",
-      "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
+      "result_sha256": "699b4b8de3aeff490ac7cffb1ca4d07114676c2a5a10dd8a0d7b0146750e2096"
     },
     "i18n/__init__.py": {
       "base_sha256": "1ee63f527f437515e0c0f42b59c552d45d8baa5783d893dad9e3d4c5246025ab",
@@ -52,7 +52,7 @@
     },
     "main.py": {
       "base_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10",
-      "result_sha256": "10eb6f03c183879523154ae60ca2da3c866040f1b88a43a9aff07edd648fda5b"
+      "result_sha256": "05cfbf02ff4cae172b45d44e489705b8d490ed55e9e4a5d37c19f21d0da74606"
     },
     "messages/user_messages.py": {
       "base_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d",
@@ -85,6 +85,10 @@
     "services/runtime/request_dedupe.py": {
       "base_sha256": "abc98a2426e2dadcf4761afa4da4eaf14bbff80e747c013364b8484e9901cd2d",
       "result_sha256": "6f4fe625257759e73d4fa2ba02388a6ddddedc4d5fa46de69c7c59ca9ddf442b"
+    },
+    "services/runtime/telegram_rate_limit.py": {
+      "base_sha256": null,
+      "result_sha256": "6651abaa101828ac1b82967bba95074cced1dd0be81cab2018455b402a349ae2"
     }
   }
 }

@@ -230,6 +230,75 @@ def preserve_replaced_youtube_notice(base_source, incoming_source, local_source)
         return base_source, incoming_source
 
 
+def preserve_deleted_reply_middleware(base_source, incoming_source, local_source):
+    """Carry only the observed, argument-free VPS fallback registration forward.
+
+    It must wrap the rate limiter: a fallback resend must pass through flood
+    control too. Unknown aliases, arguments, duplicate or moved registrations
+    are left to the normal conflict diagnostic rather than guessed.
+    """
+    import_text = (
+        'from services.runtime.telegram_deleted_reply import DeletedReplyFallbackMiddleware\n'
+    )
+    registration = '    session.middleware(DeletedReplyFallbackMiddleware())\n'
+    try:
+        sources = [base_source, incoming_source, local_source]
+        trees = [ast.parse(source) for source in sources]
+        wanted_import = ast.parse(import_text).body[0]
+        wanted_call = ast.parse(registration.strip()).body[0]
+        matches = [node for node in trees[2].body
+                   if ast.dump(node) == ast.dump(wanted_import)]
+        if len(matches) != 1:
+            return base_source, incoming_source
+        # No competing alias, constructor use or additional fallback import.
+        for index, tree in enumerate(trees):
+            names = [node for node in ast.walk(tree)
+                     if isinstance(node, ast.Name) and node.id == 'DeletedReplyFallbackMiddleware']
+            imports = [alias for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                       for alias in node.names if alias.name == 'DeletedReplyFallbackMiddleware']
+            if len(names) != (1 if index == 2 else 0) or len(imports) != (1 if index == 2 else 0):
+                return base_source, incoming_source
+        functions = [next(node for node in tree.body
+                          if isinstance(node, ast.FunctionDef) and node.name == 'create_app')
+                     for tree in trees]
+        sessions = []
+        for function in functions:
+            candidates = [node for node in function.body if isinstance(node, ast.Assign)
+                          and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                          and node.targets[0].id == 'session'
+                          and isinstance(node.value, ast.Call)
+                          and isinstance(node.value.func, ast.Name)
+                          and node.value.func.id == 'AiohttpSession']
+            if len(candidates) != 1:
+                return base_source, incoming_source
+            sessions.append(candidates[0])
+        if len({ast.dump(node) for node in sessions}) != 1:
+            return base_source, incoming_source
+        local_body = functions[2].body
+        following = local_body[local_body.index(sessions[2]) + 1]
+        if ast.dump(following) != ast.dump(wanted_call):
+            return base_source, incoming_source
+        local_top = trees[2].body
+        preceding = local_top[:local_top.index(matches[0])]
+        # Insert the same import after a verified common import anchor.
+        anchor = next(node for node in reversed(preceding)
+                      if isinstance(node, (ast.Import, ast.ImportFrom)) and all(
+                          any(ast.dump(candidate) == ast.dump(node) for candidate in tree.body)
+                          for tree in trees[:2]))
+        result = []
+        for source, tree, session in zip(sources[:2], trees[:2], sessions[:2]):
+            common = next(node for node in tree.body if ast.dump(node) == ast.dump(anchor))
+            lines = source.splitlines(keepends=True)
+            edits = [(session.end_lineno, registration.encode()),
+                     (common.end_lineno, import_text.encode())]
+            for line, text in sorted(edits, reverse=True):
+                lines.insert(line, text)
+            result.append(b''.join(lines))
+        return tuple(result)
+    except (SyntaxError, UnicodeDecodeError, StopIteration, IndexError):
+        return base_source, incoming_source
+
+
 def merge_runtime(target, staging, manifest, patch, reference):
     """Three-way merge only in temporary directories; never choose a conflict side."""
     with tempfile.TemporaryDirectory(prefix='bot-i18n-base-') as directory:
@@ -265,6 +334,9 @@ def merge_runtime(target, staging, manifest, patch, reference):
                     content = expected
                 else:
                     compatible_base, compatible_incoming = preserve_reply_methods(original.read_bytes(), expected, local)
+                    if name == 'main.py':
+                        compatible_base, compatible_incoming = preserve_deleted_reply_middleware(
+                            compatible_base, compatible_incoming, local)
                     if name == 'handlers/youtube.py':
                         compatible_base, compatible_incoming = preserve_replaced_youtube_notice(
                             compatible_base, compatible_incoming, local)
