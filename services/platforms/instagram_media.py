@@ -12,6 +12,7 @@ from typing import Optional
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+from services.platforms.instagram_saveinsta import download_saveinsta, fetch_post_metadata
 from config import COBALT_API_KEY, COBALT_API_URL
 from utils.cobalt_client import fetch_cobalt_data
 
@@ -84,6 +85,18 @@ def get_instagram_preview_url(media: Optional[InstagramMedia]) -> Optional[str]:
     if not media:
         return None
     return media.thumb or media.url
+
+
+async def _with_instagram_metadata(video: InstagramVideo, url: str) -> InstagramVideo:
+    if video.description or "/stories/" in url:
+        return video
+    try:
+        metadata = await asyncio.to_thread(fetch_post_metadata, url)
+        video.description = metadata.get("description", "")
+        video.author = metadata.get("author") or video.author
+    except Exception as exc:
+        logger.warning("Instagram embed metadata unavailable: %s", type(exc).__name__)
+    return video
 
 
 def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None) -> Optional[InstagramVideo]:
@@ -557,6 +570,10 @@ async def _download_cobalt_payload(data: dict, post_id: str, output_dir: str, is
 
 
 async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/downloads") -> Optional[InstagramVideo]:
+    # INSTAGRAM_PUBLIC_STORIES_V1: never fall through to the blocked Firefox account.
+    if urlparse(url).path.startswith("/stories/"):
+        from services.platforms.instagram_stories import fetch_public_instagram_story
+        return await fetch_public_instagram_story(url, output_dir)
     story_id = _extract_story_target_id(url)
     clean_url = strip_instagram_url(url)
     post_id = _extract_instagram_post_id(url) or hashlib.blake2s(
@@ -584,7 +601,28 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
         bool(res_gdl and res_gdl.media_list),
     )
     if res_gdl and res_gdl.media_list:
-        return res_gdl
+        return await _with_instagram_metadata(res_gdl, clean_url)
+
+    # Public posts only: keep gallery-dl first for captions and Firefox stories.
+    # The same handler receives local files, so delivery/cache/settings stay shared.
+    if (not story_id and "/stories/" not in clean_url
+            and os.getenv("INSTAGRAM_SAVEINSTA_ENABLED", "1").lower() not in {"0", "false", "off"}):
+        _t = time.monotonic()
+        try:
+            items = await loop.run_in_executor(None, download_saveinsta, clean_url, output_dir)
+            if items:
+                logger.info("Instagram Save Insta success: items=%s", len(items))
+                return await _with_instagram_metadata(InstagramVideo(
+                    id=post_id, description="", author="instagram_user",
+                    media_list=[InstagramMedia(**item) for item in items],
+                ), clean_url)
+        except Exception as exc:
+            logger.warning("Instagram Save Insta failed: %s", type(exc).__name__)
+        finally:
+            logger.warning(
+                "Instagram fallback timing: stage=saveinsta duration=%.2fs",
+                time.monotonic() - _t,
+            )
 
     # 2. yt-dlp: resolve Reel/vídeo e também foto/carrossel via CDN.
     _t = time.monotonic()
@@ -601,7 +639,7 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
         bool(res_ytdlp and res_ytdlp.media_list),
     )
     if res_ytdlp and res_ytdlp.media_list:
-        return res_ytdlp
+        return await _with_instagram_metadata(res_ytdlp, clean_url)
 
     # 3. Cobalt local.
     payload = {
@@ -632,7 +670,7 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
                 is_reel=is_reel,
             )
             if res and res.media_list:
-                return res
+                return await _with_instagram_metadata(res, clean_url)
     except Exception as exc:
         logger.warning("Cobalt local falhou: %s", exc)
     finally:
@@ -676,7 +714,7 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
                 )
 
                 if res and res.media_list:
-                    return res
+                    return await _with_instagram_metadata(res, clean_url)
 
             except Exception:
                 continue

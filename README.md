@@ -306,3 +306,39 @@ If Downloader-Bot saves you time, you can support ongoing development and infras
 ## License
 
 Released under the [MIT License](./LICENCE).
+# Instagram: alternativa Save Insta na VPS
+
+Para posts públicos (`/p/`, `/reel/`, `/reels/`), a extração tenta gallery-dl,
+Save Insta, yt-dlp e Cobalt, nessa ordem. O Save Insta usa `curl` e `ffprobe`
+instalados no sistema, sem nova dependência Python e sem enviar cookies do
+Instagram ao serviço. Os arquivos passam pelo handler, configurações e cache
+existentes. Álbuns maiores que dez mídias são divididos em grupos do Telegram.
+
+O Save Insta não retornou legenda nos testes. Após baixar suas mídias, a integração
+consulta a incorporação (`/embed/captioned/`) do próprio Instagram para recuperar
+legenda completa e autor. A leitura aceita os dados estruturados ou o HTML visível da legenda, excluindo
+comentários e conferindo a identidade da publicação. Também recupera legendas
+ausentes em mídias antigas do cache e em resultados de outros extratores. Essa consulta tem limite de doze segundos; se indisponível,
+o download continua sem legenda. Não são usados cookies nessa consulta.
+gallery-dl continua primeiro para preservar texto e autor quando disponíveis.
+Stories públicos com link `/stories/usuario/ID/` usam diretamente o Save Insta,
+sem Firefox nem cookies. O ID é conferido pela chave de cache do CDN na própria
+mídia ou na miniatura associada ao vídeo. Apenas o item com o ID solicitado é
+baixado; ID ausente ou ambíguo não retorna outros Stories da conta. Não há
+tentativa posterior com a conta Firefox. Stories privados e expirados podem
+permanecer indisponíveis. Falha em qualquer item de um post descarta os arquivos
+parciais e permite tentar os próximos extratores.
+
+`scripts/apply_instagram_public_stories.py` instala essa rota na VPS preservando
+o restante de `fetch_instagram_media`, verifica clientes conhecidos, cria backup,
+valida a sintaxe e restaura os arquivos em caso de falha.
+
+Para desativar essa alternativa, defina `INSTAGRAM_SAVEINSTA_ENABLED=0` no
+ambiente do serviço e reinicie o bot. A integração depende das rotas internas
+do Save Insta e pode precisar de ajustes se o site mudar.
+
+Validação isolada, sem iniciar o bot nem conectar ao banco:
+
+```bash
+python3 -m unittest discover -s tests -p test_instagram_saveinsta.py -v
+```
