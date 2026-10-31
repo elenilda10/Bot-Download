@@ -1,6 +1,6 @@
 {
   "base_commit": "57234221ad7df86a1888b7063f1897c7f71a3271",
-  "patch_sha256": "30222737940296541d806348a16f648979b6cab73a9179634b852cfaae52214e",
+  "patch_sha256": "83b131bee0b5f110da87445a3e3ac7570cc02453108dd747d62616cb333b1c08",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -26,21 +26,29 @@
       "base_sha256": "8d7fe2c30f79a7f3f3cc9e909cacbc3b5db9d245e33b7eeb0cd41fa524abc0d4",
       "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
     },
+    "i18n/__init__.py": {
+      "base_sha256": "1ee63f527f437515e0c0f42b59c552d45d8baa5783d893dad9e3d4c5246025ab",
+      "result_sha256": "fc04b8179ce98e5103d1383a4f6190755b9127b1b4842d4163e03ce0698edb60"
+    },
+    "i18n/locales/de.json": {
+      "base_sha256": null,
+      "result_sha256": "49a6dfb8bfed4e0dfbf04159d7224a5e980e63bda4fe1416d7c6804ce74965a8"
+    },
     "i18n/locales/en.json": {
       "base_sha256": "14dd711fa5c77bce5030b3ba1457f49eca6e946cc6d92e24b18152dd1439ef45",
-      "result_sha256": "72329f2caf6f6ffd1535e684250254ed7fff4ea9284499dbf151a43871e2e4b6"
+      "result_sha256": "9fecff40d5ad8bb76a4c14b7f6ac1a278da36973af2f6e7e0aafa906afd5a5aa"
     },
     "i18n/locales/es.json": {
       "base_sha256": "d901d7776e31edaba8087dda293aeb812d4c16238ec56a8b6260e4b89b298ad4",
-      "result_sha256": "058dc938888e506b0accbf95ee31b58cf15db509f19da0e0ebe850b3ede7b610"
+      "result_sha256": "4b7d99e14a40cb01b3b4f45a4ce7dc52948cc16739e8cf325549f0182f6b4be4"
     },
     "i18n/locales/pt.json": {
       "base_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730",
-      "result_sha256": "aef979c347d0eda0d0fe659a5a7979605573a44e073385b5b270ea5bc1bdb8cb"
+      "result_sha256": "8bf812e4a79ba2e3f92ce193a0c51a71e4b9a90e2fcd32be767de38eb0c050ce"
     },
     "keyboards/inline_keyboards.py": {
       "base_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a",
-      "result_sha256": "e4e4b8f4b069394ab830b7bef39afb9e894df7eb09aa1e13864fe6fb31c6b06b"
+      "result_sha256": "9b0380d4db237e7b5eb654818cf976dc22fc938740100fbe9212f6d036da91bb"
     },
     "messages/user_messages.py": {
       "base_sha256": "511356f8ac32b9cce5260620896cc162b4c473719a89fce30d4cdda3604a18a2",

@@ -15,10 +15,11 @@ def _normalize_lang(lang: str | None) -> str:
 def language_keyboard(current_lang: str | None = DEFAULT_LANG) -> InlineKeyboardMarkup:
     from i18n import LOCALE_NAMES, SUPPORTED_LOCALES
     locale = _normalize_lang(current_lang)
-    rows = [[InlineKeyboardButton(
+    buttons = [InlineKeyboardButton(
         text=("✅ " if code == locale else "") + LOCALE_NAMES[code],
         callback_data="set_lang:" + code,
-    )] for code in SUPPORTED_LOCALES]
+    ) for code in SUPPORTED_LOCALES]
+    rows = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
     rows.append([InlineKeyboardButton(text=_t('language.back', locale), callback_data='back_to_settings')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

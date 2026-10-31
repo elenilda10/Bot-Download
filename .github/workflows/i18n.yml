@@ -18,6 +18,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install 'pytest>=8,<10' 'pytest-asyncio>=0.24,<2' 'aiogram>=3,<4' 'sqlalchemy[asyncio]>=2,<3' aiosqlite httpx pillow colorlog alembic asyncpg python-dotenv
-      - run: python -m pytest --noconftest -q tests/test_i18n.py tests/test_messages.py tests/test_keyboards.py tests/test_i18n_installer.py tests/test_download_errors.py tests/test_instagram_cookies.py tests/test_reddit_download.py tests/test_youtube_error_diagnostics.py tests/test_media_collections.py tests/test_collection_handler.py tests/test_collections_installer.py
+      - run: python -m pytest --noconftest -q tests/test_i18n.py tests/test_messages.py tests/test_keyboards.py tests/test_i18n_installer.py tests/test_download_errors.py tests/test_instagram_cookies.py tests/test_reddit_download.py tests/test_youtube_error_diagnostics.py tests/test_media_collections.py tests/test_collection_handler.py tests/test_collections_installer.py tests/test_german_installer.py
       - run: python -m pip install fake-useragent aiocron shazamio gallery-dl pydub rapidfuzz yt-dlp mutagen aiofiles cachetools redis psycopg2-binary
       - run: python -m pytest -q tests/test_collection_items.py

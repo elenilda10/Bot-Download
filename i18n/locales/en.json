@@ -409,7 +409,7 @@
   "services.stats.chart.render_stats_chart.dcc563b7": "Downloads Overview",
   "language.prompt": "🌐 <b>Choose the bot language:</b>",
   "language.changed": "✅ Language changed to English!",
-  "language.back": "⬅️ Back to Settings",
+  "language.back": "⬅️ Back",
   "language.invalid": "Invalid language. Choose an option from the menu.",
   "language.save_failed": "Could not save your language. Please try again.",
   "stats.period.Week": "Week",

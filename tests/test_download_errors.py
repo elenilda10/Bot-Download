@@ -49,7 +49,7 @@ def test_classifies_only_supported_evidence(error, expected):
     assert classify_failure(error).reason == expected
 
 
-@pytest.mark.parametrize('lang', ['pt', 'en', 'es'])
+@pytest.mark.parametrize('lang', ['pt', 'en', 'es', 'de'])
 @pytest.mark.parametrize('reason', sorted(REASONS))
 def test_every_reason_has_localized_action_without_raw_output(lang, reason):
     text = bm.download_failure_message(reason, lang=lang, platform='Instagram', reference='A1B2C3D4')

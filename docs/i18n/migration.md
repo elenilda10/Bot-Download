@@ -1,16 +1,18 @@
-# Português, inglês e espanhol
+# Português, inglês, espanhol e alemão
 
 Esta revisão migra a interface para catálogos locais em `i18n/locales/pt.json`,
-`en.json` e `es.json`. Há 499 chaves com paridade de placeholders e HTML. Nenhuma
+`en.json`, `es.json` e `de.json`. Há 499 chaves com paridade de placeholders e HTML. Nenhuma
 API de tradução é chamada durante o atendimento do bot.
 
 ## Comportamento
 
-- Português, inglês e espanhol aparecem com seus nomes nativos no seletor.
+- Português, English, Español e Deutsch aparecem com seus nomes nativos no seletor.
+  Os botões são agrupados automaticamente de dois em dois, com Voltar sozinho
+  na última linha.
 - A escolha manual é persistida no registro de usuário/chat e prevalece sobre
   sugestões futuras do Telegram. Em grupos, somente administradores podem
   alterar o idioma do grupo. /lang também respeita esse escopo.
-- Variantes como `es-MX`, `es_ES` e `pt-BR` são normalizadas. Idiomas não suportados
+- Variantes como `es-MX`, `es_ES`, `pt-BR`, `de-DE` e `de_AT` são normalizadas. Idiomas não suportados
   e dados ausentes usam inglês. Um grupo novo sem preferência usa inglês.
 - O middleware resolve o idioma antes dos bloqueios/avisos, com ContextVar isolada
   por solicitação. O idioma da conversa é a autoridade para chamadas antigas que
@@ -21,7 +23,7 @@ API de tradução é chamada durante o atendimento do bot.
   recebem o resolvedor de locale.
 - As funções `bm.*` e os protocolos de callbacks/comandos continuam disponíveis.
   Permanecem alguns ramos PT/EN como adaptadores, mas seus textos usam as mesmas
-  chaves de catálogo; esses ramos não limitam o espanhol.
+  chaves de catálogo; esses ramos não limitam os outros idiomas.
 - Menus, botões, mensagens, erros, administração, fila/progresso, gráficos e
   descrições dos comandos usam os catálogos. Métodos que tinham textos somente
   em PT ou EN ganharam os outros idiomas.
