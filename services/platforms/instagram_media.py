@@ -18,11 +18,9 @@ from utils.cobalt_client import fetch_cobalt_data
 
 logger = logging.getLogger(__name__)
 
-# INSTAGRAM_FIREFOX_STORY_PATCH_V1
+# Instagram extractors use public access only.
 INSTAGRAM_STORY_GDL_BIN = os.getenv('INSTAGRAM_STORY_GDL_BIN', '').strip()
-INSTAGRAM_FIREFOX_PROFILE = os.getenv('INSTAGRAM_FIREFOX_PROFILE', '').strip()
 
-EXTENSION_COOKIES_PATH = "/root/Bot-Download/cookies.txt"
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
@@ -87,31 +85,6 @@ def get_instagram_preview_url(media: Optional[InstagramMedia]) -> Optional[str]:
     return media.thumb or media.url
 
 
-def _instagram_cookie_args(url: str, extractor: str) -> list[str]:
-    """Use one configured cookie source for every local Instagram extractor."""
-    parsed = urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if (parsed.scheme not in {"http", "https"} or parsed.username or parsed.password
-            or not (host == "instagram.com" or host.endswith(".instagram.com"))):
-        return []
-    profile = INSTAGRAM_FIREFOX_PROFILE
-    if profile:
-        database = os.path.join(profile, "cookies.sqlite")
-        if os.path.isfile(database) and os.access(database, os.R_OK):
-            # gallery-dl accepts a domain filter; yt-dlp has another syntax.
-            browser = "firefox/instagram.com:" if extractor == "gallery-dl" else "firefox:"
-            return ["--cookies-from-browser", browser + profile]
-        logger.warning("Instagram: perfil Firefox indisponível; verificando arquivo de cookies")
-    cookie_file = os.getenv("INSTAGRAM_COOKIES_FILE", EXTENSION_COOKIES_PATH).strip()
-    if cookie_file and os.path.isfile(cookie_file) and os.access(cookie_file, os.R_OK):
-        try:
-            if os.path.getsize(cookie_file) > 0:
-                return ["--cookies", cookie_file]
-        except OSError:
-            pass
-    return []
-
-
 def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[str] = None, failure_sink=None) -> Optional[InstagramVideo]:
     try:
         target_dir = os.path.join(output_dir, f"gdl_{post_id}")
@@ -140,8 +113,6 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
         if story_id:
             cmd.extend(["--filter", f"str(media_id) == '{story_id}' or str(id) == '{story_id}' or str(post_id) == '{story_id}'"])
 
-        cmd.extend(_instagram_cookie_args(url, 'gallery-dl'))
-
         if story_id:
             # Remover filtros/templates de posts: o ID da URL ja seleciona o Story.
             for flag in ('--filter', '--filename', '--user-agent'):
@@ -149,6 +120,7 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
                     pos = cmd.index(flag)
                     del cmd[pos:pos + 2]
 
+        cmd.extend(['--config-ignore'])
         cmd.append(url)
 
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
@@ -245,8 +217,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str, failure_sink=None) -> Op
             "--user-agent", BROWSER_UA,
         ]
 
-        metadata_cmd.extend(_instagram_cookie_args(url, 'yt-dlp'))
-
+        metadata_cmd.extend(['--ignore-config', '--no-cookies', '--no-cookies-from-browser'])
         metadata_cmd.append(url)
 
         metadata_proc = subprocess.run(
@@ -418,14 +389,13 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str, failure_sink=None) -> Op
             "-o", out_template,
         ]
 
-        download_cmd.extend(_instagram_cookie_args(url, 'yt-dlp'))
-
         if mixed_carousel:
             download_cmd.extend([
                 "--playlist-items",
                 ",".join(str(pos) for pos in video_positions),
             ])
 
+        download_cmd.extend(['--ignore-config', '--no-cookies', '--no-cookies-from-browser'])
         download_cmd.append(url)
 
         download_proc = subprocess.run(

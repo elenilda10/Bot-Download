@@ -1,58 +1,36 @@
-# Cookies do Instagram
+# Instagram sem login
 
-O handler existente usa o serviço compartilhado `fetch_instagram_media`.
-A seleção de cookies agora atende posts, Reels, carrosséis e Stories.
+O Instagram usa somente acesso público. Posts, Reels, carrosséis e Stories
+continuam passando pelo handler existente e pelas alternativas públicas.
+Conteúdos que exigirem uma sessão autenticada podem não estar disponíveis.
 
-No `.env` do bot, configure:
+Não são lidos cookies do Firefox, arquivos de cookies ou as variáveis
+`INSTAGRAM_FIREFOX_PROFILE` e `INSTAGRAM_COOKIES_FILE`. As configurações globais
+do gallery-dl e do yt-dlp são ignoradas apenas nas chamadas do Instagram,
+para não carregar credenciais configuradas fora do bot.
 
-```dotenv
-INSTAGRAM_FIREFOX_PROFILE=/home/firefoxbot/.config/mozilla/firefox/p2u2gipq.default-release
-```
+## Instalação na VPS
 
-O perfil precisa conter `cookies.sqlite` legível e sessão válida. Os extratores
-leem o perfil em cada execução. Esta mudança não lê sessionstore nem renova
-login. Se o perfil estiver ausente ou indisponível, usa o arquivo existente
-`/root/Bot-Download/cookies.txt`. `INSTAGRAM_COOKIES_FILE` permite outro caminho;
-valor vazio desabilita essa alternativa. Sem fonte disponível, não adiciona
-flags de cookies. Perfil legível tem prioridade; falha de autenticação nele
-não causa uma segunda tentativa automática com o arquivo.
-
-O gallery-dl recebe `firefox/instagram.com:CAMINHO`; yt-dlp recebe
-`firefox:CAMINHO` em metadados e download. Valores dos cookies não são inseridos
-nos argumentos nem enviados pelo código às APIs Cobalt. O stderr bruto do
-gallery-dl deixa de ser registrado. O helper só adiciona flags em URLs do
-Instagram. Configurações próprias dos extratores continuam sendo respeitadas.
-O cache e o alcance atual do handler não mudam.
-
-## Testar na VPS
-
-Em checkout temporário de `feature/instagram-firefox-cookies`, use link real:
+Execute o instalador a partir de uma cópia temporária da atualização:
 
 ```bash
-/root/Bot-Download/venv/bin/python scripts/test_instagram_download.py \
-  'https://www.instagram.com/reel/SHORTCODE/' \
-  --firefox-profile /home/firefoxbot/.config/mozilla/firefox/p2u2gipq.default-release
+python scripts/install_instagram_public_vps.py --target /root/Bot-Download --apply
 ```
 
-O teste executa somente os extratores locais em diretório temporário próprio,
-sem Telegram, banco ou Cobalt. Imprime tipos, tamanhos e caminhos, sem cookies.
+Sem `--apply`, apenas simula. Valida a sintaxe, cria backup e altera somente
+as fontes de autenticação e os argumentos dos extratores do Instagram.
+Preserva as demais personalizações locais. Se encontrar uma estrutura de
+login desconhecida, recusa a instalação sem alterar o arquivo.
+Não apaga perfis, cookies ou variáveis: outras plataformas podem usá-los.
+Após instalar, reinicie `bot-download.service`.
 
-## Aplicar
+O instalador antigo de cookies redireciona para o instalador de acesso público;
+o patch antigo de Stories com Firefox foi desativado.
+
+## Teste local
 
 ```bash
-/root/Bot-Download/venv/bin/python scripts/install_instagram_cookies_vps.py \
-  --target /root/Bot-Download
+python scripts/test_instagram_download.py 'https://www.instagram.com/reel/SHORTCODE/'
 ```
 
-O padrão é simulação. `--apply` valida a sintaxe, faz backup e altera só a
-seleção de cookies em `services/platforms/instagram_media.py`, preservando o
-resto do arquivo local, inclusive regras de Stories. Não altera `.env` nem
-reinicia o serviço. Depois de instalar e confirmar a configuração, reinicie
-`bot-download.service` e teste no Telegram.
-
-Validação: 18 testes isolados de comandos e instalador, Ruff e py_compile.
-Download com sessão real e envio no Telegram ainda precisam ser confirmados.
-
-Sintaxe oficial:
-- https://gdl-org.github.io/docs/options.html
-- https://github.com/yt-dlp/yt-dlp#filesystem-options
+Esse comando testa os extratores locais sem Telegram, banco ou Cobalt.

@@ -4,7 +4,7 @@
 
 | Plataforma | Integração |
 | --- | --- |
-| Instagram | Perfil em gallery-dl e yt-dlp para posts, Reels, carrosséis e Stories; instalador próprio |
+| Instagram | Somente acesso público; sem cookies ou login |
 | Twitter/X | Perfil no fallback yt-dlp local |
 | TikTok | Perfil nas opções yt-dlp de metadados e download |
 | Reddit | Perfil no gallery-dl local |
@@ -37,7 +37,7 @@ adiciona simultaneamente o arquivo de cookies.
 
 No YouTube, a configuração já existente
 `YTDLP_YOUTUBE_COOKIES_FROM_BROWSER` tem prioridade e conserva seu comportamento.
-Instagram, Facebook e Kwai continuam usando suas variáveis próprias. O perfil
+Facebook e Kwai continuam usando suas variáveis próprias. O Instagram ignora cookies e perfis de login. O perfil
 compartilhado não ativa a sessão do Facebook no Universal nem habilita cookies
 do navegador para domínios desconhecidos.
 
@@ -57,8 +57,8 @@ Se os trechos locais divergirem, recusa a instalação sem alterar o destino.
 Com `--apply`, faz backup, instala seis integrações e o helper compartilhado.
 `--firefox-profile` configura somente `MEDIA_FIREFOX_PROFILE` no `.env`, também
 com backup; sem a opção, o ambiente não muda. Não reinicia o serviço.
-O instalador do Instagram continua separado e não precisa ser repetido se já
-foi aplicado. Reinicie `bot-download.service` depois de aplicar.
+A remoção de cookies do Instagram usa `install_instagram_public_vps.py`, conforme
+[Instagram sem login](instagram-cookies.md). Reinicie `bot-download.service` depois de aplicar.
 
 Testes isolados cobrem precedência/desativação, domínios, builders reais do
 TikTok/YouTube e instalação com preservação do arquivo local e `.env`. A sessão
