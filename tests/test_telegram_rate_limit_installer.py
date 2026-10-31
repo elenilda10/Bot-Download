@@ -66,3 +66,43 @@ def test_rate_limit_upgrade_preserves_replies_and_is_idempotent(baseline):
     again = subprocess.run(command, capture_output=True, text=True, check=False)
     assert again.returncode == 0 and "Already installed" in again.stdout
 
+
+
+def add_vps_deleted_reply_fallback(target, *, arguments=''):
+    path = target / 'main.py'
+    text = path.read_text()
+    anchor = 'from services.runtime.analytics_status import record_drop as record_analytics_drop\n'
+    text = text.replace(anchor, anchor + 'from services.runtime.telegram_deleted_reply import DeletedReplyFallbackMiddleware\n')
+    anchor = '        timeout=session_timeout,\n    )\n'
+    text = text.replace(anchor, anchor + f'    session.middleware(DeletedReplyFallbackMiddleware({arguments}))\n')
+    path.write_text(text)
+    fallback = target / 'services/runtime/telegram_deleted_reply.py'
+    fallback.parent.mkdir(parents=True, exist_ok=True)
+    fallback.write_text('# EXISTING VPS FALLBACK: keep unchanged\n')
+    return path, fallback
+
+
+def test_rate_limit_upgrade_preserves_deleted_reply_fallback_and_wrap_order(baseline):
+    path, fallback = add_vps_deleted_reply_fallback(baseline)
+    original = path.read_bytes()
+    unchanged = fallback.read_bytes()
+    changes = installer.prepare(baseline, reference=ROOT / 'scripts', bundle='telegram_rate_limit_vps')
+    source = changes['main.py'].decode()
+    assert source.count('import DeletedReplyFallbackMiddleware') == 1
+    assert source.count('session.middleware(DeletedReplyFallbackMiddleware())') == 1
+    assert source.count('session.middleware(TelegramRateLimitMiddleware())') == 1
+    assert source.index('session.middleware(DeletedReplyFallbackMiddleware())') < source.index('session.middleware(TelegramRateLimitMiddleware())')
+    assert path.read_bytes() == original  # preparation must not modify production
+    backup = installer.install(baseline, changes)
+    assert (backup / 'main.py').read_bytes() == original
+    assert fallback.read_bytes() == unchanged
+    assert installer.prepare(baseline, reference=ROOT / 'scripts', bundle='telegram_rate_limit_vps') == {}
+
+
+def test_unknown_deleted_reply_fallback_arguments_still_require_conflict_resolution(baseline):
+    path, fallback = add_vps_deleted_reply_fallback(baseline, arguments='enabled=False')
+    original = path.read_bytes()
+    with pytest.raises(installer.RuntimeConflict, match='CONFLICT main.py'):
+        installer.prepare(baseline, reference=ROOT / 'scripts', bundle='telegram_rate_limit_vps')
+    assert path.read_bytes() == original
+    assert fallback.read_text() == '# EXISTING VPS FALLBACK: keep unchanged\n'

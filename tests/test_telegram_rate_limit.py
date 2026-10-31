@@ -170,3 +170,40 @@ async def test_real_aiogram_session_chain_uses_retry_middleware(monkeypatch):
         assert request.await_count == 2
     finally:
         await session.close()
+
+
+@pytest.mark.asyncio
+async def test_deleted_reply_fallback_resend_still_obeys_flood_control():
+    from aiogram.types import ReplyParameters
+
+    class ExistingDeletedReplyFallback:
+        async def __call__(self, make_request, bot, method):
+            try:
+                return await make_request(bot, method)
+            except TelegramBadRequest:
+                fallback = method.model_copy(update={'reply_parameters': None})
+                return await make_request(bot, fallback)
+
+    session = AiohttpSession()
+    middleware, clock = configured()
+    session.middleware(ExistingDeletedReplyFallback())
+    session.middleware(middleware)
+    method = SendMessage(chat_id=1, text='Done', reply_parameters=ReplyParameters(message_id=3))
+    attempts = []
+    async def request(bot, outgoing, **kwargs):
+        attempts.append(outgoing)
+        if len(attempts) == 1:
+            raise TelegramBadRequest(outgoing, 'message to be replied not found')
+        if len(attempts) == 2:
+            raise flood(outgoing, 2)
+        return 'sent'
+    session.make_request = request
+    try:
+        assert await asyncio.wait_for(session(SimpleNamespace(id=7), method), 1) == 'sent'
+        assert len(attempts) == 3
+        assert attempts[0].reply_parameters.message_id == 3
+        assert attempts[1].reply_parameters is attempts[2].reply_parameters is None
+        assert attempts[1] is attempts[2]
+        assert sum(clock.waits) >= 3
+    finally:
+        await session.close()
