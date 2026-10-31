@@ -1,0 +1,54 @@
+{
+  "base_commit": "98057b25dacf186e6b964a6660fc6b829b606b18",
+  "files": {
+    "handlers/__init__.py": {
+      "base_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2",
+      "result_sha256": "e5f9100b160eb6b430a56c5bb93d048cfb6aed8370b08744ded4d089abe13406"
+    },
+    "handlers/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "d46eea2b851e7303ff9abf24336d434e3694aed8fd7f2c7a4dd319a433d86edd"
+    },
+    "handlers/media_download.py": {
+      "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
+      "result_sha256": "e8de32e812abe4c63066eb5eb0d552ebdfe3062c5b9618d4a989ee61c6d56eba"
+    },
+    "i18n/locales/de.json": {
+      "base_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2",
+      "result_sha256": "7d2530824552ecf24a0611177e8a99dcffd0be0f23b8cd2007fbb5bd8105a2f4"
+    },
+    "i18n/locales/en.json": {
+      "base_sha256": "295f57b5c3779aa2fbd207ecc8adbf532d8a223132730af5a9d3c2b793b918d3",
+      "result_sha256": "fbfb4e756d523aeeb8fa98aa392131a93583aacb35356851532b90aadaf61c08"
+    },
+    "i18n/locales/es.json": {
+      "base_sha256": "d608bcfb8e745bd5ca83484f1935e41cdd8f4a347b636c3e5d35b72f3519c103",
+      "result_sha256": "c0a1a86f60d2a6539b0868bc211e543214098730ebb86f013af6a0474f51f64c"
+    },
+    "i18n/locales/pt.json": {
+      "base_sha256": "377339edee52e0803283edb7dc8fc8282f16b4ade9c5b0650ff2ba23a3d92e00",
+      "result_sha256": "d2687cf0dbd7ed0bac4df395e08f0c4f1f673e08761081bc6485e74d9ab9589e"
+    },
+    "services/links/audible.py": {
+      "base_sha256": null,
+      "result_sha256": "baf923aa9b9f08b8edd503fb5d3e26e8f2190031889f28527e392e3cb75d53e9"
+    },
+    "services/links/detection.py": {
+      "base_sha256": "8d1fa15a668d4c61e2ae3e100feee886f374abb2e6764c7074d3bce04e0380b0",
+      "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+    },
+    "services/media/audio_flow.py": {
+      "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
+      "result_sha256": "26ae484f703e3d69903ca791a74c9cca60e537779a0f835ce08a875249077af9"
+    },
+    "services/platforms/audible_service.py": {
+      "base_sha256": null,
+      "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
+    },
+    "services/stats/constants.py": {
+      "base_sha256": "f742a9f395e10e416ad1f3c61e5a6e16b828b9ab966b3d0db0da26629165a8d1",
+      "result_sha256": "356623d731bc1d133145434c66bbf90832b015df9daf26bd0bed366a9bc0a709"
+    }
+  },
+  "patch_sha256": "5e119a3d5ecb073d77785af5e190997bb05f9ec3371ff14999f00559835e51dd"
+}

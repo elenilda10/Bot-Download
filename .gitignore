@@ -31,3 +31,6 @@ logs/
 .runtime_state.json
 *.dump
 backups/
+
+# Per-user Audible sessions, if a custom data path is inside this checkout
+data/audible_users/

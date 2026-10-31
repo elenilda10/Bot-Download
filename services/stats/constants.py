@@ -12,6 +12,7 @@ SERVICE_EMOJI = {
     "Other": "📦",
 }
 SERVICE_DISPLAY_NAMES = {
+    "audible": "Audible",
     "instagram": "Instagram",
     "threads": "Threads",
     "tiktok": "TikTok",
