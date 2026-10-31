@@ -1,6 +1,7 @@
 """Resolve saved chat/user locale before guards and isolate it per request."""
 from aiogram import BaseMiddleware
 from i18n import normalize_locale, reset_locale, set_locale
+from services.runtime.command_menu import sync_command_menu
 
 
 class LocalizationMiddleware(BaseMiddleware):
@@ -29,6 +30,9 @@ class LocalizationMiddleware(BaseMiddleware):
         data['user_lang'] = locale
         data['lang'] = locale
         try:
+            bot = data.get('bot')
+            if bot is not None and chat is not None and chat.type in {'private', 'group', 'supergroup'}:
+                await sync_command_menu(bot, chat.id, locale)
             return await handler(event, data)
         finally:
             reset_locale(token)

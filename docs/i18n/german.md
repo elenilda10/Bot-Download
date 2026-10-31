@@ -1,6 +1,6 @@
 # Alemão e seletor em duas colunas
 
-`de.json` contém as mesmas 499 chaves do catálogo inglês, com textos em alemão,
+`de.json` contém as mesmas 500 chaves do catálogo inglês, com textos em alemão,
 placeholders, HTML e IDs de emojis preservados. Textos de publicações, títulos,
 nomes de artistas e erros originais das ferramentas continuam no idioma da fonte.
 
@@ -34,3 +34,20 @@ quatro idiomas e expansão para cinco, escolha de alemão no grupo, persistênci
 SQLite após atualização do perfil, descrições de comandos e avisos de download.
 O teste da instalação sobre o runtime publicado verifica preservação de alterações
 locais, idempotência e recusa de um catálogo com placeholders incorretos.
+
+## Menu nativo do Telegram
+
+As sete descrições dos comandos, incluindo `/lang`, acompanham o idioma salvo
+para a conversa. A escolha em `/lang` registra o menu com `BotCommandScopeChat`
+e `language_code=""`, que tem prioridade sobre os menus globais definidos pelo
+idioma do aplicativo. O middleware também sincroniza conversas existentes na
+próxima mensagem ou callback. Grupos usam o idioma salvo do grupo.
+
+Registros concluídos ficam em cache limitado por processo. Falhas da API não
+impedem o atendimento nem desfazem a preferência salva; a próxima interação tenta
+novamente. Reiniciar o serviço limpa o cache e permite nova sincronização.
+
+Para atualizar uma instalação que já tem alemão, use
+`scripts/install_command_menu_vps.py --target /root/Bot-Download --apply --diagnose`.
+O instalador valida as alterações em uma área temporária e cria backups antes de
+aplicá-las. Depois de reiniciar, envie uma mensagem e reabra o menu de comandos.

@@ -20,7 +20,6 @@ from sqlalchemy import insert as sql_insert
 from app_context import set_app_context
 from config import (
     API_SECRET,
-    BOT_COMMANDS,
     BOT_SESSION_CONNECTION_LIMIT,
     BOT_TOKEN,
     CUSTOM_API_URL,
@@ -378,8 +377,8 @@ async def main():
                 observer.outer_middleware(LocalizationMiddleware())
 
             try:
-                await bot.set_my_commands(commands=BOT_COMMANDS)
                 from i18n import SUPPORTED_LOCALES, bot_commands
+                await bot.set_my_commands(commands=bot_commands("en"))
                 for locale in SUPPORTED_LOCALES:
                     await bot.set_my_commands(commands=bot_commands(locale), language_code=locale)
             except Exception as exc:

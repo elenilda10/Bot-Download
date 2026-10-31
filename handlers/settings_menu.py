@@ -12,6 +12,7 @@ from services.settings import (
     parse_settings_view_callback,
 )
 import handlers.user as user_mod
+from services.runtime.command_menu import sync_command_menu
 
 logging = logging.bind(service="settings_menu")
 
@@ -353,6 +354,7 @@ async def handle_language_selection(call: types.CallbackQuery):
         user_mod._update_info_cache.pop(target_id, None)
     token = set_locale(chosen_lang)
     try:
+        await sync_command_menu(call.bot, target_id, chosen_lang)
         await show_language_view(call, target_id, chosen_lang, acknowledge=False)
         await call.answer(_t('language.changed', chosen_lang))
     finally:

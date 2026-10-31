@@ -423,6 +423,7 @@
   "commands.settings": "Einstellungen",
   "commands.stats": "Statistik",
   "commands.ping": "Bot-Latenz prüfen",
+  "commands.lang": "Sprache ändern",
   "stats.month.1": "Jan",
   "stats.month.2": "Feb",
   "stats.month.3": "Mär",

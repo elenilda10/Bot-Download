@@ -1618,7 +1618,7 @@ index 45a12ce..dd8d432 100644
      scope_id = getattr(message, "business_connection_id", None)
      status = claim_request(message.from_user.id, chat_id, service, url, scope_id=scope_id)
 diff --git a/handlers/settings_menu.py b/handlers/settings_menu.py
-index 2cc594a..5599834 100644
+index 2cc594a..7ff7058 100644
 --- a/handlers/settings_menu.py
 +++ b/handlers/settings_menu.py
 @@ -1,3 +1,5 @@
@@ -1627,7 +1627,15 @@ index 2cc594a..5599834 100644
  from aiogram import types
  from aiogram.enums import ChatMemberStatus
  from aiogram.exceptions import TelegramBadRequest
-@@ -49,7 +51,7 @@ def _settings_chat_name(chat: types.Chat) -> str:
+@@ -10,6 +12,7 @@ from services.settings import (
+     parse_settings_view_callback,
+ )
+ import handlers.user as user_mod
++from services.runtime.command_menu import sync_command_menu
+ 
+ logging = logging.bind(service="settings_menu")
+ 
+@@ -49,7 +52,7 @@ def _settings_chat_name(chat: types.Chat) -> str:
      name_parts = [part for part in (first_name, last_name) if part]
      if name_parts:
          return " ".join(name_parts)
@@ -1636,7 +1644,7 @@ index 2cc594a..5599834 100644
  
  
  async def _ensure_settings_entities(
-@@ -98,7 +100,7 @@ async def _get_chat_language(target_id: int, default_lang: str = "pt") -> str:
+@@ -98,7 +101,7 @@ async def _get_chat_language(target_id: int, default_lang: str = "pt") -> str:
      try:
          chat = await user_mod.db.get_user_info(user_id=target_id)
          if chat and getattr(chat, "language", None):
@@ -1645,7 +1653,7 @@ index 2cc594a..5599834 100644
      except Exception:
          pass
      return default_lang
-@@ -142,74 +144,23 @@ async def back_to_settings(call: types.CallbackQuery, lang: str = "pt"):
+@@ -142,74 +145,23 @@ async def back_to_settings(call: types.CallbackQuery, lang: str = "pt"):
      await call.answer()
  
  
@@ -1735,7 +1743,7 @@ index 2cc594a..5599834 100644
  
  
  async def open_category(call: types.CallbackQuery, lang: str = "pt"):
-@@ -261,7 +212,7 @@ async def open_setting(call: types.CallbackQuery, lang: str = "pt"):
+@@ -261,7 +213,7 @@ async def open_setting(call: types.CallbackQuery, lang: str = "pt"):
              getattr(getattr(call.message, "chat", None), "id", None),
              exc,
          )
@@ -1744,7 +1752,7 @@ index 2cc594a..5599834 100644
  
  
  async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
-@@ -292,7 +243,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
+@@ -292,7 +244,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
              getattr(getattr(call.message, "chat", None), "id", None),
              exc,
          )
@@ -1753,7 +1761,7 @@ index 2cc594a..5599834 100644
          return
  
      try:
-@@ -325,9 +276,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
+@@ -325,9 +277,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
                  exc,
              )
              await call.answer(
@@ -1764,7 +1772,7 @@ index 2cc594a..5599834 100644
                  show_alert=True,
              )
              return
-@@ -339,9 +288,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
+@@ -339,9 +289,7 @@ async def change_setting(call: types.CallbackQuery, lang: str = "pt"):
              exc,
          )
          await call.answer(
@@ -1775,7 +1783,7 @@ index 2cc594a..5599834 100644
              show_alert=True,
          )
  
-@@ -353,124 +300,72 @@ async def noop_callback(call: types.CallbackQuery):
+@@ -353,124 +301,73 @@ async def noop_callback(call: types.CallbackQuery):
  # 🌐 HANDLERS DE IDIOMA / LANGUAGE
  # ==========================================
  
@@ -1920,6 +1928,7 @@ index 2cc594a..5599834 100644
 +        user_mod._update_info_cache.pop(target_id, None)
 +    token = set_locale(chosen_lang)
 +    try:
++        await sync_command_menu(call.bot, target_id, chosen_lang)
 +        await show_language_view(call, target_id, chosen_lang, acknowledge=False)
 +        await call.answer(_t('language.changed', chosen_lang))
 +    finally:
@@ -3045,7 +3054,7 @@ index e41fb97..b2dc9da 100644
                  views=views,
 diff --git a/i18n/__init__.py b/i18n/__init__.py
 new file mode 100644
-index 0000000..3df1454
+index 0000000..2e037b1
 --- /dev/null
 +++ b/i18n/__init__.py
 @@ -0,0 +1,71 @@
@@ -3102,7 +3111,7 @@ index 0000000..3df1454
 +
 +def bot_commands(lang: str):
 +    return [{"command": name, "description": t("commands." + name, lang)}
-+            for name in ("start", "help", "trad", "settings", "stats", "ping")]
++            for name in ("start", "help", "trad", "settings", "stats", "ping", "lang")]
 +
 +
 +def effective_locale(lang: str | None = None) -> str:
@@ -3122,10 +3131,10 @@ index 0000000..3df1454
 +    return localized
 diff --git a/i18n/locales/de.json b/i18n/locales/de.json
 new file mode 100644
-index 0000000..5af3926
+index 0000000..909ebc9
 --- /dev/null
 +++ b/i18n/locales/de.json
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,502 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "Der Ordner '{p0}' existiert nicht.",
 +  "handlers.admin._format_age.eb04b447": " her",
@@ -3551,6 +3560,7 @@ index 0000000..5af3926
 +  "commands.settings": "Einstellungen",
 +  "commands.stats": "Statistik",
 +  "commands.ping": "Bot-Latenz prüfen",
++  "commands.lang": "Sprache ändern",
 +  "stats.month.1": "Jan",
 +  "stats.month.2": "Feb",
 +  "stats.month.3": "Mär",
@@ -3629,10 +3639,10 @@ index 0000000..5af3926
 +}
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
 new file mode 100644
-index 0000000..f58336b
+index 0000000..4ca0379
 --- /dev/null
 +++ b/i18n/locales/en.json
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,502 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "The folder '{p0}' does not exist.",
 +  "handlers.admin._format_age.eb04b447": " ago",
@@ -4058,6 +4068,7 @@ index 0000000..f58336b
 +  "commands.settings": "Settings",
 +  "commands.stats": "Statistics",
 +  "commands.ping": "Check bot latency",
++  "commands.lang": "Change language",
 +  "stats.month.1": "Jan",
 +  "stats.month.2": "Feb",
 +  "stats.month.3": "Mar",
@@ -4136,10 +4147,10 @@ index 0000000..f58336b
 +}
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
 new file mode 100644
-index 0000000..b18c89a
+index 0000000..95e373c
 --- /dev/null
 +++ b/i18n/locales/es.json
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,502 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "La carpeta '{p0}' no existe.",
 +  "handlers.admin._format_age.eb04b447": " atrás",
@@ -4565,6 +4576,7 @@ index 0000000..b18c89a
 +  "commands.settings": "Configuración",
 +  "commands.stats": "Estadísticas",
 +  "commands.ping": "Comprobar latencia del bot",
++  "commands.lang": "Cambiar idioma",
 +  "stats.month.1": "ene",
 +  "stats.month.2": "feb",
 +  "stats.month.3": "mar",
@@ -4643,10 +4655,10 @@ index 0000000..b18c89a
 +}
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
 new file mode 100644
-index 0000000..9eee57e
+index 0000000..a39ab1c
 --- /dev/null
 +++ b/i18n/locales/pt.json
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,502 @@
 +{
 +  "handlers.admin._cleanup_downloads_once.f00056e1": "A pasta '{p0}' não existe.",
 +  "handlers.admin._format_age.eb04b447": " atrás",
@@ -5072,6 +5084,7 @@ index 0000000..9eee57e
 +  "commands.settings": "Configurações",
 +  "commands.stats": "Estatísticas",
 +  "commands.ping": "Verificar latência do bot",
++  "commands.lang": "Alterar idioma",
 +  "stats.month.1": "jan",
 +  "stats.month.2": "fev",
 +  "stats.month.3": "mar",
@@ -5636,10 +5649,18 @@ index 1513cfe..ce7fbb0 100644
                  )
              ],
 diff --git a/main.py b/main.py
-index c0d47e7..59fe1a3 100644
+index c0d47e7..42feeb9 100644
 --- a/main.py
 +++ b/main.py
-@@ -371,8 +371,17 @@ async def main():
+@@ -20,7 +20,6 @@ from sqlalchemy import insert as sql_insert
+ from app_context import set_app_context
+ from config import (
+     API_SECRET,
+-    BOT_COMMANDS,
+     BOT_SESSION_CONNECTION_LIMIT,
+     BOT_TOKEN,
+     CUSTOM_API_URL,
+@@ -371,8 +370,17 @@ async def main():
                  dp.callback_query.outer_middleware(middleware)
                  dp.inline_query.outer_middleware(middleware)
  
@@ -5650,8 +5671,9 @@ index c0d47e7..59fe1a3 100644
 +                observer.outer_middleware(LocalizationMiddleware())
 +
              try:
-                 await bot.set_my_commands(commands=BOT_COMMANDS)
+-                await bot.set_my_commands(commands=BOT_COMMANDS)
 +                from i18n import SUPPORTED_LOCALES, bot_commands
++                await bot.set_my_commands(commands=bot_commands("en"))
 +                for locale in SUPPORTED_LOCALES:
 +                    await bot.set_my_commands(commands=bot_commands(locale), language_code=locale)
              except Exception as exc:
@@ -7455,13 +7477,14 @@ index 0000000..9eaaea3
 +            close_failure_context(token)
 diff --git a/middlewares/localization.py b/middlewares/localization.py
 new file mode 100644
-index 0000000..3e53db6
+index 0000000..67ddc39
 --- /dev/null
 +++ b/middlewares/localization.py
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,38 @@
 +"""Resolve saved chat/user locale before guards and isolate it per request."""
 +from aiogram import BaseMiddleware
 +from i18n import normalize_locale, reset_locale, set_locale
++from services.runtime.command_menu import sync_command_menu
 +
 +
 +class LocalizationMiddleware(BaseMiddleware):
@@ -7490,6 +7513,9 @@ index 0000000..3e53db6
 +        data['user_lang'] = locale
 +        data['lang'] = locale
 +        try:
++            bot = data.get('bot')
++            if bot is not None and chat is not None and chat.type in {'private', 'group', 'supergroup'}:
++                await sync_command_menu(bot, chat.id, locale)
 +            return await handler(event, data)
 +        finally:
 +            reset_locale(token)
@@ -8352,6 +8378,58 @@ index a6f61e6..2e8494d 100644
              logging.error("yt-dlp mp3 download failed: source=%s url=%s error=%s", source, url, exc)
              return None
  
+diff --git a/services/runtime/command_menu.py b/services/runtime/command_menu.py
+new file mode 100644
+index 0000000..3d7915c
+--- /dev/null
++++ b/services/runtime/command_menu.py
+@@ -0,0 +1,46 @@
++"""Keep Telegram's native command descriptions aligned with the chat locale."""
++
++import logging
++from collections import OrderedDict
++
++from aiogram.exceptions import TelegramAPIError
++from aiogram.types import BotCommandScopeChat
++
++from i18n import bot_commands, normalize_locale, reset_locale, set_locale
++
++_synced = OrderedDict()
++_CACHE_LIMIT = 4096
++
++
++async def sync_command_menu(bot, chat_id: int, locale: str) -> bool:
++    """Cache successful registrations only; failures must not block bot requests."""
++    locale = normalize_locale(locale)
++    key = (bot.id, chat_id)
++    if _synced.get(key) == locale:
++        _synced.move_to_end(key)
++        return True
++    token = set_locale(locale)
++    try:
++        # A chat-specific default outranks global language-specific menus, so
++        # /lang can differ from the language of the user's Telegram app.
++        result = await bot.set_my_commands(
++            commands=bot_commands(locale),
++            scope=BotCommandScopeChat(chat_id=chat_id),
++            language_code="",
++            request_timeout=5,
++        )
++        if not result:
++            return False
++    except (TelegramAPIError, TimeoutError, OSError):
++        logging.getLogger(__name__).warning(
++            "Failed to synchronize command menu: chat_id=%s locale=%s",
++            chat_id, locale,
++        )
++        return False
++    finally:
++        reset_locale(token)
++    _synced[key] = locale
++    _synced.move_to_end(key)
++    if len(_synced) > _CACHE_LIMIT:
++        _synced.popitem(last=False)
++    return True
 diff --git a/services/runtime/request_dedupe.py b/services/runtime/request_dedupe.py
 index 2190168..4f9470e 100644
 --- a/services/runtime/request_dedupe.py

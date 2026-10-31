@@ -51,7 +51,7 @@ def request_locale() -> str | None:
 
 def bot_commands(lang: str):
     return [{"command": name, "description": t("commands." + name, lang)}
-            for name in ("start", "help", "trad", "settings", "stats", "ping")]
+            for name in ("start", "help", "trad", "settings", "stats", "ping", "lang")]
 
 
 def effective_locale(lang: str | None = None) -> str:

@@ -1,38 +1,54 @@
 {
   "base_commit": "62d7f3ec5d285f5caf3a16d772c88f1a6444c060",
-  "patch_sha256": "05a41d4df2f1c9df95223a97ab7fd22affb3dadbea941ad1c879524e2b01c89f",
+  "patch_sha256": "5cd2b70444c2f9f50b49dfb8aa22afd5a2fe6aa5993c4e7da8f1261bf6f3bc90",
   "files": {
+    "handlers/settings_menu.py": {
+      "base_sha256": "39063f4a9fb0d7d2dc65ed57cfe5f877d09eada6896adda6578bff3367942ba2",
+      "result_sha256": "4ec2a4808bd005fbf8315827b4cbff307030a5f44f5376db29ac3ceddae2ff4a"
+    },
     "handlers/youtube.py": {
       "base_sha256": "1cf4e1135c25036a2766717d4f1a909b46360711ca4407aebc842af92859e12d",
       "result_sha256": "e09d00418a896ce58de78f9688b9d919b6c4fe00ba93b3299130d2d7e7451374"
     },
     "i18n/__init__.py": {
       "base_sha256": "1ee63f527f437515e0c0f42b59c552d45d8baa5783d893dad9e3d4c5246025ab",
-      "result_sha256": "fc04b8179ce98e5103d1383a4f6190755b9127b1b4842d4163e03ce0698edb60"
+      "result_sha256": "632a9a88c6cfe9941c9f551302dbb9dcda122bc3ac9dc6fdda0cb5c1e39ac84a"
     },
     "i18n/locales/de.json": {
       "base_sha256": null,
-      "result_sha256": "49a6dfb8bfed4e0dfbf04159d7224a5e980e63bda4fe1416d7c6804ce74965a8"
+      "result_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2"
     },
     "i18n/locales/en.json": {
       "base_sha256": "72329f2caf6f6ffd1535e684250254ed7fff4ea9284499dbf151a43871e2e4b6",
-      "result_sha256": "9fecff40d5ad8bb76a4c14b7f6ac1a278da36973af2f6e7e0aafa906afd5a5aa"
+      "result_sha256": "295f57b5c3779aa2fbd207ecc8adbf532d8a223132730af5a9d3c2b793b918d3"
     },
     "i18n/locales/es.json": {
       "base_sha256": "058dc938888e506b0accbf95ee31b58cf15db509f19da0e0ebe850b3ede7b610",
-      "result_sha256": "4b7d99e14a40cb01b3b4f45a4ce7dc52948cc16739e8cf325549f0182f6b4be4"
+      "result_sha256": "d608bcfb8e745bd5ca83484f1935e41cdd8f4a347b636c3e5d35b72f3519c103"
     },
     "i18n/locales/pt.json": {
       "base_sha256": "aef979c347d0eda0d0fe659a5a7979605573a44e073385b5b270ea5bc1bdb8cb",
-      "result_sha256": "8bf812e4a79ba2e3f92ce193a0c51a71e4b9a90e2fcd32be767de38eb0c050ce"
+      "result_sha256": "377339edee52e0803283edb7dc8fc8282f16b4ade9c5b0650ff2ba23a3d92e00"
     },
     "keyboards/inline_keyboards.py": {
       "base_sha256": "e4e4b8f4b069394ab830b7bef39afb9e894df7eb09aa1e13864fe6fb31c6b06b",
       "result_sha256": "9b0380d4db237e7b5eb654818cf976dc22fc938740100fbe9212f6d036da91bb"
     },
+    "main.py": {
+      "base_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10",
+      "result_sha256": "10eb6f03c183879523154ae60ca2da3c866040f1b88a43a9aff07edd648fda5b"
+    },
+    "middlewares/localization.py": {
+      "base_sha256": "bb99e399edfce783fd5255572d79b7cf0367afe1b7f112989be327e23036e62d",
+      "result_sha256": "d6214a2b67f78306608f6672e11c2ed3171ec2cb736bae47a587aaeec1154fcb"
+    },
     "services/platforms/media_collections.py": {
       "base_sha256": "a7d4fb66885be35fd0b1dcdc1290fdbea791e910696faff51395a971df25bf77",
       "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
+    },
+    "services/runtime/command_menu.py": {
+      "base_sha256": null,
+      "result_sha256": "54cddca09c9186e3b76fe0e025d79257893f7cabcbb35ef5efea45810d4ce4e7"
     }
   }
 }

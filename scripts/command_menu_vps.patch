@@ -1,0 +1,177 @@
+diff --git a/handlers/settings_menu.py b/handlers/settings_menu.py
+index 5599834..7ff7058 100644
+--- a/handlers/settings_menu.py
++++ b/handlers/settings_menu.py
+@@ -12,6 +12,7 @@ from services.settings import (
+     parse_settings_view_callback,
+ )
+ import handlers.user as user_mod
++from services.runtime.command_menu import sync_command_menu
+ 
+ logging = logging.bind(service="settings_menu")
+ 
+@@ -353,6 +354,7 @@ async def handle_language_selection(call: types.CallbackQuery):
+         user_mod._update_info_cache.pop(target_id, None)
+     token = set_locale(chosen_lang)
+     try:
++        await sync_command_menu(call.bot, target_id, chosen_lang)
+         await show_language_view(call, target_id, chosen_lang, acknowledge=False)
+         await call.answer(_t('language.changed', chosen_lang))
+     finally:
+diff --git a/i18n/__init__.py b/i18n/__init__.py
+index 3df1454..2e037b1 100644
+--- a/i18n/__init__.py
++++ b/i18n/__init__.py
+@@ -51,7 +51,7 @@ def request_locale() -> str | None:
+ 
+ def bot_commands(lang: str):
+     return [{"command": name, "description": t("commands." + name, lang)}
+-            for name in ("start", "help", "trad", "settings", "stats", "ping")]
++            for name in ("start", "help", "trad", "settings", "stats", "ping", "lang")]
+ 
+ 
+ def effective_locale(lang: str | None = None) -> str:
+diff --git a/i18n/locales/de.json b/i18n/locales/de.json
+index 5af3926..909ebc9 100644
+--- a/i18n/locales/de.json
++++ b/i18n/locales/de.json
+@@ -423,6 +423,7 @@
+   "commands.settings": "Einstellungen",
+   "commands.stats": "Statistik",
+   "commands.ping": "Bot-Latenz prüfen",
++  "commands.lang": "Sprache ändern",
+   "stats.month.1": "Jan",
+   "stats.month.2": "Feb",
+   "stats.month.3": "Mär",
+diff --git a/i18n/locales/en.json b/i18n/locales/en.json
+index f58336b..4ca0379 100644
+--- a/i18n/locales/en.json
++++ b/i18n/locales/en.json
+@@ -423,6 +423,7 @@
+   "commands.settings": "Settings",
+   "commands.stats": "Statistics",
+   "commands.ping": "Check bot latency",
++  "commands.lang": "Change language",
+   "stats.month.1": "Jan",
+   "stats.month.2": "Feb",
+   "stats.month.3": "Mar",
+diff --git a/i18n/locales/es.json b/i18n/locales/es.json
+index b18c89a..95e373c 100644
+--- a/i18n/locales/es.json
++++ b/i18n/locales/es.json
+@@ -423,6 +423,7 @@
+   "commands.settings": "Configuración",
+   "commands.stats": "Estadísticas",
+   "commands.ping": "Comprobar latencia del bot",
++  "commands.lang": "Cambiar idioma",
+   "stats.month.1": "ene",
+   "stats.month.2": "feb",
+   "stats.month.3": "mar",
+diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
+index 9eee57e..a39ab1c 100644
+--- a/i18n/locales/pt.json
++++ b/i18n/locales/pt.json
+@@ -423,6 +423,7 @@
+   "commands.settings": "Configurações",
+   "commands.stats": "Estatísticas",
+   "commands.ping": "Verificar latência do bot",
++  "commands.lang": "Alterar idioma",
+   "stats.month.1": "jan",
+   "stats.month.2": "fev",
+   "stats.month.3": "mar",
+diff --git a/main.py b/main.py
+index 59fe1a3..42feeb9 100644
+--- a/main.py
++++ b/main.py
+@@ -20,7 +20,6 @@ from sqlalchemy import insert as sql_insert
+ from app_context import set_app_context
+ from config import (
+     API_SECRET,
+-    BOT_COMMANDS,
+     BOT_SESSION_CONNECTION_LIMIT,
+     BOT_TOKEN,
+     CUSTOM_API_URL,
+@@ -378,8 +377,8 @@ async def main():
+                 observer.outer_middleware(LocalizationMiddleware())
+ 
+             try:
+-                await bot.set_my_commands(commands=BOT_COMMANDS)
+                 from i18n import SUPPORTED_LOCALES, bot_commands
++                await bot.set_my_commands(commands=bot_commands("en"))
+                 for locale in SUPPORTED_LOCALES:
+                     await bot.set_my_commands(commands=bot_commands(locale), language_code=locale)
+             except Exception as exc:
+diff --git a/middlewares/localization.py b/middlewares/localization.py
+index 3e53db6..67ddc39 100644
+--- a/middlewares/localization.py
++++ b/middlewares/localization.py
+@@ -1,6 +1,7 @@
+ """Resolve saved chat/user locale before guards and isolate it per request."""
+ from aiogram import BaseMiddleware
+ from i18n import normalize_locale, reset_locale, set_locale
++from services.runtime.command_menu import sync_command_menu
+ 
+ 
+ class LocalizationMiddleware(BaseMiddleware):
+@@ -29,6 +30,9 @@ class LocalizationMiddleware(BaseMiddleware):
+         data['user_lang'] = locale
+         data['lang'] = locale
+         try:
++            bot = data.get('bot')
++            if bot is not None and chat is not None and chat.type in {'private', 'group', 'supergroup'}:
++                await sync_command_menu(bot, chat.id, locale)
+             return await handler(event, data)
+         finally:
+             reset_locale(token)
+diff --git a/services/runtime/command_menu.py b/services/runtime/command_menu.py
+new file mode 100644
+index 0000000..3d7915c
+--- /dev/null
++++ b/services/runtime/command_menu.py
+@@ -0,0 +1,46 @@
++"""Keep Telegram's native command descriptions aligned with the chat locale."""
++
++import logging
++from collections import OrderedDict
++
++from aiogram.exceptions import TelegramAPIError
++from aiogram.types import BotCommandScopeChat
++
++from i18n import bot_commands, normalize_locale, reset_locale, set_locale
++
++_synced = OrderedDict()
++_CACHE_LIMIT = 4096
++
++
++async def sync_command_menu(bot, chat_id: int, locale: str) -> bool:
++    """Cache successful registrations only; failures must not block bot requests."""
++    locale = normalize_locale(locale)
++    key = (bot.id, chat_id)
++    if _synced.get(key) == locale:
++        _synced.move_to_end(key)
++        return True
++    token = set_locale(locale)
++    try:
++        # A chat-specific default outranks global language-specific menus, so
++        # /lang can differ from the language of the user's Telegram app.
++        result = await bot.set_my_commands(
++            commands=bot_commands(locale),
++            scope=BotCommandScopeChat(chat_id=chat_id),
++            language_code="",
++            request_timeout=5,
++        )
++        if not result:
++            return False
++    except (TelegramAPIError, TimeoutError, OSError):
++        logging.getLogger(__name__).warning(
++            "Failed to synchronize command menu: chat_id=%s locale=%s",
++            chat_id, locale,
++        )
++        return False
++    finally:
++        reset_locale(token)
++    _synced[key] = locale
++    _synced.move_to_end(key)
++    if len(_synced) > _CACHE_LIMIT:
++        _synced.popitem(last=False)
++    return True

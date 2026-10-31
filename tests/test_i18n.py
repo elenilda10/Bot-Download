@@ -82,7 +82,7 @@ def test_language_and_stats_buttons_keep_callback_protocol(lang):
 def test_command_descriptions_are_localized_and_names_stay_stable():
     for lang in SUPPORTED_LOCALES:
         commands = bot_commands(lang)
-        assert [c['command'] for c in commands] == ['start', 'help', 'trad', 'settings', 'stats', 'ping']
+        assert [c['command'] for c in commands] == ['start', 'help', 'trad', 'settings', 'stats', 'ping', 'lang']
         assert all(1 <= len(c['description']) <= 256 for c in commands)
     assert bot_commands('es')[3]['description'] == 'Configuración'
 
@@ -126,6 +126,7 @@ async def test_locale_resets_on_cancellation():
 
 class FakeCallback:
     def __init__(self, data='set_lang:es'):
+        self.bot = SimpleNamespace(id=123, set_my_commands=AsyncMock(return_value=True))
         self.data = data
         self.from_user = SimpleNamespace(id=20, full_name='Test', language_code='en')
         self.message = SimpleNamespace(chat=SimpleNamespace(id=-100, type='supergroup'), edit_text=AsyncMock())
@@ -144,6 +145,7 @@ def selection_runtime(*, admin=True, fails=False):
     namespace = {
         'types': SimpleNamespace(CallbackQuery=FakeCallback), '_t': t, 'SUPPORTED_LOCALES': SUPPORTED_LOCALES,
         'set_locale': set_locale, 'reset_locale': reset_locale,
+        'sync_command_menu': AsyncMock(return_value=True),
         'kb': SimpleNamespace(language_keyboard=language_keyboard),
         'bm': bm, 'TelegramBadRequest': type('TelegramBadRequest', (Exception,), {}),
         '_is_message_not_modified_error': lambda _: False,

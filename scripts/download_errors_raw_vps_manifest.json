@@ -1,6 +1,6 @@
 {
   "base_commit": "f88a0902dc220bad72d9a013d7db3f2a8ffdd3e6",
-  "patch_sha256": "e025a2b188fee0fbf2bbc32ff006f46e0ab37e10039c87f32d6a20a306730b58",
+  "patch_sha256": "e184e2798131a83ad23c461092eeb6b01b1dbfd0a258fe00806b4adbde781db7",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -14,6 +14,10 @@
       "base_sha256": null,
       "result_sha256": "a463264e65bf9a86aca1df32e362229286e3a2cc3fc35e0a2c25ecb17dac0edb"
     },
+    "handlers/settings_menu.py": {
+      "base_sha256": "39063f4a9fb0d7d2dc65ed57cfe5f877d09eada6896adda6578bff3367942ba2",
+      "result_sha256": "4ec2a4808bd005fbf8315827b4cbff307030a5f44f5376db29ac3ceddae2ff4a"
+    },
     "handlers/spotify.py": {
       "base_sha256": "7480bd7d4097836867c1d00743286c989dc44024c84697475d011623acc43cbd",
       "result_sha256": "647f9aa46b038c175b50d8f634e2f3ddefca6d8110106059f2161f6018464646"
@@ -24,27 +28,31 @@
     },
     "i18n/__init__.py": {
       "base_sha256": "1ee63f527f437515e0c0f42b59c552d45d8baa5783d893dad9e3d4c5246025ab",
-      "result_sha256": "fc04b8179ce98e5103d1383a4f6190755b9127b1b4842d4163e03ce0698edb60"
+      "result_sha256": "632a9a88c6cfe9941c9f551302dbb9dcda122bc3ac9dc6fdda0cb5c1e39ac84a"
     },
     "i18n/locales/de.json": {
       "base_sha256": null,
-      "result_sha256": "49a6dfb8bfed4e0dfbf04159d7224a5e980e63bda4fe1416d7c6804ce74965a8"
+      "result_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2"
     },
     "i18n/locales/en.json": {
       "base_sha256": "14dd711fa5c77bce5030b3ba1457f49eca6e946cc6d92e24b18152dd1439ef45",
-      "result_sha256": "9fecff40d5ad8bb76a4c14b7f6ac1a278da36973af2f6e7e0aafa906afd5a5aa"
+      "result_sha256": "295f57b5c3779aa2fbd207ecc8adbf532d8a223132730af5a9d3c2b793b918d3"
     },
     "i18n/locales/es.json": {
       "base_sha256": "d901d7776e31edaba8087dda293aeb812d4c16238ec56a8b6260e4b89b298ad4",
-      "result_sha256": "4b7d99e14a40cb01b3b4f45a4ce7dc52948cc16739e8cf325549f0182f6b4be4"
+      "result_sha256": "d608bcfb8e745bd5ca83484f1935e41cdd8f4a347b636c3e5d35b72f3519c103"
     },
     "i18n/locales/pt.json": {
       "base_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730",
-      "result_sha256": "8bf812e4a79ba2e3f92ce193a0c51a71e4b9a90e2fcd32be767de38eb0c050ce"
+      "result_sha256": "377339edee52e0803283edb7dc8fc8282f16b4ade9c5b0650ff2ba23a3d92e00"
     },
     "keyboards/inline_keyboards.py": {
       "base_sha256": "7dc2610901e6ce2deadd826e781bca5ff9b4edd6769de0d966a17c3c48360a1a",
       "result_sha256": "9b0380d4db237e7b5eb654818cf976dc22fc938740100fbe9212f6d036da91bb"
+    },
+    "main.py": {
+      "base_sha256": "40e74b5939f1fe0651b849985ce5ca08bdc242d2c24405537acd420c560c8a10",
+      "result_sha256": "10eb6f03c183879523154ae60ca2da3c866040f1b88a43a9aff07edd648fda5b"
     },
     "messages/user_messages.py": {
       "base_sha256": "2d787d9198aedc964d4f3f4324ffb7a951a426d7447d637d21937959c65fa78d",
@@ -53,6 +61,10 @@
     "middlewares/channel_subscription.py": {
       "base_sha256": "e56e72402378af3e083e9d34b7efd54fb3f35d33d2356e6dd1234b4814630355",
       "result_sha256": "e18fa039b993dd31ef7a8fc1b222ff74ab34de35f95f055514e7345f4c3ea380"
+    },
+    "middlewares/localization.py": {
+      "base_sha256": "bb99e399edfce783fd5255572d79b7cf0367afe1b7f112989be327e23036e62d",
+      "result_sha256": "d6214a2b67f78306608f6672e11c2ed3171ec2cb736bae47a587aaeec1154fcb"
     },
     "services/links/detection.py": {
       "base_sha256": "4721943998e3ad3b5adbd199dd007ce2a226efeca00b16ca8163a61c16c91c5e",
@@ -65,6 +77,10 @@
     "services/platforms/media_collections.py": {
       "base_sha256": null,
       "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
+    },
+    "services/runtime/command_menu.py": {
+      "base_sha256": null,
+      "result_sha256": "54cddca09c9186e3b76fe0e025d79257893f7cabcbb35ef5efea45810d4ce4e7"
     },
     "services/runtime/request_dedupe.py": {
       "base_sha256": "abc98a2426e2dadcf4761afa4da4eaf14bbff80e747c013364b8484e9901cd2d",

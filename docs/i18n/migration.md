@@ -1,7 +1,7 @@
 # Português, inglês, espanhol e alemão
 
 Esta revisão migra a interface para catálogos locais em `i18n/locales/pt.json`,
-`en.json`, `es.json` e `de.json`. Há 499 chaves com paridade de placeholders e HTML. Nenhuma
+`en.json`, `es.json` e `de.json`. Há 500 chaves com paridade de placeholders e HTML. Nenhuma
 API de tradução é chamada durante o atendimento do bot.
 
 ## Comportamento
