@@ -5,9 +5,9 @@ import json
 import logging
 from pathlib import Path
 
-SUPPORTED_LOCALES = ('pt', 'en', 'es')
+SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de')
 DEFAULT_LOCALE = 'en'
-LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español'}
+LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch'}
 _locale = ContextVar('bot_interface_locale', default=None)
 
 
@@ -28,7 +28,7 @@ def reset_locale(token) -> None:
     _locale.reset(token)
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=None)
 def catalog(locale: str) -> dict[str, str]:
     path = Path(__file__).with_name('locales') / (normalize_locale(locale) + '.json')
     return json.loads(path.read_text(encoding='utf-8'))
@@ -51,7 +51,7 @@ def request_locale() -> str | None:
 
 def bot_commands(lang: str):
     return [{"command": name, "description": t("commands." + name, lang)}
-            for name in ("start", "help", "trad", "settings", "stats", "ping")]
+            for name in ("start", "help", "trad", "settings", "stats", "ping", "lang")]
 
 
 def effective_locale(lang: str | None = None) -> str:

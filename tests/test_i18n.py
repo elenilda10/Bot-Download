@@ -24,7 +24,7 @@ def isolated_module(path, name):
     return module
 
 
-@pytest.mark.parametrize(('value', 'expected'), [('es-MX', 'es'), ('es_ES', 'es'), ('pt-BR', 'pt'), ('EN', 'en'), ('fr', 'en'), ('', 'en'), (None, 'en')])
+@pytest.mark.parametrize(('value', 'expected'), [('es-MX', 'es'), ('es_ES', 'es'), ('pt-BR', 'pt'), ('EN', 'en'), ('de-DE', 'de'), ('DE_de', 'de'), ('fr', 'en'), ('', 'en'), (None, 'en')])
 def test_locale_variants_and_fallback(value, expected):
     assert normalize_locale(value) == expected
 
@@ -71,7 +71,7 @@ def test_language_and_stats_buttons_keep_callback_protocol(lang):
     buttons = [button for row in language_keyboard(lang).inline_keyboard for button in row]
     selected = [b for b in buttons if b.text.startswith('✅')]
     assert len(selected) == 1 and selected[0].callback_data == 'set_lang:' + lang
-    assert {'set_lang:pt', 'set_lang:en', 'set_lang:es'} <= {b.callback_data for b in buttons}
+    assert {'set_lang:pt', 'set_lang:en', 'set_lang:es', 'set_lang:de'} <= {b.callback_data for b in buttons}
     markup = stats_keyboard(lang=lang)
     callbacks = [b.callback_data for row in markup.inline_keyboard for b in row]
     assert any(data.startswith('stats:Week:') for data in callbacks if data)
@@ -82,7 +82,7 @@ def test_language_and_stats_buttons_keep_callback_protocol(lang):
 def test_command_descriptions_are_localized_and_names_stay_stable():
     for lang in SUPPORTED_LOCALES:
         commands = bot_commands(lang)
-        assert [c['command'] for c in commands] == ['start', 'help', 'trad', 'settings', 'stats', 'ping']
+        assert [c['command'] for c in commands] == ['start', 'help', 'trad', 'settings', 'stats', 'ping', 'lang']
         assert all(1 <= len(c['description']) <= 256 for c in commands)
     assert bot_commands('es')[3]['description'] == 'Configuración'
 
@@ -126,6 +126,7 @@ async def test_locale_resets_on_cancellation():
 
 class FakeCallback:
     def __init__(self, data='set_lang:es'):
+        self.bot = SimpleNamespace(id=123, set_my_commands=AsyncMock(return_value=True))
         self.data = data
         self.from_user = SimpleNamespace(id=20, full_name='Test', language_code='en')
         self.message = SimpleNamespace(chat=SimpleNamespace(id=-100, type='supergroup'), edit_text=AsyncMock())
@@ -144,6 +145,7 @@ def selection_runtime(*, admin=True, fails=False):
     namespace = {
         'types': SimpleNamespace(CallbackQuery=FakeCallback), '_t': t, 'SUPPORTED_LOCALES': SUPPORTED_LOCALES,
         'set_locale': set_locale, 'reset_locale': reset_locale,
+        'sync_command_menu': AsyncMock(return_value=True),
         'kb': SimpleNamespace(language_keyboard=language_keyboard),
         'bm': bm, 'TelegramBadRequest': type('TelegramBadRequest', (Exception,), {}),
         '_is_message_not_modified_error': lambda _: False,
@@ -179,7 +181,8 @@ async def test_denied_invalid_or_failed_save_does_not_claim_success(admin, data,
 
 
 @pytest.mark.asyncio
-async def test_sqlite_persists_language_and_profile_refresh_does_not_overwrite_it(monkeypatch):
+@pytest.mark.parametrize('chosen_locale', ['es', 'de'])
+async def test_sqlite_persists_language_and_profile_refresh_does_not_overwrite_it(monkeypatch, chosen_locale):
     import sys
     from unittest.mock import Mock
     from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -202,11 +205,11 @@ async def test_sqlite_persists_language_and_profile_refresh_does_not_overwrite_i
     try:
         repo = Repo()
         await repo.upsert_chat(20, 'Test', None, 'private', language='pt-BR')
-        await repo.set_language(20, 'es')
+        await repo.set_language(20, chosen_locale)
         await repo.upsert_chat(20, 'New name', None, 'private', language='en')
-        assert await Repo().get_language(20) == 'es'
-        await repo.upsert_chat(-100, 'Group', None, 'public', language='es-MX')
-        assert await Repo().get_language(-100) == 'es'
+        assert await Repo().get_language(20) == chosen_locale
+        await repo.upsert_chat(-100, 'Group', None, 'public', language='de-DE' if chosen_locale == 'de' else 'es-MX')
+        assert await Repo().get_language(-100) == chosen_locale
     finally:
         await engine.dispose()
 
@@ -261,3 +264,46 @@ def test_translation_command_omits_generated_footers_in_all_supported_languages(
     exec(compile(ast.Module(body=[node], type_ignores=[]), 'translation_cleanup', 'exec'), namespace)
     for footer in ('Powered by Save Vídeo DL Bot', 'Desenvolvido por Save Vídeo DL Bot', 'Desarrollado por Save Vídeo DL Bot'):
         assert namespace['_clean_translation_input']('Hello / Olá / Hola\n\n🚀 ' + footer) == 'Hello / Olá / Hola'
+
+
+@pytest.mark.parametrize('lang', SUPPORTED_LOCALES)
+def test_language_selector_uses_two_columns_and_a_separate_back_row(lang):
+    keyboard = language_keyboard(lang).inline_keyboard
+    assert [[b.callback_data for b in row] for row in keyboard] == [
+        ['set_lang:pt', 'set_lang:en'], ['set_lang:es', 'set_lang:de'], ['back_to_settings']]
+    assert keyboard[1][1].text.endswith('🇩🇪 Deutsch')
+
+
+def test_language_selector_extends_automatically_for_an_odd_number_of_languages(monkeypatch):
+    import i18n
+    monkeypatch.setattr(i18n, 'SUPPORTED_LOCALES', (*SUPPORTED_LOCALES, 'fr'))
+    monkeypatch.setattr(i18n, 'LOCALE_NAMES', {**i18n.LOCALE_NAMES, 'fr': '🇫🇷 Français'})
+    rows = language_keyboard('pt').inline_keyboard
+    assert [len(row) for row in rows] == [2, 2, 1, 1]
+    assert rows[-2][0].callback_data == 'set_lang:fr'
+    assert rows[-1][0].callback_data == 'back_to_settings'
+
+
+@pytest.mark.asyncio
+async def test_german_selection_saves_and_confirms_in_german():
+    ns, records = selection_runtime()
+    call = FakeCallback('set_lang:de')
+    await ns['handle_language_selection'](call)
+    assert records == {-100: 'de'}
+    assert 'Deutsch' in call.answer.await_args.args[0]
+    assert 'Wähle' in call.message.edit_text.await_args.args[0]
+    assert get_locale() == 'en'
+
+
+def test_german_download_upload_commands_and_content_preservation():
+    token = set_locale('de')
+    try:
+        assert 'heruntergeladen' in bm.media_transfer_status('YouTube')
+        assert 'Telegram gesendet' in bm.media_transfer_status('YouTube', uploading=True)
+        caption = bm.captions('on', 'Olá <b>Hello</b> & español', 'https://t.me/test_bot')
+        assert 'Olá &lt;b&gt;Hello&lt;/b&gt; &amp; español' in caption
+        assert 'Bereitgestellt' in caption
+        assert bot_commands('de')[3]['description'] == 'Einstellungen'
+        assert t('stats.month.3') == 'Mär'
+    finally:
+        reset_locale(token)

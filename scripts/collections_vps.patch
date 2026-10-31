@@ -256,6 +256,26 @@ index 0000000..dd3cad1
 +        if lease:
 +            lease.finish()
 +        await update_info(message)
+diff --git a/handlers/settings_menu.py b/handlers/settings_menu.py
+index 5599834..7ff7058 100644
+--- a/handlers/settings_menu.py
++++ b/handlers/settings_menu.py
+@@ -12,6 +12,7 @@ from services.settings import (
+     parse_settings_view_callback,
+ )
+ import handlers.user as user_mod
++from services.runtime.command_menu import sync_command_menu
+ 
+ logging = logging.bind(service="settings_menu")
+ 
+@@ -353,6 +354,7 @@ async def handle_language_selection(call: types.CallbackQuery):
+         user_mod._update_info_cache.pop(target_id, None)
+     token = set_locale(chosen_lang)
+     try:
++        await sync_command_menu(call.bot, target_id, chosen_lang)
+         await show_language_view(call, target_id, chosen_lang, acknowledge=False)
+         await call.answer(_t('language.changed', chosen_lang))
+     finally:
 diff --git a/handlers/spotify.py b/handlers/spotify.py
 index 187e1b9..d55c348 100644
 --- a/handlers/spotify.py
@@ -566,11 +586,570 @@ index 987d64f..772b291 100644
          if request_lease is not None:
              request_lease.finish()
          await safe_delete_message(status_message)
+diff --git a/i18n/__init__.py b/i18n/__init__.py
+index e9bc783..2e037b1 100644
+--- a/i18n/__init__.py
++++ b/i18n/__init__.py
+@@ -5,9 +5,9 @@ import json
+ import logging
+ from pathlib import Path
+ 
+-SUPPORTED_LOCALES = ('pt', 'en', 'es')
++SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de')
+ DEFAULT_LOCALE = 'en'
+-LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español'}
++LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch'}
+ _locale = ContextVar('bot_interface_locale', default=None)
+ 
+ 
+@@ -28,7 +28,7 @@ def reset_locale(token) -> None:
+     _locale.reset(token)
+ 
+ 
+-@lru_cache(maxsize=3)
++@lru_cache(maxsize=None)
+ def catalog(locale: str) -> dict[str, str]:
+     path = Path(__file__).with_name('locales') / (normalize_locale(locale) + '.json')
+     return json.loads(path.read_text(encoding='utf-8'))
+@@ -51,7 +51,7 @@ def request_locale() -> str | None:
+ 
+ def bot_commands(lang: str):
+     return [{"command": name, "description": t("commands." + name, lang)}
+-            for name in ("start", "help", "trad", "settings", "stats", "ping")]
++            for name in ("start", "help", "trad", "settings", "stats", "ping", "lang")]
+ 
+ 
+ def effective_locale(lang: str | None = None) -> str:
+diff --git a/i18n/locales/de.json b/i18n/locales/de.json
+new file mode 100644
+index 0000000..909ebc9
+--- /dev/null
++++ b/i18n/locales/de.json
+@@ -0,0 +1,502 @@
++{
++  "handlers.admin._cleanup_downloads_once.f00056e1": "Der Ordner '{p0}' existiert nicht.",
++  "handlers.admin._format_age.eb04b447": " her",
++  "handlers.admin._render_admin_panel.1ca3fe3a": "Aktuelle Laufzeit",
++  "handlers.admin._render_admin_panel.3b2fe03e": "Warteschlange",
++  "handlers.admin._render_admin_panel.85f37ec1": "{p0}\n\n<b>{p1}</b>\n{p2}: <b>{p3}</b> {p4} / <b>{p5}</b> {p6} / <b>{p7}</b> Worker\n{p8}: <b>{p9}</b>",
++  "handlers.admin._render_admin_panel.96879611": "aktiv",
++  "handlers.admin._render_admin_panel.a0b7e373": "Downloads seit dem Start",
++  "handlers.admin._render_admin_panel.d36be649": "wartend",
++  "handlers.admin._render_downloads_text.14679791": "Pfad: <code>{p0}</code>",
++  "handlers.admin._render_downloads_text.254080f9": "Bereinigung bereit: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.5efcbc66": "Gesamtgröße: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.76daee16": "nein",
++  "handlers.admin._render_downloads_text.7757f2b4": "Dateien: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.8a798890": "ja",
++  "handlers.admin._render_downloads_text.96876281": "Neueste Datei: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.9a394b1f": "Warteschlange: <b>{p0}</b> wartend / <b>{p1}</b> aktiv",
++  "handlers.admin._render_downloads_text.a40e0507": "Ordner: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.b2c5bf40": "<b>Downloadspeicher</b>",
++  "handlers.admin._render_downloads_text.bc90fe3a": "Vorhanden: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.c7489a74": "<b>Bereinigungsstatus</b>",
++  "handlers.admin._render_downloads_text.d05a4609": "Älteste Datei: <b>{p0}</b>",
++  "handlers.admin._render_health_text.044f58fa": "Downloads seit dem Start: <b>{p0}</b>",
++  "handlers.admin._render_health_text.0ab68c6d": "Warteschlange: <b>{p0}</b> wartend / <b>{p1}</b> aktiv / <b>{p2}</b> Worker",
++  "handlers.admin._render_health_text.22456ec5": "Verworfene Analyseereignisse: <b>{p0}</b>",
++  "handlers.admin._render_health_text.51eaa53a": "<b>Protokolle</b>",
++  "handlers.admin._render_health_text.5e1c2135": "Zuletzt verworfenes Analyseereignis: <b>{p0}</b>",
++  "handlers.admin._render_health_text.7d27a2e7": "<b>Bot-Zustand</b>",
++  "handlers.admin._render_perf_text.0e7b7190": "durch Downloads begrenzt",
++  "handlers.admin._render_perf_text.3f2bd673": "<b>Warteschlangenleistung</b>",
++  "handlers.admin._render_perf_text.460f7372": "Worker: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.73b1aab0": "\n<b>{p0}</b>\nAufträge: {p1}\nWartezeit p50/p95: {p2}/{p3} ms\nVerarbeitungszeit p50/p95: {p4}/{p5} ms\nEngpass: <b>{p6}</b>",
++  "handlers.admin._render_perf_text.8b8340a7": "durch die Warteschlange begrenzt",
++  "handlers.admin._render_perf_text.ac9f2c78": "Wartende Aufträge: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.bcf82d18": "Erfasste Quellen: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.e172193f": "Aktive Aufträge: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.f362761a": "Dateicache: Treffer=<b>{p0}</b>, Fehltreffer=<b>{p1}</b> (Trefferquote: <b>{p2}%</b>)",
++  "handlers.admin._render_session_text.14f1a46a": "<b>Statistik seit dem Start</b>",
++  "handlers.admin._render_session_text.22ffb113": "Videos: <b>{p0}</b>",
++  "handlers.admin._render_session_text.45d43d42": "Letzter Download: <b>{p0}</b>",
++  "handlers.admin._render_session_text.4bb414c0": "Datenverkehr: <b>{p0}</b>",
++  "handlers.admin._render_session_text.5e939b43": "<b>Nach Quelle:</b>",
++  "handlers.admin._render_session_text.63627479": "Downloads insgesamt: <b>{p0}</b> ({p1}/h)",
++  "handlers.admin._render_session_text.68b2f2a9": "Sonstige: <b>{p0}</b>",
++  "handlers.admin._render_session_text.83740664": "Betriebszeit: <b>{p0}</b>",
++  "handlers.admin._render_session_text.ca5c8585": "Durchschnitt",
++  "handlers.admin._render_session_text.ca9549b8": "Audio: <b>{p0}</b>",
++  "handlers.admin._render_session_text.d4208cbc": "Durchschnittliche Downloadgröße: <b>{p0}</b>",
++  "handlers.admin.admin_cleanup_downloads.03c5eef4": "Bereinigung abgeschlossen",
++  "handlers.admin.admin_cleanup_downloads.73297ab5": "Bereinigung übersprungen",
++  "handlers.admin.admin_send_to_chat.1744850b": "Chat {p0}",
++  "handlers.admin.cancel_action.0380268e": "Es gibt nichts abzubrechen.",
++  "handlers.admin.cancel_action.13ca2ee2": "Abgebrochen",
++  "handlers.admin.clear_downloads_and_notify.51d62c73": "Beim Leeren des Ordners ist ein Fehler aufgetreten: {p0}",
++  "handlers.admin.clear_downloads_and_notify.8d5fe0cc": "\n{p0} abgelaufene Dateicache-Einträge wurden entfernt.",
++  "handlers.channel_membership._confirmation.8c3f1c28": "✅ <b>Kanalmitgliedschaft bestätigt!</b>\n\nDein Zugang zu Save Vídeo DL Bot ist jetzt freigeschaltet.",
++  "handlers.channel_membership.handle_channel_membership.0179218d": "✅ Kanalmitgliedschaft bestätigt! Sende den Link bitte erneut.",
++  "handlers.channel_membership.handle_channel_membership.9d218ae6": "✅ Kanalmitgliedschaft bestätigt! Öffne den privaten Chat mit dem Bot, um deinen Download fortzusetzen.",
++  "handlers.commands.ban_command.2f0aa428": "🚫 Administratoren können nicht gesperrt werden.",
++  "handlers.commands.ban_command.7693a6c6": "🚫 <b>{p0}</b> (<code>{p1}</code>) wurde für den Bot <b>gesperrt</b>.",
++  "handlers.commands.ban_command.978354db": "Ziel",
++  "handlers.commands.ban_command.a7c93b70": "❌ Fehler beim Sperren: {p0}",
++  "handlers.commands.ban_command.b224bf13": "⚠️ Sende den Befehl mit der ID:\n<code>/ban &lt;user_or_group_id&gt;</code>\n\nOder antworte mit <code>/ban</code> auf eine weitergeleitete Nachricht.",
++  "handlers.commands.ban_command.f7361713": "❌ Ungültige numerische ID. Beispiel: <code>/ban 123456789</code> oder <code>/ban -100123456789</code>",
++  "handlers.commands.unban_command.39f42deb": "❌ Ungültige numerische ID. Beispiel: <code>/unban 123456789</code>",
++  "handlers.commands.unban_command.67c37fc3": "✅ Die Sperre von <b>{p0}</b> (<code>{p1}</code>) wurde <b>aufgehoben</b>.",
++  "handlers.commands.unban_command.c9bcc18d": "❌ Fehler beim Entsperren: {p0}",
++  "handlers.commands.unban_command.f56f7a97": "⚠️ Sende den Befehl mit der ID:\n<code>/unban &lt;user_or_group_id&gt;</code>\n\nOder antworte mit <code>/unban</code> auf eine Nachricht.",
++  "handlers.deezer_inline._send_downloaded.dc8b7b36": "Deezer-Musik von {p0}",
++  "handlers.deezer_inline.handle_deezer_inline_query.0e0cc1a9": "Musik",
++  "handlers.deezer_inline.handle_deezer_inline_query.bf687d7a": "Deezer-Musik",
++  "handlers.deezer_inline.send_inline_deezer_music.41ae01c9": "Deezer-Titel",
++  "handlers.eporner.handle_eporner_media_button.7d9b04e9": "Nicht verfügbar.",
++  "handlers.eporner.handle_eporner_media_button.bc1b8890": "Audio",
++  "handlers.eporner.handle_eporner_media_button.c3b5bf03": "Aktiviere diese Schaltfläche in den Bot-Einstellungen.",
++  "handlers.eporner.show_eporner_test_vpn.15722468": "🔒 Eporner-Routing: festes VPN im Namespace ph-proton.\nProton-DNS 10.2.0.1. Dieser Befehl dient nur zur Information; /epvpn on und /epvpn off ändern die Verbindung nicht.",
++  "handlers.facebook._facebook_keyboard.2432fa18": "🎧 MP3 herunterladen",
++  "handlers.facebook._facebook_keyboard.73305390": "🔗 Facebook öffnen",
++  "handlers.facebook._facebook_keyboard.b11161d2": "🔗 Facebook öffnen",
++  "handlers.facebook._facebook_keyboard.d7fd5aab": "📄 Datei herunterladen",
++  "handlers.facebook._progress_update.8be1f22d": "Wird heruntergeladen…",
++  "handlers.facebook.facebook_format_callback.0dbd14ec": "Diese Schaltfläche ist abgelaufen oder gehört zu einem anderen Chat. Sende den Link erneut.",
++  "handlers.facebook.facebook_format_callback.10e7f62f": "Aus diesem Video konnte kein Audio extrahiert werden.",
++  "handlers.facebook.facebook_format_callback.22eb1900": "Die angemeldete Sitzung ist nicht verfügbar.",
++  "handlers.facebook.facebook_format_callback.3b4dab0a": "Der Download konnte nicht abgeschlossen werden. Versuche es später erneut.",
++  "handlers.facebook.facebook_format_callback.44809136": "Kein Zugriff möglich.",
++  "handlers.facebook.facebook_format_callback.52d58f7c": "Aus diesem Beitrag konnte kein einzelnes Medium abgerufen werden.",
++  "handlers.facebook.facebook_format_callback.57448b90": "Dieser Beitrag enthält kein Video mit einer konvertierbaren Audiospur.",
++  "handlers.facebook.facebook_format_callback.8f8d2e48": "Zeitüberschreitung bei der Audiokonvertierung.",
++  "handlers.facebook.facebook_format_callback.97e012c2": "Facebook-Audio",
++  "handlers.facebook.facebook_format_callback.988aa82f": "Ungültiger Link.",
++  "handlers.facebook.facebook_format_callback.a7070282": "Ungültige Schaltfläche.",
++  "handlers.facebook.facebook_format_callback.acad8aba": "Die Datei ist nicht verfügbar oder überschreitet die Größenbegrenzung.",
++  "handlers.facebook.facebook_format_callback.ada9b656": "Aktiviere die Schaltfläche in den Bot-Einstellungen, um sie zu verwenden.",
++  "handlers.facebook.facebook_format_callback.b9a04fe6": "Die Datei konnte nicht innerhalb der Größenbegrenzung erstellt werden.",
++  "handlers.facebook.facebook_gallery_first_test_command.11806b7c": "Sende: /fbteste https://www.facebook.com/share/p/EXEMPLO/\nDieser Test lädt die von gallery-dl gefundenen Medien herunter, ohne ihre Identität zu überprüfen.",
++  "handlers.facebook.facebook_gallery_first_test_command.5a51ced6": "Dieser Test ist nur für den Administrator im privaten Chat verfügbar.",
++  "handlers.facebook.facebook_progress_callback.13f73340": "🚀 Wird an Telegram gesendet…",
++  "handlers.facebook.facebook_progress_callback.2517d389": "⏳ Download abgeschlossen oder nicht verfügbar.",
++  "handlers.facebook.facebook_progress_callback.e81bb164": "📊 Downloadfortschritt:\n\n▸ Status: {p0}\n▸ Größe: {p1} / {p2}\n▸ Geschwindigkeit: {p3}",
++  "handlers.facebook.process_facebook_link.28cbcc7f": "🧪 gallery-dl-TEST: Medien wurden NICHT mit dem ursprünglichen Beitrag abgeglichen.",
++  "handlers.facebook.process_facebook_link.6d057cc1": "Dieser Test ist nur für den Administrator im privaten Chat erlaubt.",
++  "handlers.facebook.process_facebook_link.e91a31a3": "Der Facebook-Link konnte nicht geöffnet werden. Kopiere die direkte URL des Reels, Videos oder Fotos.",
++  "handlers.google_drive.handle_google_drive.3733e3f4": "❌ Diese Google-Drive-Datei konnte nicht heruntergeladen oder gesendet werden.",
++  "handlers.google_drive.handle_google_drive.7fa81ade": "Von Google Drive heruntergeladene Datei",
++  "handlers.instagram_inline._plan.27ca66c6": "Instagram-Foto von {p0}",
++  "handlers.instagram_inline._plan.c2ca559e": "Instagram-Video von {p0}",
++  "handlers.instagram_inline._plan.f36408e5": "Instagram-Video",
++  "handlers.kwai._callback_request.8288c2dc": "Sende den Kwai-Link bitte erneut.",
++  "handlers.kwai._callback_request.c4e9a207": "Sende den Kwai-Link zum Herunterladen bitte erneut.",
++  "handlers.kwai._kwai_keyboard.3f86cfb3": "🔗 Kwai öffnen",
++  "handlers.mediafire.handle_mediafire.212e6641": "❌ Diese MediaFire-Datei konnte nicht heruntergeladen oder gesendet werden.",
++  "handlers.mediafire.handle_mediafire.932a21e6": "Von MediaFire heruntergeladene Datei",
++  "handlers.mega.handle_mega.1cd2d2c8": "❌ Diese MEGA-Datei konnte nicht heruntergeladen oder gesendet werden.",
++  "handlers.mega.handle_mega.b54d4377": "Von MEGA heruntergeladene Datei",
++  "handlers.mega.handle_mega.d6c00b58": "📄 Von MEGA heruntergeladene Datei",
++  "handlers.music._criar_botoes_plataformas.33229cbf": "▶️ YouTube",
++  "handlers.music._criar_botoes_plataformas.47d6e326": "⚡ Shazam",
++  "handlers.music._criar_botoes_plataformas.bdf6b62e": "🎧 Spotify",
++  "handlers.music.callback_identify_music.23ba7691": "❌ Der Song in diesem Video konnte nicht erkannt werden. Das Audio ist möglicherweise zu leise, verändert oder nicht bei Shazam verfügbar.",
++  "handlers.music.callback_identify_music.4f78ce06": "Dieses Medium ist kein Video mit erkennbarer Audiospur.",
++  "handlers.music.callback_identify_music.5481cfc2": "🔍 Musik wird erkannt… Bitte warte ein paar Sekunden.",
++  "handlers.music.callback_identify_music.ce0b1fc3": "🎵 <b>Erkannte Musik:</b>\n\n<b>Titel:</b> {p0}\n<b>Künstler:</b> {p1}",
++  "handlers.music.callback_identify_music.f5ee9e00": "❌ Bei der Musikerkennung ist ein Fehler aufgetreten.",
++  "handlers.music.handle_direct_private_video.004f5656": "❌ Im Audio dieses Videos wurde kein kommerziell veröffentlichter Song erkannt.",
++  "handlers.music.handle_direct_private_video.07ef2680": "🔍 Die Audiospur des Videos wird zur Musikerkennung analysiert…",
++  "handlers.music.handle_direct_private_video.73d487ec": "🎵 <b>Song gefunden:</b>\n\n<b>Titel:</b> {p0}\n<b>Künstler:</b> {p1}",
++  "handlers.music.handle_direct_private_video.baaae058": "❌ Bei der Verarbeitung des Videos ist ein Fehler aufgetreten.",
++  "handlers.pinterest.process_pinterest_single_media.95b2cdb7": "Pinterest {p0}",
++  "handlers.pornhub.show_pornhub_test_vpn.964cea95": "🔒 Pornhub-Routing: festes VPN im Namespace ph-proton.\nProton-DNS 10.2.0.1. Dieser Befehl dient nur zur Information; /phvpn on und /phvpn off ändern die Verbindung nicht.",
++  "handlers.reddit._keyboard.0c341d06": "🔗 Reddit",
++  "handlers.settings_menu.change_setting.379b2108": "Die Einstellungen konnten gerade nicht aktualisiert werden. Versuche es später erneut.",
++  "handlers.settings_menu.handle_language_selection.38b0b2b6": "✅ Sprache auf Deutsch eingestellt!",
++  "handlers.settings_menu.open_language_menu.3ca0539f": "🌐 <b>Wähle deine Sprache:</b>",
++  "handlers.settings_menu.open_language_menu.7ffae152": "🌐 <b>Wähle die Sprache des Bots:</b>",
++  "handlers.settings_menu.open_setting.b43bb570": "Beim Speichern ist ein Fehler aufgetreten.",
++  "handlers.settings_menu.set_language_callback.907c5ef6": "✅ Sprache auf <b>Deutsch</b> geändert!",
++  "handlers.soundcloud._download_audio.5c84f999": "SoundCloud-Audio",
++  "handlers.soundcloud.inline_soundcloud_query.78d340da": "SoundCloud-Audio",
++  "handlers.telegram_ui_utils._format_eta.66a39415": "Restzeit: {p0}:{p1}:{p2}",
++  "handlers.telegram_ui_utils._format_eta.70b946e2": "Restzeit: --:--",
++  "handlers.telegram_ui_utils._format_eta.e46022fc": "Restzeit: {p0}:{p1}",
++  "handlers.telegram_ui_utils.build_queue_busy_text.106a7b91": "Die Downloadwarteschlange ist gerade ausgelastet.\nDeine nächste Anfrage wäre ungefähr auf Position #{p0}.",
++  "handlers.telegram_ui_utils.build_queue_status.c9303366": "{p0} wird eingereiht…\nPosition: {p1}\nWorker: {p2}",
++  "handlers.telegram_ui_utils.build_rate_limit_text.57dca92e": "Dein Konto hat gerade zu viele Anfragen gestellt.\nWarte bitte {p0} s und versuche es erneut.",
++  "handlers.threads.process_threads_single_media.c6214697": "Threads {p0}",
++  "handlers.tiktok.download_tiktok_audio_callback.6bfbd1c3": "TikTok-Audio",
++  "handlers.tiktok.download_tiktok_audio_callback.986611e3": "TikTok-Audio",
++  "handlers.tiktok.download_tiktok_doc_callback.f7593e4c": "📄 Original-Videodatei",
++  "handlers.tiktok.process_tiktok_video.75f3549c": "TikTok-Video",
++  "handlers.tiktok_inline._plan.bb84080b": "TikTok-Video von {p0}",
++  "handlers.twitter_inline._plan.1e9cbfd9": "Twitter-Foto von {p0}",
++  "handlers.twitter_inline._plan.b4cab819": "Twitter-Video",
++  "handlers.twitter_inline._plan.c4e0509f": "Twitter-Video von {p0}",
++  "handlers.universal._file_button_caption.093a2919": "📄 Datei als Dokument",
++  "handlers.universal._file_button_caption.a6c766e8": "📄 Datei als Dokument",
++  "handlers.universal.download_universal_audio_callback.a98aa240": "Audio aus universeller Quelle",
++  "handlers.universal.download_universal_audio_callback.c542cf28": "Sende den Link zum Herunterladen als MP3 bitte erneut.",
++  "handlers.universal.download_universal_audio_callback.e56f6b1c": "Sende den Link zum Herunterladen als MP3 bitte erneut.",
++  "handlers.universal.download_universal_doc_callback.007eec64": "Sende den Link zum Herunterladen als Datei bitte erneut.",
++  "handlers.universal.download_universal_doc_callback.65cf8cc5": "Diese Schaltfläche ist für Facebook noch nicht verfügbar.",
++  "handlers.universal.download_universal_doc_callback.cf90a75a": "Sende den Link zum Herunterladen als Datei bitte erneut.",
++  "handlers.universal.handle_universal_progress_callback.1c6b67f4": "📊 Downloadfortschritt:\n\n▸ Status: {p0}\n▸ Größe: {p1} / {p2}\n▸ Geschwindigkeit: {p3}",
++  "handlers.universal.handle_universal_progress_callback.381e15c0": "🚀 Download abgeschlossen! Wird an Telegram gesendet…",
++  "handlers.universal.handle_universal_progress_callback.513ba163": "⏳ Download wird gestartet oder Upload vorbereitet…",
++  "handlers.universal.handle_universal_progress_callback.af0e785d": "🚀 Download abgeschlossen! Wird an Telegram gesendet…",
++  "handlers.universal.handle_universal_progress_callback.d5ee793e": "⏳ Download wird gestartet oder Upload vorbereitet…",
++  "handlers.universal.process_universal_link.3381938f": "Wird berechnet…",
++  "handlers.universal.process_universal_link.d5ad0a70": "Wird berechnet…",
++  "handlers.universal.process_universal_link.f976eb28": "Wird heruntergeladen…",
++  "handlers.xvideos_actions.handle_xvideos_button.97d3b9a1": "Nachricht nicht verfügbar.",
++  "handlers.xvideos_actions.handle_xvideos_button.9b20c71e": "Der Link ist abgelaufen. Sende den ursprünglichen Link erneut.",
++  "handlers.xvideos_actions.handle_xvideos_button.b6739551": "Diese Datei kann gerade nicht verarbeitet werden.",
++  "handlers.youtube.download_video.4d78938a": "YouTube-Video",
++  "handlers.youtube.download_youtube_mp3_callback.9a1621b8": "Öffne den Bot zum Herunterladen als MP3",
++  "handlers.youtube_inline._plan.0182142f": "YouTube-Video von {p0}",
++  "handlers.youtube_inline._send_downloaded.070dca9c": "YouTube-Musik von {p0}",
++  "handlers.youtube_inline.handle_youtube_music_inline_query.6921a7ca": "YouTube Music",
++  "keyboards.inline_keyboards._stats_keyboard_legacy_bottom.f91511a7": "Geteilte Ansicht: {p0}",
++  "keyboards.inline_keyboards.admin_keyboard.12fcc45b": "👥 Aktive Nutzer anzeigen",
++  "keyboards.inline_keyboards.admin_keyboard.2a590dea": "✉️ Nachricht an Chat-ID",
++  "keyboards.inline_keyboards.admin_keyboard.8327ef78": "📄 Protokoll anzeigen",
++  "keyboards.inline_keyboards.admin_keyboard.8b7c5961": "🩺 Zustand",
++  "keyboards.inline_keyboards.admin_keyboard.aba430a5": "📦 Laufzeit",
++  "keyboards.inline_keyboards.admin_keyboard.b46312b3": "🗑️ Protokoll löschen",
++  "keyboards.inline_keyboards.admin_keyboard.d58ef935": "🔄 Aktualisieren",
++  "keyboards.inline_keyboards.admin_keyboard.da65b090": "📬 Rundnachrichten",
++  "keyboards.inline_keyboards.cancel_keyboard.5387009b": "❌ Abbrechen",
++  "keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f": "📢 Kanal beitreten",
++  "keyboards.inline_keyboards.channel_subscription_keyboard.dfd4cbcf": "✅ Mitgliedschaft prüfen",
++  "keyboards.inline_keyboards.downloads_admin_keyboard.2d1ff93c": "🧹 Downloads bereinigen",
++  "keyboards.inline_keyboards.inline_send_video_keyboard.3375997f": "Video inline senden",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.1fade508": "ℹ️ Info-Schaltflächen",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.212dd6c3": "🎬 Videoqualität",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.225133b6": "🔗 URL-Schaltfläche",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.2270c082": "🎵 Shazam-Schaltfläche",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.61d6b99f": "📄 Als Datei senden",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.6d4e17cf": "🎧 MP3-Schaltfläche",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.72a83146": "🗑️ Nachrichten löschen",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.ae6c66c0": "📄 Datei-Schaltfläche",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.c1a8466f": "📝 Beschriftungen",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.c35ace5e": "🎵 Audioformat",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.d3a31fe9": "⬅️ Zurück zu den Kategorien",
++  "keyboards.inline_keyboards.return_field_keyboard.0b5bc6d9": "🔴 Ausschalten",
++  "keyboards.inline_keyboards.return_field_keyboard.0de92430": "Beste Qualität (1080p+)",
++  "keyboards.inline_keyboards.return_field_keyboard.0eddd19c": "🟢 Derzeit eingeschaltet",
++  "keyboards.inline_keyboards.return_field_keyboard.122722ab": "M4A (AAC)",
++  "keyboards.inline_keyboards.return_field_keyboard.33f3d5ca": "MP3-Audio",
++  "keyboards.inline_keyboards.return_field_keyboard.4ec9edf5": "Ausgewogen (720p)",
++  "keyboards.inline_keyboards.return_field_keyboard.5dd22918": "⬅️ Zurück",
++  "keyboards.inline_keyboards.return_field_keyboard.62d289e2": "Datensparmodus (480p)",
++  "keyboards.inline_keyboards.return_field_keyboard.6a6947ff": "FLAC / Original",
++  "keyboards.inline_keyboards.return_field_keyboard.72f0ee85": "🔴 Derzeit ausgeschaltet",
++  "keyboards.inline_keyboards.return_field_keyboard.aae5cba9": "🟢 Einschalten",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.321c8d6b": "💬 Chat und Bereinigung",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.3488f6e3": "🎨 Darstellung und Schaltflächen",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.8a25df2a": "🎬 Medien und Qualität",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.fd617ec9": "🌐 Sprache",
++  "keyboards.inline_keyboards.return_video_info_keyboard.44d7f8be": "🎵 Musik erkennen",
++  "keyboards.inline_keyboards.return_video_info_keyboard.e1a659b6": "🔗 URL",
++  "keyboards.inline_keyboards.start_keyboard.14a43343": "🚀 Bot teilen",
++  "keyboards.inline_keyboards.start_keyboard.1ead3001": "➕ Zur Gruppe hinzufügen",
++  "keyboards.inline_keyboards.start_keyboard.27958719": "⚡ Inline ausprobieren",
++  "keyboards.inline_keyboards.start_keyboard.4f709810": "Schneller Download-Bot für Instagram, TikTok, YouTube und mehr!",
++  "keyboards.inline_keyboards.start_keyboard.ed2a3ac4": "⚙️ Einstellungen",
++  "keyboards.inline_keyboards.start_private_chat_keyboard.da1fac2e": "💬 Bot-Chat öffnen",
++  "keyboards.inline_keyboards.stats_keyboard.1322ff5d": "Monat",
++  "keyboards.inline_keyboards.stats_keyboard.1c5b7004": "Jahr",
++  "keyboards.inline_keyboards.stats_keyboard.3563ec14": "Ansicht: Gesamt",
++  "keyboards.inline_keyboards.stats_keyboard.51656a29": "Woche",
++  "keyboards.inline_keyboards.stats_keyboard.5413cca6": "Ansicht: Nach Plattform",
++  "messages.admin_messages.active_users_check_completed.bb320f4d": "<b>Erreichbarkeitsprüfung abgeschlossen.</b>\nGeprüfte Nutzer insgesamt: <b>{total_users}</b>\nErreichbar: <b>{reachable_users}</b>\nNicht erreichbar: <b>{unreachable_users}</b>",
++  "messages.admin_messages.active_users_check_no_targets.2fedfd2d": "Es sind keine Nutzer zur Überprüfung vorhanden.",
++  "messages.admin_messages.active_users_check_started.a6dae91f": "Erreichbarkeitsprüfung für {p0} Nutzer wird gestartet…",
++  "messages.admin_messages.admin_panel.e57c5508": "<b>Willkommen im Administrationsbereich.</b>\n\n👥 Chats insgesamt: <b>{total_count}</b>\n👤 Private Nutzer: <b>{private_count}</b>\n🏘 Gruppen: <b>{group_count}</b>\n\n✅ Aktiv: <b>{active_user_count}</b>\n🚫 Inaktiv: <b>{inactive_user_count}</b>",
++  "messages.admin_messages.canceled.6b393aaf": "Aktion abgebrochen!",
++  "messages.admin_messages.chat_message_failed.00a0d249": "Die Nachricht konnte nicht an Chat {p0} gesendet werden. Stelle sicher, dass der Bot dort Mitglied ist und Schreibrechte hat.",
++  "messages.admin_messages.chat_message_sending.ad3bc129": "Nachricht wird gesendet…",
++  "messages.admin_messages.chat_message_sent.f0d437f3": "Nachricht an Chat {p0} zugestellt.",
++  "messages.admin_messages.downloads_cleanup_blocked.70ff67f8": "Bereinigung übersprungen, da noch Downloads laufen. active_jobs={active_jobs}, queued_jobs={queued_jobs}.",
++  "messages.admin_messages.downloads_cleanup_finished.d2d2bf55": "Downloadbereinigung abgeschlossen. {removed_files} Dateien und {removed_dirs} Ordner entfernt; {skipped_recent_files} neue Dateien übersprungen.",
++  "messages.admin_messages.enter_chat_id.cb7daa80": "Gib die Chat-ID ein (zum Beispiel -1001234567890):",
++  "messages.admin_messages.enter_chat_message.82bec69a": "Gib die Nachricht ein, die du an diesen Chat senden möchtest:",
++  "messages.admin_messages.finish_mailing.eeb0d3d8": "Rundnachricht abgeschlossen!",
++  "messages.admin_messages.invalid_chat_id.d2c2ee63": "Die Chat-ID muss eine Zahl wie -1001234567890 sein. Versuche es erneut oder tippe auf Abbrechen.",
++  "messages.admin_messages.known_chat_target.53c5897f": "<b>Bekannter Zielchat</b>\nID: <b>{chat_id}</b>\nName: <b>{chat_name}</b>\nNutzername: <b>{chat_username}</b>\nStatus: <b>{status}</b>",
++  "messages.admin_messages.log_deleted.68f12c61": "Protokoll gelöscht. Ein neues Protokoll wird angelegt.",
++  "messages.admin_messages.mailing_audience_preview.e947c329": "<b>Empfängervorschau der Rundnachricht</b>\nZu verarbeitende Nutzer: <b>{total_users}</b>\nAktiv: <b>{active_users}</b>\nInaktiv: <b>{inactive_users}</b>\nGesperrt: <b>{banned_users}</b>\nPrivate Chats: <b>{private_users}</b>\nGruppen: <b>{group_users}</b>\n\nGib die zu sendende Nachricht ein:",
++  "messages.admin_messages.not_groups.acedf6d6": "Dieser Befehl kann nicht in einer Gruppe verwendet werden!",
++  "messages.admin_messages.please_type_message.433f4098": "Gib bitte eine Nachricht ein:",
++  "messages.admin_messages.something_went_wrong.084416cc": "Es ist ein Fehler aufgetreten. Weitere Informationen findest du im Protokoll!",
++  "messages.admin_messages.start_mailing.bd3869fa": "Rundnachricht wird gestartet…",
++  "messages.admin_messages.unknown_chat_target.70b3b7ce": "Chat {chat_id} ist noch nicht in der lokalen Datenbank. Ich versuche trotzdem, die Nachricht zu senden, wenn der Bot Zugriff hat.",
++  "messages.admin_messages.your_message_sent.674c8272": "Deine Nachricht wurde gesendet!",
++  "messages.user_messages.admin_rights_granted.937753ca": "Danke für die Administratorrechte in <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n💻 Ich sorge für reibungslose Downloads.",
++  "messages.user_messages.audio_download_failed.ff719ff2": "Audio konnte nicht heruntergeladen werden. Versuche es später erneut.",
++  "messages.user_messages.audio_fetch_failed.54a50e5e": "Audioinformationen konnten nicht abgerufen werden. Versuche es später erneut.",
++  "messages.user_messages.audio_too_large.e963ea5a": "Die Audiodatei ist zu groß für Telegram. Versuche einen kürzeren Titel oder einen anderen Quelllink.",
++  "messages.user_messages.batch_link_progress.0fc96f97": "Link {p0}/{p1} wird verarbeitet: {p2}…",
++  "messages.user_messages.batch_links_finished.7d94657d": "Stapelverarbeitung von {p0} Links abgeschlossen.",
++  "messages.user_messages.batch_links_started.202f1982": "{p0} unterstützte Links gefunden. Ich verarbeite sie nacheinander, damit der Chat übersichtlich bleibt.",
++  "messages.user_messages.batch_links_started.9ca42ef8": "{p0} unterstützte Links gefunden. Ich verarbeite die ersten {p1} nacheinander, damit der Chat übersichtlich bleibt.",
++  "messages.user_messages.batch_links_started.a75f7fec": "{p0} unterstützte Links gefunden. Ich verarbeite die ersten {p1} nacheinander, damit der Chat übersichtlich bleibt.",
++  "messages.user_messages.batch_links_started.f44054ae": "{p0} unterstützte Links gefunden. Ich verarbeite sie nacheinander, damit der Chat übersichtlich bleibt.",
++  "messages.user_messages.callback_processing_error.577ed7a7": "Fehler bei der Verarbeitung der Schaltflächenaktion.",
++  "messages.user_messages.cancel.80f1a33f": "✖️ Abbrechen",
++  "messages.user_messages.category_settings_text.3e5e3eee": "<b>🎬 Medien- und Qualitätseinstellungen</b>\n\nLege Videoauflösung, Dateiformat und Audiooptionen fest:",
++  "messages.user_messages.category_settings_text.cb64f58b": "<b>🎨 Darstellung und Schaltflächen</b>\n\nPasse Beitragsbeschreibungen, Links zur Original-URL und Aktionsschaltflächen an:",
++  "messages.user_messages.category_settings_text.d1cf9a94": "<b>💬 Chat und Bereinigung</b>\n\nVerwalte das Verhalten in Gruppen und die Einstellungen zur Nachrichtenbereinigung:",
++  "messages.user_messages.channel_subscription_required.c5f0e4af": "<tg-emoji emoji-id=\"5816448972297866361\">🔴</tg-emoji> <b>Kanalbeitritt erforderlich</b>\n\n<tg-emoji emoji-id=\"5303106526800524582\">🔠</tg-emoji> Um Save Vídeo DL Bot zu verwenden, musst du unserem offiziellen Kanal beitreten.\n\n<tg-emoji emoji-id=\"5866185097312474258\">👇</tg-emoji> Tritt dem Kanal bei und bestätige deine Mitgliedschaft, um den Zugang freizuschalten.",
++  "messages.user_messages.delete_permission_warning.2ecbc803": "Automatisches Löschen fehlgeschlagen: In diesem Chat fehlt die Berechtigung zum Löschen von Nachrichten. Erteile die Berechtigung oder deaktiviere das automatische Löschen in den Einstellungen.",
++  "messages.user_messages.dm_start_required.696ff0fc": "<tg-emoji emoji-id='5472308992514464048'>🔒</tg-emoji> Ersteinrichtung erforderlich: Öffne den privaten Chat, drücke Start und sende den Link erneut.",
++  "messages.user_messages.downloading_audio_status.541f28ad": "{p0} Audio wird heruntergeladen…",
++  "messages.user_messages.downloading_file_status.8b01351d": "{p0} Datei wird heruntergeladen…",
++  "messages.user_messages.downloading_video_status.5628b1df": "{p0} Bild wird heruntergeladen…",
++  "messages.user_messages.downloading_video_status.810ef308": "{p0} Bilder werden heruntergeladen…",
++  "messages.user_messages.downloading_video_status.89e178d6": "{p0} Wird heruntergeladen…",
++  "messages.user_messages.downloading_video_status.8efb7c69": "{p0} Video wird heruntergeladen…",
++  "messages.user_messages.duplicate_link_processing.17e7b36b": "Dieser Link wird bereits verarbeitet. Warte ein paar Sekunden.",
++  "messages.user_messages.duplicate_link_recently_processed.4a226f59": "Dieser Link wurde gerade verarbeitet. Falls du ihn noch brauchst, versuche es in ein paar Sekunden erneut.",
++  "messages.user_messages.get_field_text.074f52d4": "<b>Einstellungen</b>\nFür diese Option gibt es noch keine Beschreibung.",
++  "messages.user_messages.get_field_text.3589a96c": "<b>📄 Als Datei senden</b>\nWenn aktiviert, werden Videos und Fotos als unkomprimierte Dokumente (.mp4 / .jpg) mit 100 % der ursprünglichen Qualität gesendet.",
++  "messages.user_messages.get_field_text.4e1f9b46": "<b>🔗 URL-Schaltfläche</b>\nBlendet eine Schaltfläche mit dem Link zum ursprünglichen Beitrag ein oder aus.",
++  "messages.user_messages.get_field_text.5b27c1b3": "<b>🎵 Audioformat</b>\nWähle das Standard-Audioformat für Musikdownloads:\n\n• <b>MP3</b>: Universelles Standard-Audioformat.\n• <b>M4A (AAC)</b>: Hochwertiges, kompaktes Format für iOS und Mac.\n• <b>FLAC / Original</b>: Unkomprimiertes, verlustfreies Audio, sofern verfügbar.",
++  "messages.user_messages.get_field_text.7f6129d4": "<b>ℹ️ Info-Schaltflächen</b>\nAktiviert oder deaktiviert zusätzliche Informationsschaltflächen unter heruntergeladenen Medien.",
++  "messages.user_messages.get_field_text.7f94496f": "<b>🗑️ Nachrichten löschen</b>\nEntfernt deinen Link automatisch, sobald der Download bearbeitet wurde.",
++  "messages.user_messages.get_field_text.88c9daba": "<b>🎵 Shazam-Schaltfläche</b>\nAktiviert oder deaktiviert die Schaltfläche „Musik erkennen“ für Instagram- und TikTok-Videos, um Titel mit Shazam zu erkennen.",
++  "messages.user_messages.get_field_text.8accbb18": "<b>🎬 Videoqualität</b>\nWähle deine bevorzugte Auflösung für Videodownloads:\n\n• <b>Beste Qualität (1080p+)</b>: Höchstmögliche Auflösung.\n• <b>Ausgewogen (720p)</b>: Guter Ausgleich zwischen Qualität und Geschwindigkeit.\n• <b>Datensparmodus (480p)</b>: Schnellere Downloads mit geringem Datenverbrauch.",
++  "messages.user_messages.get_field_text.9a258f03": "<b>📄 Datei-Schaltfläche</b>\nBlendet die Schaltfläche „Datei herunterladen“ unter Videos ein oder aus, um bei Bedarf unkomprimierte Originaldateien abzurufen.",
++  "messages.user_messages.get_field_text.d03f091c": "<b>🎧 MP3-Schaltfläche</b>\nAktiviert oder deaktiviert die Schaltfläche „MP3 herunterladen“, wenn Audio verfügbar ist.",
++  "messages.user_messages.get_field_text.feb36852": "<b>📝 Beschreibungen</b>\nBlendet Beitragsbeschriftungen in heruntergeladenen Medien ein oder aus. Manche Quellen stellen keine Beschriftungen bereit.",
++  "messages.user_messages.guest_no_link_description.2a8613ae": "Sende eine Nachricht mit einem unterstützten Link oder antworte auf eine solche Nachricht.",
++  "messages.user_messages.guest_no_link_message.c98f3840": "❌ <b>Ich habe keinen unterstützten Link gefunden.</b>\n\nRufe den Bot zusammen mit einem Link auf oder antworte auf eine Nachricht, die den Link enthält.",
++  "messages.user_messages.guest_no_link_title.46f00e42": "Kein Link gefunden",
++  "messages.user_messages.guest_open_private_button.4c9393ea": "Privaten Chat öffnen",
++  "messages.user_messages.guest_restricted_service_name.60bbf043": "Dienst nicht verfügbar",
++  "messages.user_messages.guest_slow_down_description.ce2d7955": "Warte einen Moment, bevor du es erneut versuchst.",
++  "messages.user_messages.guest_slow_down_message.7c65c576": "⏳ Warte einen Moment und versuche es erneut.",
++  "messages.user_messages.guest_slow_down_title.802600d1": "Zu viele Anfragen",
++  "messages.user_messages.guest_unavailable_description.a9ad5227": "Öffne den privaten Chat mit dem Bot, um fortzufahren.",
++  "messages.user_messages.guest_unavailable_message.72f01872": "ℹ️ <b>{p0}</b> kann diese Anfrage noch nicht direkt im Gastmodus abschließen.\n\nÖffne den privaten Chat mit dem Bot und sende den Link dort.",
++  "messages.user_messages.guest_unavailable_message.cf3bfbe9": "dieser Dienst",
++  "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} im Gastmodus",
++  "messages.user_messages.guest_unavailable_title.e33214d1": "Gastmodus",
++  "messages.user_messages.help_message.9640b060": "<b>📖 Hilfe und Anleitung für Save Vídeo DL Bot</b>\n\nSende einen Link oder füge mehrere Links in eine Nachricht ein. Der Bot ruft die Medien automatisch ab und sendet sie dir.\n\n<blockquote expandable><b>📷 Instagram und Threads</b>\n• Beiträge, Reels, IGTV und Stories herunterladen\n• Fotokarussells und Alben mit mehreren Medien\n• Link über Teilen → Link kopieren abrufen</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• Videos ohne Wasserzeichen herunterladen\n• Fotokarussells und Diashows\n• Audioextraktion als MP3 wird unterstützt</blockquote>\n\n<blockquote expandable><b>▶️ YouTube und YouTube Music</b>\n• YouTube Shorts und normale Videos\n• Hochwertige Audio- und Videostreams\n• Tippe zum Herunterladen von Audio auf die MP3-Schaltfläche</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter und 📌 Pinterest</b>\n• Videos, GIFs und Bilder von X / Twitter\n• Video- und Bild-Pins von Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud und 🟢 Spotify</b>\n• Hochwertige Audiotitel von SoundCloud\n• Passende Audioquellen für Spotify-Titel suchen und herunterladen</blockquote>\n\n<blockquote expandable><b>⚡ Inline-Modus</b>\n• Gib in einem beliebigen Chat <code>@{p0} [link]</code> ein\n• Sofortige Vorschau und direktes Teilen von Medien</blockquote>\n\n<blockquote expandable><b>📦 Stapeldownloads</b>\n• Füge bis zu 6 Links in eine Nachricht ein\n• Die Medien werden für einen übersichtlichen Chat nacheinander gesendet</blockquote>",
++  "messages.user_messages.inline_album_description.504ad33c": "Vollständiges Album im Bot öffnen",
++  "messages.user_messages.inline_album_link_invalid.8d2d8799": "Dieser Albumlink ist abgelaufen oder ungültig.",
++  "messages.user_messages.inline_album_title.44a7cb63": "{p0}-Album",
++  "messages.user_messages.inline_media_title.d357175c": "Medien",
++  "messages.user_messages.inline_only_button_warning.dc3040b2": "Diese Schaltfläche funktioniert nur im Inline-Modus.",
++  "messages.user_messages.inline_open_full_album_button.f5ce3ba7": "Vollständiges Album öffnen",
++  "messages.user_messages.inline_open_result.ddf133ea": "Öffne dieses Ergebnis im Bot.",
++  "messages.user_messages.inline_photo_description.bb7bd65f": "Einzelnes Foto",
++  "messages.user_messages.inline_photo_title.714f2b56": "{p0}-Foto",
++  "messages.user_messages.inline_photos_not_supported.f84f3b40": "Fotos von {p0} werden inline nicht unterstützt.",
++  "messages.user_messages.inline_photos_title.2af6816f": "{p0}-Fotos",
++  "messages.user_messages.inline_send_audio_button.eaf6404b": "Audio inline senden",
++  "messages.user_messages.inline_send_audio_description.e4313522": "Tippe auf die Schaltfläche, um dieses Audio inline zu senden.",
++  "messages.user_messages.inline_send_audio_prompt.5a1ea930": "Audio von {p0} wird vorbereitet…\nWenn es nicht automatisch startet, tippe auf die Schaltfläche unten.",
++  "messages.user_messages.inline_send_photo_button.1855ed29": "Foto inline senden",
++  "messages.user_messages.inline_send_photo_description.89b2b9d5": "Tippe auf die Schaltfläche, um dieses Foto inline zu senden.",
++  "messages.user_messages.inline_send_photo_prompt.eae8529e": "Foto von {p0} wird vorbereitet…\nWenn es nicht automatisch startet, tippe auf die Schaltfläche unten.",
++  "messages.user_messages.inline_send_video_description.bbccdc63": "Tippe auf die Schaltfläche, um dieses Video inline zu senden.",
++  "messages.user_messages.inline_send_video_prompt.87cdb267": "Video von {p0} wird vorbereitet…\nWenn es nicht automatisch startet, tippe auf die Schaltfläche unten.",
++  "messages.user_messages.inline_single_video_only.a8e0a14e": "Inline werden nur einzelne Videos von {p0} unterstützt.",
++  "messages.user_messages.inline_video_already_processing.31db6958": "Dieses Inline-Video wird bereits vorbereitet.",
++  "messages.user_messages.inline_video_already_sent.68262216": "Dieses Inline-Video wurde bereits gesendet.",
++  "messages.user_messages.inline_video_title.cc2d0fd3": "{p0}-Video",
++  "messages.user_messages.invalid_settings_option.b9659ef8": "Ungültige Einstellungsoption.",
++  "messages.user_messages.join_group.2f22e10f": "Danke, dass du mich zu <b>{chat_title}</b> hinzugefügt hast <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\nErteile mir bitte <b>Administratorrechte</b>, um alle Funktionen freizuschalten 🔓",
++  "messages.user_messages.keyboard_removed.6ad6a688": "Antworttastatur entfernt.",
++  "messages.user_messages.media_transfer_status.2eabdcaf": "Wird an Telegram gesendet…",
++  "messages.user_messages.media_transfer_status.cc5d009a": "Inhalt wird heruntergeladen…",
++  "messages.user_messages.mediafire_document_caption.5c39bac9": "{p0} Von MediaFire heruntergeladene Datei",
++  "messages.user_messages.no_queue_metrics_yet.694604d3": "Es sind noch keine Warteschlangenmetriken vorhanden.",
++  "messages.user_messages.nothing_found.ac1e1f92": "Keine Medien gefunden. Prüfe, ob der Link öffentlich, nicht abgelaufen und direkt auf einen Beitrag oder ein Video verweist.",
++  "messages.user_messages.open_bot_for_audio.1fae42ac": "Öffne den privaten Chat mit dem Bot, um Audio herunterzuladen.",
++  "messages.user_messages.open_bot_to_download_mp3.a09899db": "Öffne den Bot zum Herunterladen als MP3.",
++  "messages.user_messages.ping_message.4b2bebbf": "Langsam",
++  "messages.user_messages.ping_message.4bf7ae0f": "Dieser Ping misst die Antwortzeit zwischen dem Bot und der Telegram-API.",
++  "messages.user_messages.ping_message.5f0c2aa6": "{p0} <b>Pong!</b>\n\n{p1} <b>Ping:</b> <code>{p2} ms</code>\n\n{p3} <b>{p4}:</b> {p5} {p6}\n\n<blockquote>{p7} <i><b>{p8}:</b> {p9}</i></blockquote>\n{p10} <i>{p11}</i>\n\n{p12}",
++  "messages.user_messages.ping_message.6df83bbf": "Diese Nachricht und dein Befehl werden nach 5 Minuten gelöscht.",
++  "messages.user_messages.ping_message.920e413c": "Status",
++  "messages.user_messages.ping_message.c939327c": "Gut",
++  "messages.user_messages.ping_message.f7b19afc": "Mittelmäßig",
++  "messages.user_messages.ping_unavailable.8196132a": "❌ Der Ping konnte gerade nicht gemessen werden.",
++  "messages.user_messages.referral_message.9012a5e9": "<b>👥 Dein Empfehlungsprogramm</b>\n\nLade Freunde zu Save Vídeo DL Bot ein! Teile deinen persönlichen Empfehlungslink:\n<code>{p0}</code>\n\nEingeladene Nutzer: <b>{p1}</b>",
++  "messages.user_messages.retrying_again_status.d71e3176": "Fehler, erneuter Versuch… ({p0}/{p1})",
++  "messages.user_messages.settings.918d2a64": "<b>⚙️ Einstellungen</b>\nMit den Schaltflächen unten kannst du festlegen, wie Downloads gesendet werden. Diese Änderungen gelten nur für dein Konto.",
++  "messages.user_messages.settings_admin_only.a65eb7a7": "In Gruppen können nur Gruppenadministratoren /settings öffnen.",
++  "messages.user_messages.settings_private_only.8f9b59fe": "Die Einstellungen sind nur im privaten Chat verfügbar. Öffne den privaten Chat mit dem Bot, um deine Einstellungen zu ändern.",
++  "messages.user_messages.something_went_wrong.d2e288ca": "Diese Anfrage konnte nicht abgeschlossen werden.\nDie Quelle hat keine genaue Ursache angegeben. Prüfe, ob sich der Link normal öffnen lässt, und versuche es später erneut.",
++  "messages.user_messages.spotify_metadata_failed.480184fd": "Dieser Spotify-Titel konnte nicht abgerufen werden. Prüfe den Link und versuche es erneut.",
++  "messages.user_messages.spotify_source_not_found.8b705fec": "Für diesen Spotify-Titel wurde keine passende Audioquelle gefunden.",
++  "messages.user_messages.stats_temporarily_unavailable.195d4b5b": "Die Statistik konnte gerade nicht erstellt werden. Versuche es später erneut.",
++  "messages.user_messages.tiktok_live_not_supported.8bc518aa": "TikTok-LIVE-Streams werden noch nicht unterstützt. Sende einen normalen TikTok-Beitragslink.",
++  "messages.user_messages.tiktok_stat_label.355f79f2": "Kommentare",
++  "messages.user_messages.tiktok_stat_label.69c40459": "Aufrufe",
++  "messages.user_messages.tiktok_stat_label.a145ab34": "Follower",
++  "messages.user_messages.tiktok_stat_label.c9a96394": "Videos",
++  "messages.user_messages.tiktok_stat_label.cca0662f": "Gefällt mir",
++  "messages.user_messages.tiktok_stat_label.d4ea333d": "Geteilt",
++  "messages.user_messages.timeout_error.727ad602": "Die Zeit für die Anfrage ist abgelaufen. Die Quelle reagiert möglicherweise gerade langsam. Versuche es später erneut.",
++  "messages.user_messages.translation_error.25624904": "❌ Bei der Übersetzung ist ein Fehler aufgetreten.",
++  "messages.user_messages.translation_failed.89834e7d": "❌ Dieser Text konnte gerade nicht übersetzt werden.",
++  "messages.user_messages.translation_invalid_language.db2baa18": "❌ Ungültiger Sprachcode.\n\nBeispiele: <code>pt-BR</code>, <code>en</code>, <code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>",
++  "messages.user_messages.translation_result.098e3e47": "{p0} Bereitgestellt von <a href=\"https://t.me/{p1}\">Save Vídeo DL Bot</a>",
++  "messages.user_messages.translation_result.5385fea9": "{p0} Bereitgestellt von Save Vídeo DL Bot",
++  "messages.user_messages.translation_service_unavailable.37e7194a": "❌ Der Übersetzungsdienst ist derzeit nicht verfügbar.",
++  "messages.user_messages.translation_text_too_long.ec745c0c": "❌ Der Text ist zu lang zum Übersetzen.\nLimit: {p0} Zeichen.",
++  "messages.user_messages.translation_timeout.43852865": "⏳ Die Übersetzung hat zu lange gedauert. Versuche es erneut.",
++  "messages.user_messages.translation_usage.de61c325": "🌐 <b>Übersetzer</b>\n\nSende:\n<code>/trad pt-BR Hello, how are you?</code>\n\nOder antworte auf eine Nachricht mit:\n<code>/trad es</code>\n\nDie Ausgangssprache wird automatisch erkannt.",
++  "messages.user_messages.unknown_data.709e425b": "Unbekannte Daten.",
++  "messages.user_messages.uploading_file_status.82c4258f": "{p0} Datei wird zu Telegram hochgeladen…",
++  "messages.user_messages.video_too_large.1fbef359": "Das Video ist zu groß für Telegram. Versuche ein kürzeres Video oder die MP3-/Audiooption, sofern verfügbar.",
++  "messages.user_messages.welcome_message.3a38a165": "<b>Willkommen bei Save Vídeo DL Bot <tg-emoji emoji-id=\"5420141555233071341\">❤️</tg-emoji></b>\n\nSende einen Link oder füge mehrere Links in eine Nachricht ein. Ich lade herunter, was verfügbar ist.\n\n<b>Unterstützte Seiten</b>\n<tg-emoji emoji-id=\"5233671414023753035\">📷</tg-emoji> Instagram\n<tg-emoji emoji-id=\"5370693953236539466\">🧵</tg-emoji> Threads\n<tg-emoji emoji-id=\"5233597424622144804\">🎵</tg-emoji> TikTok\n<tg-emoji emoji-id=\"5233311027612913110\">▶️</tg-emoji> YouTube\n<tg-emoji emoji-id=\"5231309843435919433\">🐦</tg-emoji> X / Twitter\n<tg-emoji emoji-id=\"5233448977667492819\">🎧</tg-emoji> SoundCloud\n<tg-emoji emoji-id=\"5391001065418172193\">🟢</tg-emoji> Spotify\n<tg-emoji emoji-id=\"5233210422298974231\">📌</tg-emoji> Pinterest\n\nMit den Schaltflächen unten kannst du den Inline-Modus ausprobieren, Einstellungen anpassen oder den Bot teilen.",
++  "middlewares.antiflood._flood_message.10627b85": "Zu viele Anfragen. Warte bitte ein paar Sekunden.",
++  "middlewares.ban_middleware._ban_message.5f711a17": "Du bist gesperrt. Wende dich für weitere Informationen an den Support!",
++  "middlewares.ban_middleware._service_unavailable_message.1d4c98d3": "Der Dienst ist vorübergehend nicht verfügbar. Versuche es später erneut.",
++  "middlewares.channel_subscription.__call__.9a1bd4d8": "📢 Kanalbeitritt erforderlich",
++  "middlewares.channel_subscription.__call__.b9856f8c": "📢 Tritt dem Kanal bei, um den Bot zu verwenden.",
++  "middlewares.channel_subscription._resume_after_verify.3697e4d3": "✅ Kanalmitgliedschaft bestätigt. Sende den Link bitte erneut.",
++  "middlewares.channel_subscription._verify.5e6165cc": "⚠️ Automatisches Fortsetzen ist gerade nicht möglich. Versuche es erneut.",
++  "middlewares.channel_subscription._verify.78ab70b3": "❌ Du bist dem Kanal noch nicht beigetreten.",
++  "middlewares.channel_subscription._verify.d416f349": "⚠️ Die Überprüfung ist gerade nicht möglich. Versuche es erneut.",
++  "middlewares.channel_subscription._verify.e3133c9a": "✅ Kanalmitgliedschaft bestätigt!",
++  "middlewares.channel_subscription._verify.f5951464": "⏳ Die Anfrage wird bereits verarbeitet.",
++  "services.inline.send_flow._plan.422ec3bf": "{p0}-Foto von {p1}",
++  "services.inline.send_flow._plan.6a9c386c": "{p0}-Video von {p1}",
++  "services.inline.send_flow._plan.ca2a0427": "{p0}-Video",
++  "services.inline.send_flow.ensure_album_preview_file_id.6776f7f2": "{p0}-Albumvorschau",
++  "services.inline.send_flow.handle_post_inline_query.2cf95b13": "{p0}-Beitrag",
++  "services.inline.send_flow.handle_post_inline_query.b25984f6": "Textbeitrag von {p0}.",
++  "services.inline.send_flow.handle_post_inline_query.d8cd02a9": "{p0}-Inhalt",
++  "services.stats.chart.build_stats_caption.22c300c5": "<b>Statistik für {p0}</b>",
++  "services.stats.chart.build_stats_caption.4c08fcb4": "Durchschnitt pro {p0}: <b>{p1}</b>",
++  "services.stats.chart.build_stats_caption.b5e56dff": "<b>Top-Plattformen</b>",
++  "services.stats.chart.build_stats_caption.c1f30324": "Downloads insgesamt: <b>{p0}</b>",
++  "services.stats.chart.build_stats_caption.c821f4df": "{p0}\n\nFür diesen Zeitraum wurden noch keine Downloads erfasst.",
++  "services.stats.chart.build_stats_caption.f097afb9": "Spitze pro {p0}: <b>{p1}</b> - <b>{p2}</b>",
++  "services.stats.chart.render_stats_chart.1cc0298a": "Spitze pro {p0}",
++  "services.stats.chart.render_stats_chart.218a8c97": "Plattformvergleich",
++  "services.stats.chart.render_stats_chart.28daa113": "Für diesen Zeitraum gibt es noch keine Downloads",
++  "services.stats.chart.render_stats_chart.99c40ab4": "Datum",
++  "services.stats.chart.render_stats_chart.af7ba346": "Gesamtaktivität",
++  "services.stats.chart.render_stats_chart.b38ae2c5": "Durchschnitt",
++  "services.stats.chart.render_stats_chart.c9b3c382": "Gesamt",
++  "services.stats.chart.render_stats_chart.d5fdc1af": "Downloads",
++  "services.stats.chart.render_stats_chart.dcc563b7": "Downloadübersicht",
++  "language.prompt": "🌐 <b>Wähle die Sprache des Bots:</b>",
++  "language.changed": "✅ Sprache auf Deutsch geändert!",
++  "language.back": "⬅️ Zurück",
++  "language.invalid": "Ungültige Sprache. Wähle eine Option aus dem Menü.",
++  "language.save_failed": "Deine Sprache konnte nicht gespeichert werden. Versuche es erneut.",
++  "stats.period.Week": "Woche",
++  "stats.period.Month": "Monat",
++  "stats.period.Year": "Jahr",
++  "stats.unit.month": "Monat",
++  "stats.unit.day": "Tag",
++  "commands.start": "Starten",
++  "commands.help": "Unterstützte Seiten und Tipps",
++  "commands.trad": "Text übersetzen",
++  "commands.settings": "Einstellungen",
++  "commands.stats": "Statistik",
++  "commands.ping": "Bot-Latenz prüfen",
++  "commands.lang": "Sprache ändern",
++  "stats.month.1": "Jan",
++  "stats.month.2": "Feb",
++  "stats.month.3": "Mär",
++  "stats.month.4": "Apr",
++  "stats.month.5": "Mai",
++  "stats.month.6": "Jun",
++  "stats.month.7": "Jul",
++  "stats.month.8": "Aug",
++  "stats.month.9": "Sep",
++  "stats.month.10": "Okt",
++  "stats.month.11": "Nov",
++  "stats.month.12": "Dez",
++  "stats.weekday.0": "Mo",
++  "stats.weekday.1": "Di",
++  "stats.weekday.2": "Mi",
++  "stats.weekday.3": "Do",
++  "stats.weekday.4": "Fr",
++  "stats.weekday.5": "Sa",
++  "stats.weekday.6": "So",
++  "settings.label.video_quality": "🎬 Videoqualität",
++  "settings.label.as_document": "📄 Als Datei senden",
++  "settings.label.audio_format": "🎵 Audioformat",
++  "settings.label.captions": "📝 Beschreibungen",
++  "settings.label.info_buttons": "ℹ️ Info-Schaltflächen",
++  "settings.label.audio_button": "🎧 MP3-Schaltfläche",
++  "settings.label.music_button": "🎵 Shazam-Schaltfläche",
++  "settings.label.file_button": "📄 Datei-Schaltfläche",
++  "settings.label.url_button": "🔗 URL-Schaltfläche",
++  "settings.label.delete_message": "🗑️ Nachrichten löschen",
++  "admin.access_required": "Administratorzugriff erforderlich.",
++  "progress.view": "📊 Fortschritt anzeigen",
++  "common.yes": "ja",
++  "common.no": "nein",
++  "caption.footer": "<tg-emoji emoji-id=\"5283080528818360566\">🚀</tg-emoji> Bereitgestellt von <a href=\"{url}\">Save Vídeo DL Bot</a>",
++  "admin.bound.balanced": "ausgewogen",
++  "download_error.header": "❌ <b>{platform}: Der Download konnte nicht abgeschlossen werden.</b>",
++  "download_error.delivery_header": "❌ <b>{platform}: Der Versand konnte nicht abgeschlossen werden.</b>",
++  "download_error.generic_platform": "Download",
++  "download_error.reason_label": "<b>Grund:</b> {reason}",
++  "download_error.action_label": "<b>Was du tun kannst:</b> {action}",
++  "download_error.reference": "Referenz: <code>{reference}</code>",
++  "download_error.action.retry": "Warte kurz und versuche es erneut. Wenn das Problem weiterhin auftritt, teile dem Support die Referenz mit.",
++  "download_error.action.link": "Prüfe, ob sich der Beitrag normal öffnen lässt, und sende seinen direkten Link.",
++  "download_error.action.limit": "Versuche einen kleineren Inhalt oder die Audiooption, sofern verfügbar.",
++  "download_error.action.support": "Versuche es später erneut. Wenn das Problem weiterhin auftritt, teile dem Support die Referenz mit, damit wir den Zugriff des Bots prüfen können.",
++  "download_error.action.delivery": "Prüfe, ob der Bot in diesem Chat Nachrichten und Dateien senden darf, und versuche es erneut.",
++  "download_error.reason.unknown": "Die Quelle hat keine genaue Ursache angegeben.",
++  "download_error.reason.timeout": "Die Quelle hat nicht innerhalb des Zeitlimits geantwortet.",
++  "download_error.reason.authentication": "Die Plattform hat eine Anmeldung verlangt oder die vom Bot verwendete Sitzung abgelehnt.",
++  "download_error.reason.access_denied": "Die Quelle hat die Zugriffsanfrage des Bots abgelehnt.",
++  "download_error.reason.rate_limited": "Das Anfragelimit wurde erreicht.",
++  "download_error.reason.not_found": "Die angeforderte Adresse wurde nicht gefunden oder ist nicht mehr verfügbar.",
++  "download_error.reason.region": "Die Quelle hat für diesen Inhalt eine regionale Beschränkung gemeldet.",
++  "download_error.reason.unsupported": "Der Extraktor hat dieses Linkformat nicht erkannt.",
++  "download_error.reason.connection": "Die Verbindung zur Quelle konnte nicht hergestellt oder aufrechterhalten werden.",
++  "download_error.reason.redirect_loop": "Die Quelle ist in eine Weiterleitungsschleife geraten und hat den Beitrag nicht bereitgestellt.",
++  "download_error.reason.restricted": "Die Quelle hat angegeben, dass der Inhalt privat, entfernt oder eingeschränkt ist.",
++  "download_error.reason.too_large": "Die Datei überschreitet die vom Bot oder von Telegram erlaubte Größenbegrenzung.",
++  "download_error.reason.delivery": "Telegram hat einen für den Versand der Antwort erforderlichen Vorgang abgelehnt.",
++  "download_error.reason.internal": "Bei der Verarbeitung der Anfrage ist ein interner Fehler aufgetreten.",
++  "download_error.reason.verification": "Es konnte nicht bestätigt werden, dass die Medien zum angeforderten Beitrag gehören.",
++  "collection.fetching": "🎶 {platform}: Playlist oder Album wird gelesen…",
++  "collection.cancel": "✖️ Sammlung abbrechen",
++  "collection.expired": "Diese Sammlung ist bereits abgeschlossen.",
++  "collection.owner_only": "Nur die Person, die die Sammlung angefordert hat, kann sie abbrechen.",
++  "collection.cancelling": "Abbruch angefordert. Der aktuelle Eintrag wird zuerst abgeschlossen.",
++  "collection.busy": "⏳ Du hast bereits eine laufende Sammlung oder die Höchstzahl gleichzeitiger Sammlungen wurde erreicht. Versuche es später erneut.",
++  "collection.progress": "<b>{title}</b>\nEintrag {index}/{count}: {item}",
++  "collection.limit": "⚠️ Limit dieser Anfrage: die ersten {limit} Einträge.",
++  "collection.partial": "⚠️ Die Quelle hat nur eine unvollständige öffentliche Liste bereitgestellt; einige Titel können fehlen.",
++  "collection.empty": "In dieser Playlist oder diesem Album wurden keine verfügbaren Einträge gefunden.",
++  "collection.finished": "✅ <b>{title}</b>\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
++  "collection.cancelled": "⏹️ <b>{title}</b>: Verarbeitung angehalten.\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
++  "collection.stopped": "⏸️ <b>{title}</b>: Versand wegen eines Dienstlimits oder Telegram-Fehlers angehalten.\nGesendet: {sent} · Fehlgeschlagen: {failed} · Nicht verfügbar: {unavailable} · Verbleibend: {remaining}",
++  "collection.error": "❌ Diese Sammlung konnte nicht geladen oder abgeschlossen werden."
++}
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
-index 8bb4cec..572a956 100644
+index 8bb4cec..4ca0379 100644
 --- a/i18n/locales/en.json
 +++ b/i18n/locales/en.json
-@@ -483,5 +483,19 @@
+@@ -409,7 +409,7 @@
+   "services.stats.chart.render_stats_chart.dcc563b7": "Downloads Overview",
+   "language.prompt": "🌐 <b>Choose the bot language:</b>",
+   "language.changed": "✅ Language changed to English!",
+-  "language.back": "⬅️ Back to Settings",
++  "language.back": "⬅️ Back",
+   "language.invalid": "Invalid language. Choose an option from the menu.",
+   "language.save_failed": "Could not save your language. Please try again.",
+   "stats.period.Week": "Week",
+@@ -423,6 +423,7 @@
+   "commands.settings": "Settings",
+   "commands.stats": "Statistics",
+   "commands.ping": "Check bot latency",
++  "commands.lang": "Change language",
+   "stats.month.1": "Jan",
+   "stats.month.2": "Feb",
+   "stats.month.3": "Mar",
+@@ -483,5 +484,19 @@
    "download_error.reason.too_large": "The file exceeds the size limit allowed by the bot or Telegram.",
    "download_error.reason.delivery": "Telegram refused an operation needed to deliver the response.",
    "download_error.reason.internal": "An internal error occurred while processing the request.",
@@ -592,10 +1171,27 @@ index 8bb4cec..572a956 100644
 +  "collection.error": "❌ Could not load or complete this collection."
  }
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
-index 242b05f..d27449a 100644
+index 242b05f..95e373c 100644
 --- a/i18n/locales/es.json
 +++ b/i18n/locales/es.json
-@@ -483,5 +483,19 @@
+@@ -409,7 +409,7 @@
+   "services.stats.chart.render_stats_chart.dcc563b7": "Resumen de descargas",
+   "language.prompt": "🌐 <b>Selecciona el idioma del bot:</b>",
+   "language.changed": "✅ ¡Idioma cambiado a español!",
+-  "language.back": "⬅️ Volver a la configuración",
++  "language.back": "⬅️ Volver",
+   "language.invalid": "Idioma no válido. Elige una opción del menú.",
+   "language.save_failed": "No se pudo guardar el idioma. Inténtalo de nuevo.",
+   "stats.period.Week": "Semana",
+@@ -423,6 +423,7 @@
+   "commands.settings": "Configuración",
+   "commands.stats": "Estadísticas",
+   "commands.ping": "Comprobar latencia del bot",
++  "commands.lang": "Cambiar idioma",
+   "stats.month.1": "ene",
+   "stats.month.2": "feb",
+   "stats.month.3": "mar",
+@@ -483,5 +484,19 @@
    "download_error.reason.too_large": "El archivo supera el límite de tamaño permitido por el bot o Telegram.",
    "download_error.reason.delivery": "Telegram rechazó una operación necesaria para enviar la respuesta.",
    "download_error.reason.internal": "Se produjo un error interno al procesar la solicitud.",
@@ -617,10 +1213,27 @@ index 242b05f..d27449a 100644
 +  "collection.error": "❌ No se pudo cargar o completar esta colección."
  }
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
-index 0604960..53f3773 100644
+index 0604960..a39ab1c 100644
 --- a/i18n/locales/pt.json
 +++ b/i18n/locales/pt.json
-@@ -483,5 +483,19 @@
+@@ -409,7 +409,7 @@
+   "services.stats.chart.render_stats_chart.dcc563b7": "Visão geral dos downloads",
+   "language.prompt": "🌐 <b>Escolha o idioma do bot:</b>",
+   "language.changed": "✅ Idioma alterado para Português!",
+-  "language.back": "⬅️ Voltar às Configurações",
++  "language.back": "⬅️ Voltar",
+   "language.invalid": "Idioma inválido. Escolha uma opção do menu.",
+   "language.save_failed": "Não foi possível salvar o idioma. Tente novamente.",
+   "stats.period.Week": "Semana",
+@@ -423,6 +423,7 @@
+   "commands.settings": "Configurações",
+   "commands.stats": "Estatísticas",
+   "commands.ping": "Verificar latência do bot",
++  "commands.lang": "Alterar idioma",
+   "stats.month.1": "jan",
+   "stats.month.2": "fev",
+   "stats.month.3": "mar",
+@@ -483,5 +484,19 @@
    "download_error.reason.too_large": "O arquivo ultrapassa o limite de tamanho permitido pelo bot ou pelo Telegram.",
    "download_error.reason.delivery": "O Telegram recusou uma operação necessária para enviar a resposta.",
    "download_error.reason.internal": "Ocorreu uma falha interna ao processar a solicitação.",
@@ -641,6 +1254,68 @@ index 0604960..53f3773 100644
 +  "collection.stopped": "⏸️ <b>{title}</b>: envio interrompido por limite de serviço ou falha no Telegram.\nEnviados: {sent} · Falhas: {failed} · Indisponíveis: {unavailable} · Restantes: {remaining}",
 +  "collection.error": "❌ Não foi possível carregar ou concluir esta coleção."
  }
+diff --git a/keyboards/inline_keyboards.py b/keyboards/inline_keyboards.py
+index b134310..ce7fbb0 100644
+--- a/keyboards/inline_keyboards.py
++++ b/keyboards/inline_keyboards.py
+@@ -15,10 +15,11 @@ def _normalize_lang(lang: str | None) -> str:
+ def language_keyboard(current_lang: str | None = DEFAULT_LANG) -> InlineKeyboardMarkup:
+     from i18n import LOCALE_NAMES, SUPPORTED_LOCALES
+     locale = _normalize_lang(current_lang)
+-    rows = [[InlineKeyboardButton(
++    buttons = [InlineKeyboardButton(
+         text=("✅ " if code == locale else "") + LOCALE_NAMES[code],
+         callback_data="set_lang:" + code,
+-    )] for code in SUPPORTED_LOCALES]
++    ) for code in SUPPORTED_LOCALES]
++    rows = [buttons[index:index + 2] for index in range(0, len(buttons), 2)]
+     rows.append([InlineKeyboardButton(text=_t('language.back', locale), callback_data='back_to_settings')])
+     return InlineKeyboardMarkup(inline_keyboard=rows)
+ 
+diff --git a/main.py b/main.py
+index 59fe1a3..42feeb9 100644
+--- a/main.py
++++ b/main.py
+@@ -20,7 +20,6 @@ from sqlalchemy import insert as sql_insert
+ from app_context import set_app_context
+ from config import (
+     API_SECRET,
+-    BOT_COMMANDS,
+     BOT_SESSION_CONNECTION_LIMIT,
+     BOT_TOKEN,
+     CUSTOM_API_URL,
+@@ -378,8 +377,8 @@ async def main():
+                 observer.outer_middleware(LocalizationMiddleware())
+ 
+             try:
+-                await bot.set_my_commands(commands=BOT_COMMANDS)
+                 from i18n import SUPPORTED_LOCALES, bot_commands
++                await bot.set_my_commands(commands=bot_commands("en"))
+                 for locale in SUPPORTED_LOCALES:
+                     await bot.set_my_commands(commands=bot_commands(locale), language_code=locale)
+             except Exception as exc:
+diff --git a/middlewares/localization.py b/middlewares/localization.py
+index 3e53db6..67ddc39 100644
+--- a/middlewares/localization.py
++++ b/middlewares/localization.py
+@@ -1,6 +1,7 @@
+ """Resolve saved chat/user locale before guards and isolate it per request."""
+ from aiogram import BaseMiddleware
+ from i18n import normalize_locale, reset_locale, set_locale
++from services.runtime.command_menu import sync_command_menu
+ 
+ 
+ class LocalizationMiddleware(BaseMiddleware):
+@@ -29,6 +30,9 @@ class LocalizationMiddleware(BaseMiddleware):
+         data['user_lang'] = locale
+         data['lang'] = locale
+         try:
++            bot = data.get('bot')
++            if bot is not None and chat is not None and chat.type in {'private', 'group', 'supergroup'}:
++                await sync_command_menu(bot, chat.id, locale)
+             return await handler(event, data)
+         finally:
+             reset_locale(token)
 diff --git a/services/links/detection.py b/services/links/detection.py
 index 8d7a4b8..7c81c67 100644
 --- a/services/links/detection.py
@@ -1110,6 +1785,58 @@ index 0000000..164fccf
 +            if len(page) > 3_000_000:
 +                raise CollectionError("Spotify collection response too large")
 +            return parse_spotify_embed(page, kind, spotify_id, maximum)
+diff --git a/services/runtime/command_menu.py b/services/runtime/command_menu.py
+new file mode 100644
+index 0000000..3d7915c
+--- /dev/null
++++ b/services/runtime/command_menu.py
+@@ -0,0 +1,46 @@
++"""Keep Telegram's native command descriptions aligned with the chat locale."""
++
++import logging
++from collections import OrderedDict
++
++from aiogram.exceptions import TelegramAPIError
++from aiogram.types import BotCommandScopeChat
++
++from i18n import bot_commands, normalize_locale, reset_locale, set_locale
++
++_synced = OrderedDict()
++_CACHE_LIMIT = 4096
++
++
++async def sync_command_menu(bot, chat_id: int, locale: str) -> bool:
++    """Cache successful registrations only; failures must not block bot requests."""
++    locale = normalize_locale(locale)
++    key = (bot.id, chat_id)
++    if _synced.get(key) == locale:
++        _synced.move_to_end(key)
++        return True
++    token = set_locale(locale)
++    try:
++        # A chat-specific default outranks global language-specific menus, so
++        # /lang can differ from the language of the user's Telegram app.
++        result = await bot.set_my_commands(
++            commands=bot_commands(locale),
++            scope=BotCommandScopeChat(chat_id=chat_id),
++            language_code="",
++            request_timeout=5,
++        )
++        if not result:
++            return False
++    except (TelegramAPIError, TimeoutError, OSError):
++        logging.getLogger(__name__).warning(
++            "Failed to synchronize command menu: chat_id=%s locale=%s",
++            chat_id, locale,
++        )
++        return False
++    finally:
++        reset_locale(token)
++    _synced[key] = locale
++    _synced.move_to_end(key)
++    if len(_synced) > _CACHE_LIMIT:
++        _synced.popitem(last=False)
++    return True
 diff --git a/services/runtime/request_dedupe.py b/services/runtime/request_dedupe.py
 index 2190168..4f9470e 100644
 --- a/services/runtime/request_dedupe.py

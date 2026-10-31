@@ -1,4 +1,4 @@
-"""Stage and validate the complete PT/EN/ES migration; --apply saves backups.
+"""Stage and validate the complete interface language migration; --apply saves backups.
 
 Only listed runtime files are patched. .env, credentials, database and service
 state are never modified. Unknown conflicting revisions fail before any write.
@@ -346,8 +346,21 @@ def prepare(target, *, reference=REFERENCE, bundle=None):
         for name, content in values.items():
             if name.endswith('.py'):
                 compile(content, name, 'exec')
+        locale_source = values.get('i18n/__init__.py')
+        if locale_source is None:
+            locale_source = (target / 'i18n/__init__.py').read_bytes()
+        declaration = next((node for node in ast.parse(locale_source).body
+                            if isinstance(node, ast.Assign) and any(
+                                isinstance(item, ast.Name) and item.id == 'SUPPORTED_LOCALES'
+                                for item in node.targets)), None)
+        locales = ast.literal_eval(declaration.value) if declaration is not None else ()
+        if (not isinstance(locales, (tuple, list)) or 'en' not in locales
+                or any(not isinstance(code, str) or not code.isascii() or not code.isalpha()
+                       or not code.islower() or len(code) not in (2, 3) for code in locales)
+                or len(locales) != len(set(locales))):
+            raise ValueError('Invalid supported locale list.')
         catalogs = {}
-        for lang in ('pt', 'en', 'es'):
+        for lang in locales:
             name = 'i18n/locales/' + lang + '.json'
             catalogs[lang] = json.loads(values[name] if name in values else (target / name).read_bytes())
         for lang, catalog in catalogs.items():
@@ -416,7 +429,7 @@ def main():
         for name in changes:
             print('UPDATE' if (target / name).exists() else 'CREATE', name)
         if not changes:
-            print('PT/EN/ES migration is already installed.')
+            print('Interface language migration is already installed.')
         elif not args.apply:
             print('DRY RUN: no files modified. Use --apply to install.')
         else:
