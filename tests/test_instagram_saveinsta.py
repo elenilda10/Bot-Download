@@ -64,6 +64,23 @@ class SaveInstaTests(unittest.TestCase):
         self.assertEqual(source.parse_embed_metadata(self.embed(caption=""), "abc"),
                          {"description": "", "author": "alice"})
 
+    def test_html_caption_without_json_excludes_author_and_comments(self):
+        markup = '''<div class="Caption"><a class="CaptionUsername"
+            href="https://www.instagram.com/alice/">alice</a><br /><br />
+            Texto 👀<br /><br /><a href="/explore/tags/test/">#test</a>
+            <div class="CaptionComments"><a data-log-event="captionCommentsClick"
+            href="https://www.instagram.com/p/abc/">View all comments</a></div></div>'''
+        result = source.parse_embed_metadata(markup, "abc")
+        self.assertEqual(result["author"], "alice")
+        self.assertIn("Texto 👀\n\n", result["description"])
+        self.assertIn("#test", result["description"])
+        self.assertNotIn("alice", result["description"])
+        self.assertNotIn("comments", result["description"])
+        self.assertEqual(source.parse_embed_metadata(markup, "other"), {})
+
+    def test_html_caption_without_post_identity_is_rejected(self):
+        self.assertEqual(source.parse_embed_metadata('<div class="Caption">Text</div>', "abc"), {})
+
     @patch.object(source, "_curl")
     def test_stories_and_other_hosts_never_reach_saveinsta(self, curl):
         for url in (
@@ -161,6 +178,15 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
                 result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
         self.assertEqual(len(result.media_list), 1)
         self.assertEqual(result.description, "")
+
+    async def test_gallery_without_caption_also_recovers_metadata(self):
+        service = self.service
+        original = service.InstagramVideo("abc", "", "instagram_user", [service.InstagramMedia("file", "photo")])
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(service, "_run_gallery_dl", return_value=original), patch.object(service, "fetch_post_metadata", return_value={"description": "recovered", "author": "alice"}):
+                result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
+        self.assertEqual(result.description, "recovered")
+        self.assertEqual(result.author, "alice")
 
     async def test_failure_disabled_and_story_continue_to_existing_fallback(self):
         service = self.service

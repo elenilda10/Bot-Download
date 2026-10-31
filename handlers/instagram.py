@@ -32,6 +32,7 @@ from handlers.utils import (
 )
 from services.logger import logger as logging, summarize_text_for_log
 from services.platforms.instagram_media import fetch_instagram_media, get_instagram_preview_url, strip_instagram_url
+from services.platforms.instagram_saveinsta import fetch_post_metadata
 from utils.media_cache import build_media_cache_key
 
 logging = logging.bind(service="instagram")
@@ -99,10 +100,31 @@ async def _try_instagram_cache(
         except (ValueError, TypeError, AttributeError):
             pass
     caption = bm.captions(settings.get("captions", "on"), post_caption, bot_url)
+    caption_checked = False
+
+    async def recover_caption():
+        nonlocal caption, caption_checked
+        if caption_checked or post_caption or settings.get("captions", "on") != "on":
+            return
+        caption_checked = True
+        try:
+            metadata = await asyncio.to_thread(fetch_post_metadata, url)
+            description = metadata.get("description")
+            if description:
+                await db.add_file(
+                    _cache_key(url, "caption"),
+                    json.dumps({"version": 1, "description": description}),
+                    "instagram_caption",
+                )
+                caption = bm.captions("on", description, bot_url)
+        except Exception as exc:
+            logging.warning("Instagram cached caption unavailable: %s", type(exc).__name__)
+
     for kind in ("video", "photo"):
         cached_id = await db.get_file_id(_cache_key(url, kind))
         if not cached_id:
             continue
+        await recover_caption()
         try:
             keyboard = _cached_keyboard(url, settings, kind, lang)
             if kind == "video":
@@ -134,6 +156,7 @@ async def _try_instagram_cache(
         if (data.get("version") != 1 or not isinstance(entries, list)
                 or not 2 <= len(entries) <= 10):
             return False
+        await recover_caption()
         group = []
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict):

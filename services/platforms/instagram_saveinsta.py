@@ -96,6 +96,61 @@ def _curl(url: str, *, data=None, destination=None, timeout=None) -> str:
     return proc.stdout
 
 
+class _EmbedCaptionParser(HTMLParser):
+    """Read visible embed caption, excluding author link and comments."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.caption_depth = None
+        self.skip_depth = None
+        self.parts = []
+        self.author = ""
+        self.shortcodes = set()
+        self.found = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        classes = attrs.get("class", "").split()
+        if tag == "a":
+            parsed = urlparse(attrs.get("href", ""))
+            match = re.fullmatch(r"/(?:p|reel|reels)/([A-Za-z0-9_-]+)/?", parsed.path)
+            if match and (not parsed.netloc or parsed.hostname in {"instagram.com", "www.instagram.com"}):
+                if attrs.get("data-log-event") in {"captionCommentsClick", "mediaClick", "timestampClick", "likeCountClick"}:
+                    self.shortcodes.add(match.group(1))
+        if tag == "br":
+            if self.caption_depth is not None and self.skip_depth is None:
+                self.parts.append("\n")
+            return
+        if tag in {"img", "input", "meta", "link", "hr", "source", "wbr", "area", "base", "embed", "param", "track", "col"}:
+            return
+        self.stack.append(tag)
+        depth = len(self.stack)
+        if tag == "div" and "Caption" in classes and not self.found:
+            self.found = True
+            self.caption_depth = depth
+        if self.caption_depth is not None and self.skip_depth is None:
+            if "CaptionUsername" in classes:
+                self.author = urlparse(attrs.get("href", "")).path.strip("/")
+                self.skip_depth = depth
+            elif "CaptionComments" in classes or tag in {"script", "style"}:
+                self.skip_depth = depth
+
+    def handle_endtag(self, tag):
+        if tag not in self.stack:
+            return
+        depth = len(self.stack) - self.stack[::-1].index(tag)
+        if self.skip_depth is not None and depth <= self.skip_depth:
+            self.skip_depth = None
+        if self.caption_depth is not None and depth <= self.caption_depth:
+            self.caption_depth = None
+        del self.stack[depth - 1:]
+
+    def handle_data(self, data):
+        if self.caption_depth is not None and self.skip_depth is None:
+            self.parts.append(data)
+
+
 def parse_embed_metadata(markup: str, shortcode: str) -> dict:
     """Read full structured caption, never comments or unrelated page metadata."""
     for match in re.finditer(r'"contextJSON"\s*:\s*("(?:\\.|[^"\\])*")', markup):
@@ -115,6 +170,10 @@ def parse_embed_metadata(markup: str, shortcode: str) -> dict:
             }
         except (ValueError, TypeError, AttributeError, IndexError):
             continue
+    parser = _EmbedCaptionParser()
+    parser.feed(markup)
+    if parser.found and shortcode in parser.shortcodes:
+        return {"description": "".join(parser.parts).strip(), "author": parser.author}
     return {}
 
 

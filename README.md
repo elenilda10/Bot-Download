@@ -316,8 +316,9 @@ existentes. Álbuns maiores que dez mídias são divididos em grupos do Telegram
 
 O Save Insta não retornou legenda nos testes. Após baixar suas mídias, a integração
 consulta a incorporação (`/embed/captioned/`) do próprio Instagram para recuperar
-legenda completa e autor. O shortcode do conteúdo estruturado deve corresponder
-ao post solicitado. Essa consulta tem limite de doze segundos; se indisponível,
+legenda completa e autor. A leitura aceita os dados estruturados ou o HTML visível da legenda, excluindo
+comentários e conferindo a identidade da publicação. Também recupera legendas
+ausentes em mídias antigas do cache e em resultados de outros extratores. Essa consulta tem limite de doze segundos; se indisponível,
 o download continua sem legenda. Não são usados cookies nessa consulta.
 gallery-dl continua primeiro para preservar texto e autor quando disponíveis.
 Stories permanecem no fluxo atual,
