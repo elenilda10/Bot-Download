@@ -17,3 +17,4 @@ yt-dlp[default]==2026.7.4
 
 shazamio
 gallery-dl
+parth-dl==1.2.1
