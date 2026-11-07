@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from services.platforms.instagram_saveinsta import download_saveinsta, fetch_post_metadata
+from services.platforms.instagram_parth import download_parth
 from config import COBALT_API_KEY, COBALT_API_URL
 from utils.cobalt_client import fetch_cobalt_data
 
@@ -20,9 +21,7 @@ logger = logging.getLogger(__name__)
 
 # INSTAGRAM_FIREFOX_STORY_PATCH_V1
 INSTAGRAM_STORY_GDL_BIN = os.getenv('INSTAGRAM_STORY_GDL_BIN', '').strip()
-INSTAGRAM_FIREFOX_PROFILE = os.getenv('INSTAGRAM_FIREFOX_PROFILE', '').strip()
 
-EXTENSION_COOKIES_PATH = "/root/Bot-Download/cookies.txt"
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
 YTDLP_BIN = "/root/Bot-Download/venv/bin/yt-dlp"
 
@@ -127,31 +126,18 @@ def _run_gallery_dl(url: str, output_dir: str, post_id: str, story_id: Optional[
         if story_id:
             cmd.extend(["--filter", f"str(media_id) == '{story_id}' or str(id) == '{story_id}' or str(post_id) == '{story_id}'"])
 
-        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
-            cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
-
         if story_id:
             # Remover filtros/templates de posts: o ID da URL ja seleciona o Story.
             for flag in ('--filter', '--filename', '--user-agent'):
                 if flag in cmd:
                     pos = cmd.index(flag)
                     del cmd[pos:pos + 2]
-            if INSTAGRAM_FIREFOX_PROFILE:
-                cookies_db = os.path.join(INSTAGRAM_FIREFOX_PROFILE, 'cookies.sqlite')
-                if os.path.isfile(cookies_db):
-                    if '--cookies' in cmd:
-                        pos = cmd.index('--cookies')
-                        del cmd[pos:pos + 2]
-                    cmd.extend(('--cookies-from-browser',
-                                'firefox/instagram.com:' + INSTAGRAM_FIREFOX_PROFILE))
-                else:
-                    logger.warning('Instagram Story: Firefox cookies.sqlite ausente')
-
+        cmd.extend(["--config-ignore"])
         cmd.append(url)
 
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=70)
         if proc.returncode != 0:
-            logger.warning("gallery-dl output/warn: %s", proc.stderr)
+            logger.warning("Instagram gallery-dl failed (exit=%s)", proc.returncode)
 
         saved_files = []
         caption = ""
@@ -241,9 +227,7 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             "--user-agent", BROWSER_UA,
         ]
 
-        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
-            metadata_cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
-
+        metadata_cmd.extend(["--ignore-config", "--no-cookies", "--no-cookies-from-browser"])
         metadata_cmd.append(url)
 
         metadata_proc = subprocess.run(
@@ -413,15 +397,13 @@ def _run_ytdlp(url: str, output_dir: str, post_id: str) -> Optional[InstagramVid
             "-o", out_template,
         ]
 
-        if os.path.exists(EXTENSION_COOKIES_PATH) and os.path.getsize(EXTENSION_COOKIES_PATH) > 0:
-            download_cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])
-
         if mixed_carousel:
             download_cmd.extend([
                 "--playlist-items",
                 ",".join(str(pos) for pos in video_positions),
             ])
 
+        download_cmd.extend(["--ignore-config", "--no-cookies", "--no-cookies-from-browser"])
         download_cmd.append(url)
 
         subprocess.run(
@@ -585,26 +567,7 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
     os.makedirs(output_dir, exist_ok=True)
     loop = asyncio.get_running_loop()
 
-    # 1. gallery-dl continua sendo a primeira tentativa.
-    _t = time.monotonic()
-    res_gdl = await loop.run_in_executor(
-        None,
-        _run_gallery_dl,
-        clean_url,
-        output_dir,
-        post_id,
-        story_id,
-    )
-    logger.warning(
-        "Instagram fallback timing: stage=gallery_dl duration=%.2fs success=%s",
-        time.monotonic() - _t,
-        bool(res_gdl and res_gdl.media_list),
-    )
-    if res_gdl and res_gdl.media_list:
-        return await _with_instagram_metadata(res_gdl, clean_url)
-
-    # Public posts only: keep gallery-dl first for captions and Firefox stories.
-    # The same handler receives local files, so delivery/cache/settings stay shared.
+    # 1. SaveInsta for public posts; the handler/cache/settings stay shared.
     if (not story_id and "/stories/" not in clean_url
             and os.getenv("INSTAGRAM_SAVEINSTA_ENABLED", "1").lower() not in {"0", "false", "off"}):
         _t = time.monotonic()
@@ -624,24 +587,27 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
                 time.monotonic() - _t,
             )
 
-    # 2. yt-dlp: resolve Reel/vídeo e também foto/carrossel via CDN.
-    _t = time.monotonic()
-    res_ytdlp = await loop.run_in_executor(
-        None,
-        _run_ytdlp,
-        clean_url,
-        output_dir,
-        post_id,
-    )
-    logger.warning(
-        "Instagram fallback timing: stage=yt_dlp duration=%.2fs success=%s",
-        time.monotonic() - _t,
-        bool(res_ytdlp and res_ytdlp.media_list),
-    )
-    if res_ytdlp and res_ytdlp.media_list:
-        return await _with_instagram_metadata(res_ytdlp, clean_url)
+    # 2. parth-dl: public posts/Reels/carousels, without Instagram account cookies.
+    if (not story_id and "/stories/" not in clean_url
+            and os.getenv("INSTAGRAM_PARTH_ENABLED", "1").strip().lower() not in {"0", "false", "off"}):
+        _t = time.monotonic()
+        try:
+            items = await loop.run_in_executor(None, download_parth, clean_url, output_dir)
+            if items:
+                logger.info("Instagram parth-dl success: items=%s", len(items))
+                return await _with_instagram_metadata(InstagramVideo(
+                    id=post_id, description="", author="instagram_user",
+                    media_list=[InstagramMedia(**item) for item in items],
+                ), clean_url)
+        except Exception as exc:
+            logger.warning("Instagram parth-dl failed: %s", type(exc).__name__)
+        finally:
+            logger.warning(
+                "Instagram fallback timing: stage=parth_dl duration=%.2fs",
+                time.monotonic() - _t,
+            )
 
-    # 3. Cobalt local.
+    # 3. Cobalt local / public.
     payload = {
         "url": clean_url,
         "videoQuality": "1080",
@@ -723,5 +689,40 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
         "Instagram fallback timing: stage=cobalt_public duration=%.2fs success=False",
         time.monotonic() - _t_public,
     )
+    # 4. yt-dlp: resolve Reel/vídeo e também foto/carrossel via CDN.
+    _t = time.monotonic()
+    res_ytdlp = await loop.run_in_executor(
+        None,
+        _run_ytdlp,
+        clean_url,
+        output_dir,
+        post_id,
+    )
+    logger.warning(
+        "Instagram fallback timing: stage=yt_dlp duration=%.2fs success=%s",
+        time.monotonic() - _t,
+        bool(res_ytdlp and res_ytdlp.media_list),
+    )
+    if res_ytdlp and res_ytdlp.media_list:
+        return await _with_instagram_metadata(res_ytdlp, clean_url)
+
+    # 5. gallery-dl: last public-only attempt (no cookies).
+    _t = time.monotonic()
+    res_gdl = await loop.run_in_executor(
+        None,
+        _run_gallery_dl,
+        clean_url,
+        output_dir,
+        post_id,
+        story_id,
+    )
+    logger.warning(
+        "Instagram fallback timing: stage=gallery_dl duration=%.2fs success=%s",
+        time.monotonic() - _t,
+        bool(res_gdl and res_gdl.media_list),
+    )
+    if res_gdl and res_gdl.media_list:
+        return await _with_instagram_metadata(res_gdl, clean_url)
+
 
     return None
