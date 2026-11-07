@@ -55,12 +55,42 @@ _READ_POST = """({postId, embed}) => {
 
 
 async def _render(page, url, post_id, embed):
+    from playwright.async_api import TimeoutError as PlaywrightTimeout
+
     response = await page.goto(url, wait_until="domcontentloaded", timeout=10000)
     if not response or not response.ok or _identity(page.url) != post_id:
+        log.info("Página descartada: HTTP %s, ID final %s", response.status if response else None, _identity(page.url))
         return None
-    handle = await page.wait_for_function(
-        _READ_POST, arg={"postId": post_id, "embed": embed}, timeout=5000,
-    )
+    try:
+        handle = await page.wait_for_function(
+            _READ_POST, arg={"postId": post_id, "embed": embed}, timeout=5000,
+        )
+    except PlaywrightTimeout:
+        if not embed or page.url != url:
+            log.info("Seletor expirou na página %s", "incorporada" if embed else "original")
+            return None
+        # The exact, post-specific embed may expose the signed image outside the card.
+        if await page.locator('video, meta[property^="og:video"], meta[property="og:type"][content^="video"]').count():
+            log.info("Vídeo identificado no embed")
+            return None
+        values = await page.locator(
+            'img, meta[property="og:image"], meta[property="og:image:secure_url"], meta[name="twitter:image"]'
+        ).evaluate_all("""els => els.flatMap(el => [
+            el.content, el.dataset.delayedUrl, el.dataset.src, el.currentSrc, el.src
+        ]).filter(Boolean)""")
+        photos = {}
+        for value in values:
+            if _photo_url(value):
+                parts = urlsplit(value)
+                photos.setdefault((parts.netloc, parts.path), value)
+        log.info("Embed: %d imagem(ns) feedshare distinta(s)", len(photos))
+        if len(photos) == 1 and page.url == url:
+            description = await page.locator('meta[property="og:description"]').evaluate_all(
+                "els => els[0]?.content || ''"
+            )
+            if page.url == url:
+                return {"url": next(iter(photos.values())), "description": description}
+        return None
     try:
         if _identity(page.url) != post_id:
             return None
@@ -99,9 +129,11 @@ async def browser_photo(post_url):
                 for url in (embed_url, post_url):
                     try:
                         data = await _render(page, url, post_id, url == embed_url)
-                    except Error:
+                    except Error as exc:
+                        log.info("Falha no Chromium: %s", str(exc).splitlines()[0])
                         continue
                     if data and data.get("video"):
+                        log.info("O seletor identificou um vídeo")
                         return None
                     if data and (image := _photo_url(data.get("url", ""))):
                         return PostPhoto(image, data.get("description") or "")
@@ -137,6 +169,7 @@ async def _download(url, output):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("url")
     parser.add_argument("--output", type=Path, required=True)
