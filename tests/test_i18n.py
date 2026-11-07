@@ -24,7 +24,7 @@ def isolated_module(path, name):
     return module
 
 
-@pytest.mark.parametrize(('value', 'expected'), [('es-MX', 'es'), ('es_ES', 'es'), ('pt-BR', 'pt'), ('EN', 'en'), ('de-DE', 'de'), ('DE_de', 'de'), ('fr', 'en'), ('', 'en'), (None, 'en')])
+@pytest.mark.parametrize(('value', 'expected'), [('es-MX', 'es'), ('es_ES', 'es'), ('pt-BR', 'pt'), ('EN', 'en'), ('de-DE', 'de'), ('DE_de', 'de'), ('ar-SA', 'ar'), ('AR_eg', 'ar'), ('fr', 'en'), ('', 'en'), (None, 'en')])
 def test_locale_variants_and_fallback(value, expected):
     assert normalize_locale(value) == expected
 
@@ -181,7 +181,7 @@ async def test_denied_invalid_or_failed_save_does_not_claim_success(admin, data,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('chosen_locale', ['es', 'de'])
+@pytest.mark.parametrize('chosen_locale', ['es', 'de', 'ar'])
 async def test_sqlite_persists_language_and_profile_refresh_does_not_overwrite_it(monkeypatch, chosen_locale):
     import sys
     from unittest.mock import Mock
@@ -208,7 +208,7 @@ async def test_sqlite_persists_language_and_profile_refresh_does_not_overwrite_i
         await repo.set_language(20, chosen_locale)
         await repo.upsert_chat(20, 'New name', None, 'private', language='en')
         assert await Repo().get_language(20) == chosen_locale
-        await repo.upsert_chat(-100, 'Group', None, 'public', language='de-DE' if chosen_locale == 'de' else 'es-MX')
+        await repo.upsert_chat(-100, 'Group', None, 'public', language={'es': 'es-MX', 'de': 'de-DE', 'ar': 'ar-EG'}[chosen_locale])
         assert await Repo().get_language(-100) == chosen_locale
     finally:
         await engine.dispose()
@@ -262,7 +262,7 @@ def test_translation_command_omits_generated_footers_in_all_supported_languages(
     node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == '_clean_translation_input')
     namespace = {}
     exec(compile(ast.Module(body=[node], type_ignores=[]), 'translation_cleanup', 'exec'), namespace)
-    for footer in ('Powered by Save Vídeo DL Bot', 'Desenvolvido por Save Vídeo DL Bot', 'Desarrollado por Save Vídeo DL Bot'):
+    for footer in ('Powered by Save Vídeo DL Bot', 'Desenvolvido por Save Vídeo DL Bot', 'Desarrollado por Save Vídeo DL Bot', 'بواسطة Save Vídeo DL Bot'):
         assert namespace['_clean_translation_input']('Hello / Olá / Hola\n\n🚀 ' + footer) == 'Hello / Olá / Hola'
 
 
@@ -270,28 +270,30 @@ def test_translation_command_omits_generated_footers_in_all_supported_languages(
 def test_language_selector_uses_two_columns_and_a_separate_back_row(lang):
     keyboard = language_keyboard(lang).inline_keyboard
     assert [[b.callback_data for b in row] for row in keyboard] == [
-        ['set_lang:pt', 'set_lang:en'], ['set_lang:es', 'set_lang:de'], ['back_to_settings']]
+        ['set_lang:pt', 'set_lang:en'], ['set_lang:es', 'set_lang:de'], ['set_lang:ar'], ['back_to_settings']]
     assert keyboard[1][1].text.endswith('🇩🇪 Deutsch')
+    assert keyboard[2][0].text.endswith('العربية')
 
 
-def test_language_selector_extends_automatically_for_an_odd_number_of_languages(monkeypatch):
+def test_language_selector_extends_automatically_for_an_additional_language(monkeypatch):
     import i18n
     monkeypatch.setattr(i18n, 'SUPPORTED_LOCALES', (*SUPPORTED_LOCALES, 'fr'))
     monkeypatch.setattr(i18n, 'LOCALE_NAMES', {**i18n.LOCALE_NAMES, 'fr': '🇫🇷 Français'})
     rows = language_keyboard('pt').inline_keyboard
-    assert [len(row) for row in rows] == [2, 2, 1, 1]
-    assert rows[-2][0].callback_data == 'set_lang:fr'
+    assert [len(row) for row in rows] == [2, 2, 2, 1]
+    assert rows[-2][1].callback_data == 'set_lang:fr'
     assert rows[-1][0].callback_data == 'back_to_settings'
 
 
 @pytest.mark.asyncio
-async def test_german_selection_saves_and_confirms_in_german():
+@pytest.mark.parametrize(('code', 'name', 'prompt'), [('de', 'Deutsch', 'Wähle'), ('ar', 'العربية', 'اختر')])
+async def test_selection_saves_and_confirms_in_chosen_language(code, name, prompt):
     ns, records = selection_runtime()
-    call = FakeCallback('set_lang:de')
+    call = FakeCallback('set_lang:' + code)
     await ns['handle_language_selection'](call)
-    assert records == {-100: 'de'}
-    assert 'Deutsch' in call.answer.await_args.args[0]
-    assert 'Wähle' in call.message.edit_text.await_args.args[0]
+    assert records == {-100: code}
+    assert name in call.answer.await_args.args[0]
+    assert prompt in call.message.edit_text.await_args.args[0]
     assert get_locale() == 'en'
 
 

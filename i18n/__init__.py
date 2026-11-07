@@ -5,9 +5,9 @@ import json
 import logging
 from pathlib import Path
 
-SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de')
+SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de', 'ar')
 DEFAULT_LOCALE = 'en'
-LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch'}
+LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch', 'ar': 'العربية'}
 _locale = ContextVar('bot_interface_locale', default=None)
 
 

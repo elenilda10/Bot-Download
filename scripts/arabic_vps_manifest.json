@@ -1,0 +1,18 @@
+{
+  "base_commit": "5f21c133729845d3e814c703af064426354444da",
+  "patch_sha256": "6f4863338d0946d8a80edf2ff093c82577877550b7131c239a9bce43332f3388",
+  "files": {
+    "handlers/commands.py": {
+      "base_sha256": "9702f600479204095801fbba440523a0cf2cbf338a742c53f11e259433e1bc49",
+      "result_sha256": "beb8dc9a291dbf69518e2a9653663e07880994277c480b7caaed90176e5dc205"
+    },
+    "i18n/__init__.py": {
+      "base_sha256": "632a9a88c6cfe9941c9f551302dbb9dcda122bc3ac9dc6fdda0cb5c1e39ac84a",
+      "result_sha256": "54f0a2f6965227f25ec0d07582315f2c052bf5017c1b130997700cc130707cd3"
+    },
+    "i18n/locales/ar.json": {
+      "base_sha256": null,
+      "result_sha256": "9e31dc29f156d11467b6e4057058e406e4c5fffd0f0cbbce216c70d6f6487715"
+    }
+  }
+}

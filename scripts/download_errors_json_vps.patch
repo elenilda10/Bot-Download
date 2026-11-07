@@ -16,10 +16,10 @@ index 787c83e..5fcde6b 100644
      youtube.router,
 diff --git a/handlers/audible.py b/handlers/audible.py
 new file mode 100644
-index 0000000..f04afc6
+index 0000000..e90d779
 --- /dev/null
 +++ b/handlers/audible.py
-@@ -0,0 +1,475 @@
+@@ -0,0 +1,466 @@
 +"""Per-user Audible authorization and book delivery, exclusively in private chats."""
 +
 +import asyncio
@@ -152,12 +152,19 @@ index 0000000..f04afc6
 +    if flow and flow.status:
 +        if code == "email":
 +            text += "\n\n" + t("audible.email")
-+            markup = _cancel_keyboard()
++            markup = None
 +        elif code == "response":
 +            text += "\n\n" + t("audible.browser")
-+            markup = flow.login_markup or _cancel_keyboard()
++            markup = flow.login_markup
++        elif code == "library":
++            # A missing title does not require reconnecting a valid account.
++            markup = None
 +        else:
-+            markup = _keyboard(flow.market, flow.asin)
++            owner = (flow.source or message).from_user.id
++            markup = _keyboard(
++                flow.market, flow.asin,
++                connected=service.connected(owner, flow.market),
++            )
 +        await safe_edit_text(flow.status, text, reply_markup=markup, parse_mode="HTML")
 +    else:
 +        await message.answer(text)
@@ -253,20 +260,9 @@ index 0000000..f04afc6
 +        source=source,
 +    )
 +    await safe_edit_text(
-+        call.message, t("audible.email"), reply_markup=_cancel_keyboard()
++        call.message, t("audible.email"), reply_markup=None
 +    )
 +
-+
-+def _cancel_keyboard():
-+    return InlineKeyboardMarkup(
-+        inline_keyboard=[
-+            [
-+                InlineKeyboardButton(
-+                    text=t("audible.cancel"), callback_data="audible:cancel"
-+                )
-+            ]
-+        ]
-+    )
 +
 +
 +async def _delete_input(message):
@@ -321,11 +317,6 @@ index 0000000..f04afc6
 +            keyboard = InlineKeyboardMarkup(
 +                inline_keyboard=[
 +                    [InlineKeyboardButton(text=t("audible.amazon"), url=url)],
-+                    [
-+                        InlineKeyboardButton(
-+                            text=t("audible.cancel"), callback_data="audible:cancel"
-+                        )
-+                    ],
 +                ]
 +            )
 +            flow.login_markup = keyboard
@@ -409,9 +400,9 @@ index 0000000..f04afc6
 +        settings = await load_user_settings(db, message)
 +        text = bm.downloading_audio_status(platform="Audible")
 +        if status:
-+            await safe_edit_text(status, text, reply_markup=_cancel_keyboard())
++            await safe_edit_text(status, text, reply_markup=None)
 +        else:
-+            status = await message.reply(text, reply_markup=_cancel_keyboard())
++            status = await message.reply(text, reply_markup=None)
 +        async with AsyncExitStack() as stack:
 +            audio = {}
 +
@@ -437,7 +428,7 @@ index 0000000..f04afc6
 +                await safe_edit_text(
 +                    status,
 +                    bm.uploading_status(platform="Audible"),
-+                    reply_markup=_cancel_keyboard(),
++                    reply_markup=None,
 +                )
 +                await send_chat_action_if_needed(bot, owner, "upload_audio", None)
 +                bot_url = await get_bot_url(bot)
@@ -1205,7 +1196,7 @@ index 542b50e..72be42e 100644
      except Exception as e:
          logging.exception(
 diff --git a/i18n/__init__.py b/i18n/__init__.py
-index e9bc783..2e037b1 100644
+index e9bc783..face631 100644
 --- a/i18n/__init__.py
 +++ b/i18n/__init__.py
 @@ -5,9 +5,9 @@ import json
@@ -1213,10 +1204,10 @@ index e9bc783..2e037b1 100644
  from pathlib import Path
  
 -SUPPORTED_LOCALES = ('pt', 'en', 'es')
-+SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de')
++SUPPORTED_LOCALES = ('pt', 'en', 'es', 'de', 'ar')
  DEFAULT_LOCALE = 'en'
 -LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español'}
-+LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch'}
++LOCALE_NAMES = {'pt': '🇧🇷 Português', 'en': '🇺🇸 English', 'es': '🇪🇸 Español', 'de': '🇩🇪 Deutsch', 'ar': 'العربية'}
  _locale = ContextVar('bot_interface_locale', default=None)
  
  
@@ -1238,9 +1229,544 @@ index e9bc783..2e037b1 100644
  
  
  def effective_locale(lang: str | None = None) -> str:
+diff --git a/i18n/locales/ar.json b/i18n/locales/ar.json
+new file mode 100644
+index 0000000..0b54f30
+--- /dev/null
++++ b/i18n/locales/ar.json
+@@ -0,0 +1,529 @@
++{
++  "handlers.admin._cleanup_downloads_once.f00056e1": "المجلد «{p0}» غير موجود.",
++  "handlers.admin._format_age.eb04b447": " مضت",
++  "handlers.admin._render_admin_panel.1ca3fe3a": "حالة التشغيل الآن",
++  "handlers.admin._render_admin_panel.3b2fe03e": "قائمة الانتظار",
++  "handlers.admin._render_admin_panel.85f37ec1": "{p0}\n\n<b>{p1}</b>\n{p2}: <b>{p3}</b> {p4} / <b>{p5}</b> {p6} / <b>{p7}</b> عمّال معالجة\n{p8}: <b>{p9}</b>",
++  "handlers.admin._render_admin_panel.96879611": "قيد التنفيذ",
++  "handlers.admin._render_admin_panel.a0b7e373": "تنزيلات الجلسة الحالية",
++  "handlers.admin._render_admin_panel.d36be649": "قيد الانتظار",
++  "handlers.admin._render_downloads_text.14679791": "المسار: <code>{p0}</code>",
++  "handlers.admin._render_downloads_text.254080f9": "جاهز للتنظيف: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.5efcbc66": "الحجم الإجمالي: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.76daee16": "لا",
++  "handlers.admin._render_downloads_text.7757f2b4": "الملفات: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.8a798890": "نعم",
++  "handlers.admin._render_downloads_text.96876281": "أحدث ملف: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.9a394b1f": "حمل قائمة الانتظار: <b>{p0}</b> قيد الانتظار / <b>{p1}</b> قيد التنفيذ",
++  "handlers.admin._render_downloads_text.a40e0507": "المجلدات: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.b2c5bf40": "<b>مساحة تخزين التنزيلات</b>",
++  "handlers.admin._render_downloads_text.bc90fe3a": "موجود: <b>{p0}</b>",
++  "handlers.admin._render_downloads_text.c7489a74": "<b>حالة التنظيف</b>",
++  "handlers.admin._render_downloads_text.d05a4609": "أقدم ملف: <b>{p0}</b>",
++  "handlers.admin._render_health_text.044f58fa": "تنزيلات الجلسة: <b>{p0}</b>",
++  "handlers.admin._render_health_text.0ab68c6d": "قائمة الانتظار: <b>{p0}</b> قيد الانتظار / <b>{p1}</b> قيد التنفيذ / <b>{p2}</b> عمّال معالجة",
++  "handlers.admin._render_health_text.22456ec5": "أحداث التحليلات المفقودة: <b>{p0}</b>",
++  "handlers.admin._render_health_text.51eaa53a": "<b>السجلات</b>",
++  "handlers.admin._render_health_text.5e1c2135": "آخر حدث تحليلي مفقود: <b>{p0}</b>",
++  "handlers.admin._render_health_text.7d27a2e7": "<b>حالة البوت</b>",
++  "handlers.admin._render_perf_text.0e7b7190": "مقيّد بسرعة التنزيل",
++  "handlers.admin._render_perf_text.3f2bd673": "<b>أداء قائمة الانتظار</b>",
++  "handlers.admin._render_perf_text.460f7372": "عمّال المعالجة: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.73b1aab0": "\n<b>{p0}</b>\nالمهام: {p1}\nزمن الانتظار عند المئينين 50 و95: {p2}/{p3} مللي ثانية\nزمن المعالجة عند المئينين 50 و95: {p4}/{p5} مللي ثانية\nعنق الزجاجة: <b>{p6}</b>",
++  "handlers.admin._render_perf_text.8b8340a7": "مقيّد بقائمة الانتظار",
++  "handlers.admin._render_perf_text.ac9f2c78": "المهام المنتظرة: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.bcf82d18": "المصادر المتابَعة: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.e172193f": "المهام النشطة: <b>{p0}</b>",
++  "handlers.admin._render_perf_text.f362761a": "ذاكرة الملفات المؤقتة: مرات العثور=<b>{p0}</b>، مرات الإخفاق=<b>{p1}</b> (نسبة النجاح: <b>{p2}%</b>)",
++  "handlers.admin._render_session_text.14f1a46a": "<b>إحصاءات الجلسة الحالية</b>",
++  "handlers.admin._render_session_text.22ffb113": "مقاطع الفيديو: <b>{p0}</b>",
++  "handlers.admin._render_session_text.45d43d42": "آخر تنزيل: <b>{p0}</b>",
++  "handlers.admin._render_session_text.4bb414c0": "حجم البيانات المنقولة: <b>{p0}</b>",
++  "handlers.admin._render_session_text.5e939b43": "<b>حسب المصدر:</b>",
++  "handlers.admin._render_session_text.63627479": "إجمالي التنزيلات: <b>{p0}</b> ({p1}/ساعة)",
++  "handlers.admin._render_session_text.68b2f2a9": "أخرى: <b>{p0}</b>",
++  "handlers.admin._render_session_text.83740664": "مدة التشغيل: <b>{p0}</b>",
++  "handlers.admin._render_session_text.ca5c8585": "المتوسط",
++  "handlers.admin._render_session_text.ca9549b8": "الصوت: <b>{p0}</b>",
++  "handlers.admin._render_session_text.d4208cbc": "متوسط حجم التنزيل: <b>{p0}</b>",
++  "handlers.admin.admin_cleanup_downloads.03c5eef4": "اكتمل التنظيف",
++  "handlers.admin.admin_cleanup_downloads.73297ab5": "تم تخطي التنظيف",
++  "handlers.admin.admin_send_to_chat.1744850b": "المحادثة {p0}",
++  "handlers.admin.cancel_action.0380268e": "لا توجد عملية لإلغائها.",
++  "handlers.admin.cancel_action.13ca2ee2": "تم الإلغاء",
++  "handlers.admin.clear_downloads_and_notify.51d62c73": "حدث خطأ أثناء تنظيف المجلد: {p0}",
++  "handlers.admin.clear_downloads_and_notify.8d5fe0cc": "\nتم حذف {p0} من سجلات ذاكرة الملفات المؤقتة المنتهية الصلاحية.",
++  "handlers.channel_membership._confirmation.8c3f1c28": "✅ <b>تم تأكيد الاشتراك!</b>\n\nيمكنك الآن استخدام Save Vídeo DL Bot.",
++  "handlers.channel_membership.handle_channel_membership.0179218d": "✅ تم تأكيد الاشتراك! أرسل الرابط مجددًا.",
++  "handlers.channel_membership.handle_channel_membership.9d218ae6": "✅ تم تأكيد الاشتراك! افتح المحادثة الخاصة مع البوت لمتابعة التنزيل.",
++  "handlers.commands.ban_command.2f0aa428": "🚫 لا يمكن حظر المشرفين.",
++  "handlers.commands.ban_command.7693a6c6": "🚫 تم <b>حظر {p0}</b> (<code>{p1}</code>) <b>من البوت</b>.",
++  "handlers.commands.ban_command.978354db": "المستخدم أو المجموعة",
++  "handlers.commands.ban_command.a7c93b70": "❌ تعذر الحظر: {p0}",
++  "handlers.commands.ban_command.b224bf13": "⚠️ أرسل الأمر مع المعرّف:\n<code>/ban &lt;user_or_group_id&gt;</code>\n\nأو رُد على رسالة مُعاد توجيهها بالأمر <code>/ban</code>.",
++  "handlers.commands.ban_command.f7361713": "❌ المعرّف الرقمي غير صالح. مثال: <code>/ban 123456789</code> أو <code>/ban -100123456789</code>",
++  "handlers.commands.unban_command.39f42deb": "❌ المعرّف الرقمي غير صالح. مثال: <code>/unban 123456789</code>",
++  "handlers.commands.unban_command.67c37fc3": "✅ <b>{p0}</b> (<code>{p1}</code>): <b>تم رفع الحظر</b>.",
++  "handlers.commands.unban_command.c9bcc18d": "❌ تعذر رفع الحظر: {p0}",
++  "handlers.commands.unban_command.f56f7a97": "⚠️ أرسل الأمر مع المعرّف:\n<code>/unban &lt;user_or_group_id&gt;</code>\n\nأو رُد على رسالة بالأمر <code>/unban</code>.",
++  "handlers.deezer_inline._send_downloaded.dc8b7b36": "موسيقى Deezer من {p0}",
++  "handlers.deezer_inline.handle_deezer_inline_query.0e0cc1a9": "موسيقى",
++  "handlers.deezer_inline.handle_deezer_inline_query.bf687d7a": "موسيقى Deezer",
++  "handlers.deezer_inline.send_inline_deezer_music.41ae01c9": "مقطع من Deezer",
++  "handlers.eporner.handle_eporner_media_button.7d9b04e9": "غير متاح.",
++  "handlers.eporner.handle_eporner_media_button.bc1b8890": "الصوت",
++  "handlers.eporner.handle_eporner_media_button.c3b5bf03": "فعّل هذا الزر في إعدادات البوت.",
++  "handlers.eporner.show_eporner_test_vpn.15722468": "🔒 اتصال Eporner: شبكة VPN ثابتة ضمن نطاق الشبكة ph-proton.\nخادم DNS الخاص بـ Proton هو 10.2.0.1. هذا الأمر للاستعلام فقط، ولا يغيّر أيّ من الأمرين /epvpn on و/epvpn off الاتصال.",
++  "handlers.facebook._facebook_keyboard.2432fa18": "🎧 تنزيل MP3",
++  "handlers.facebook._facebook_keyboard.73305390": "🔗 فتح Facebook",
++  "handlers.facebook._facebook_keyboard.b11161d2": "🔗 فتح Facebook",
++  "handlers.facebook._facebook_keyboard.d7fd5aab": "📄 تنزيل الملف",
++  "handlers.facebook._progress_update.8be1f22d": "جارٍ التنزيل...",
++  "handlers.facebook.facebook_format_callback.0dbd14ec": "انتهت صلاحية الزر أو أنه يخص محادثة أخرى. أرسل الرابط مجددًا.",
++  "handlers.facebook.facebook_format_callback.10e7f62f": "تعذر استخراج الصوت من هذا الفيديو.",
++  "handlers.facebook.facebook_format_callback.22eb1900": "جلسة تسجيل الدخول غير متاحة.",
++  "handlers.facebook.facebook_format_callback.3b4dab0a": "تعذر إكمال التنزيل. حاول مجددًا لاحقًا.",
++  "handlers.facebook.facebook_format_callback.44809136": "الوصول غير متاح.",
++  "handlers.facebook.facebook_format_callback.52d58f7c": "تعذر جلب عنصر وسائط منفرد من هذا المنشور.",
++  "handlers.facebook.facebook_format_callback.57448b90": "لا يتضمن المنشور فيديو بصوت يمكن تحويله.",
++  "handlers.facebook.facebook_format_callback.8f8d2e48": "انتهت مهلة تحويل الصوت.",
++  "handlers.facebook.facebook_format_callback.97e012c2": "صوت من Facebook",
++  "handlers.facebook.facebook_format_callback.988aa82f": "الرابط غير صالح.",
++  "handlers.facebook.facebook_format_callback.a7070282": "الزر غير صالح.",
++  "handlers.facebook.facebook_format_callback.acad8aba": "الملف غير متاح أو يتجاوز الحجم المسموح.",
++  "handlers.facebook.facebook_format_callback.ada9b656": "فعّل الزر في إعدادات البوت لاستخدامه.",
++  "handlers.facebook.facebook_format_callback.b9a04fe6": "تعذر إنشاء ملف ضمن الحجم المسموح.",
++  "handlers.facebook.facebook_gallery_first_test_command.11806b7c": "أرسل: /fbteste https://www.facebook.com/share/p/EXEMPLO/\nينزّل هذا الاختبار ما يعثر عليه gallery-dl دون التحقق من هوية الوسائط.",
++  "handlers.facebook.facebook_gallery_first_test_command.5a51ced6": "هذا الاختبار متاح للمشرف فقط في المحادثة الخاصة.",
++  "handlers.facebook.facebook_progress_callback.13f73340": "🚀 جارٍ الإرسال إلى تيليجرام...",
++  "handlers.facebook.facebook_progress_callback.2517d389": "⏳ اكتمل التنزيل أو لم يعد متاحًا.",
++  "handlers.facebook.facebook_progress_callback.e81bb164": "📊 تقدّم التنزيل:\n\n▸ الحالة: {p0}\n▸ الحجم: {p1} / {p2}\n▸ السرعة: {p3}",
++  "handlers.facebook.process_facebook_link.28cbcc7f": "🧪 اختبار gallery-dl: لم يتم التحقق من مطابقة الوسائط للمنشور الأصلي.",
++  "handlers.facebook.process_facebook_link.6d057cc1": "الاختبار متاح للمشرف فقط في المحادثة الخاصة.",
++  "handlers.facebook.process_facebook_link.e91a31a3": "تعذر فتح رابط Facebook. انسخ الرابط المباشر لمقطع الريلز أو الفيديو أو الصورة.",
++  "handlers.google_drive.handle_google_drive.3733e3f4": "❌ تعذر تنزيل ملف Google Drive هذا أو إرساله.",
++  "handlers.google_drive.handle_google_drive.7fa81ade": "ملف من Google Drive",
++  "handlers.instagram_inline._plan.27ca66c6": "صورة على Instagram من {p0}",
++  "handlers.instagram_inline._plan.c2ca559e": "فيديو على Instagram من {p0}",
++  "handlers.instagram_inline._plan.f36408e5": "فيديو من Instagram",
++  "handlers.kwai._callback_request.8288c2dc": "أرسل رابط Kwai مجددًا.",
++  "handlers.kwai._callback_request.c4e9a207": "أرسل رابط Kwai مجددًا لبدء التنزيل.",
++  "handlers.kwai._kwai_keyboard.3f86cfb3": "🔗 فتح Kwai",
++  "handlers.mediafire.handle_mediafire.212e6641": "❌ تعذر تنزيل ملف MediaFire هذا أو إرساله.",
++  "handlers.mediafire.handle_mediafire.932a21e6": "ملف من MediaFire",
++  "handlers.mega.handle_mega.1cd2d2c8": "❌ تعذر تنزيل ملف MEGA هذا أو إرساله.",
++  "handlers.mega.handle_mega.b54d4377": "ملف من MEGA",
++  "handlers.mega.handle_mega.d6c00b58": "📄 ملف من MEGA",
++  "handlers.music._criar_botoes_plataformas.33229cbf": "▶️ YouTube",
++  "handlers.music._criar_botoes_plataformas.47d6e326": "⚡ Shazam",
++  "handlers.music._criar_botoes_plataformas.bdf6b62e": "🎧 Spotify",
++  "handlers.music.callback_identify_music.23ba7691": "❌ تعذر التعرّف على الأغنية. قد يكون الصوت منخفضًا أو معدّلًا أو غير مدرج في Shazam.",
++  "handlers.music.callback_identify_music.4f78ce06": "لا يحتوي هذا الملف على فيديو بصوت يمكن التعرّف عليه.",
++  "handlers.music.callback_identify_music.5481cfc2": "🔍 جارٍ التعرّف على الموسيقى… انتظر بضع ثوانٍ.",
++  "handlers.music.callback_identify_music.ce0b1fc3": "🎵 <b>الموسيقى التي تم التعرّف عليها:</b>\n\n<b>العنوان:</b> {p0}\n<b>الفنان:</b> {p1}",
++  "handlers.music.callback_identify_music.f5ee9e00": "❌ حدث خطأ أثناء التعرّف على الموسيقى.",
++  "handlers.music.handle_direct_private_video.004f5656": "❌ لم يتم التعرّف على أغنية تجارية في صوت هذا الفيديو.",
++  "handlers.music.handle_direct_private_video.07ef2680": "🔍 جارٍ تحليل صوت الفيديو للتعرّف على الأغنية...",
++  "handlers.music.handle_direct_private_video.73d487ec": "🎵 <b>تم العثور على الأغنية:</b>\n\n<b>المقطع:</b> {p0}\n<b>الفنان:</b> {p1}",
++  "handlers.music.handle_direct_private_video.baaae058": "❌ حدث خطأ أثناء معالجة الفيديو.",
++  "handlers.pinterest.process_pinterest_single_media.95b2cdb7": "Pinterest {p0}",
++  "handlers.pornhub.show_pornhub_test_vpn.964cea95": "🔒 اتصال Pornhub: شبكة VPN ثابتة ضمن نطاق الشبكة ph-proton.\nخادم DNS الخاص بـ Proton هو 10.2.0.1. هذا الأمر للاستعلام فقط، ولا يغيّر أيّ من الأمرين /phvpn on و/phvpn off الاتصال.",
++  "handlers.reddit._keyboard.0c341d06": "🔗 Reddit",
++  "handlers.settings_menu.change_setting.379b2108": "تعذر تحديث الإعدادات الآن. حاول مجددًا لاحقًا.",
++  "handlers.settings_menu.handle_language_selection.38b0b2b6": "✅ تم ضبط اللغة على العربية!",
++  "handlers.settings_menu.open_language_menu.3ca0539f": "🌐 <b>اختر لغتك:</b>",
++  "handlers.settings_menu.open_language_menu.7ffae152": "🌐 <b>اختر لغة البوت:</b>",
++  "handlers.settings_menu.open_setting.b43bb570": "حدث خطأ أثناء الحفظ.",
++  "handlers.settings_menu.set_language_callback.907c5ef6": "✅ تم تغيير اللغة إلى <b>العربية</b>!",
++  "handlers.soundcloud._download_audio.5c84f999": "صوت من SoundCloud",
++  "handlers.soundcloud.inline_soundcloud_query.78d340da": "صوت من SoundCloud",
++  "handlers.telegram_ui_utils._format_eta.66a39415": "الوقت المتبقي: {p0}:{p1}:{p2}",
++  "handlers.telegram_ui_utils._format_eta.70b946e2": "الوقت المتبقي: --:--",
++  "handlers.telegram_ui_utils._format_eta.e46022fc": "الوقت المتبقي: {p0}:{p1}",
++  "handlers.telegram_ui_utils.build_queue_busy_text.106a7b91": "قائمة التنزيل مشغولة حاليًا.\nالموضع المتوقع لطلبك التالي يقارب الرقم {p0}.",
++  "handlers.telegram_ui_utils.build_queue_status.c9303366": "جارٍ إدراج {p0}...\nالموضع: {p1}\nعمّال المعالجة: {p2}",
++  "handlers.telegram_ui_utils.build_rate_limit_text.57dca92e": "أرسلت طلبات كثيرة خلال فترة قصيرة.\nانتظر {p0} ثانية ثم حاول مجددًا.",
++  "handlers.threads.process_threads_single_media.c6214697": "Threads {p0}",
++  "handlers.tiktok.download_tiktok_audio_callback.6bfbd1c3": "صوت من TikTok",
++  "handlers.tiktok.download_tiktok_audio_callback.986611e3": "صوت من TikTok",
++  "handlers.tiktok.download_tiktok_doc_callback.f7593e4c": "📄 ملف الفيديو الأصلي",
++  "handlers.tiktok.process_tiktok_video.75f3549c": "فيديو من TikTok",
++  "handlers.tiktok_inline._plan.bb84080b": "فيديو على TikTok من {p0}",
++  "handlers.twitter_inline._plan.1e9cbfd9": "صورة على Twitter من {p0}",
++  "handlers.twitter_inline._plan.b4cab819": "فيديو من Twitter",
++  "handlers.twitter_inline._plan.c4e0509f": "فيديو على Twitter من {p0}",
++  "handlers.universal._file_button_caption.093a2919": "📄 الملف كمستند",
++  "handlers.universal._file_button_caption.a6c766e8": "📄 الملف كمستند",
++  "handlers.universal.download_universal_audio_callback.a98aa240": "ملف صوتي",
++  "handlers.universal.download_universal_audio_callback.c542cf28": "أرسل الرابط مجددًا لتنزيل ملف MP3.",
++  "handlers.universal.download_universal_audio_callback.e56f6b1c": "أرسل الرابط مجددًا لتنزيل ملف MP3.",
++  "handlers.universal.download_universal_doc_callback.007eec64": "أرسل الرابط مجددًا لتنزيل المحتوى كملف.",
++  "handlers.universal.download_universal_doc_callback.65cf8cc5": "هذا الزر غير متاح لـ Facebook بعد.",
++  "handlers.universal.download_universal_doc_callback.cf90a75a": "أرسل الرابط مجددًا لتنزيل المحتوى كملف.",
++  "handlers.universal.handle_universal_progress_callback.1c6b67f4": "📊 تقدّم التنزيل:\n\n▸ الحالة: {p0}\n▸ الحجم: {p1} / {p2}\n▸ السرعة: {p3}",
++  "handlers.universal.handle_universal_progress_callback.381e15c0": "🚀 اكتمل التنزيل! جارٍ الإرسال إلى تيليجرام...",
++  "handlers.universal.handle_universal_progress_callback.513ba163": "⏳ جارٍ بدء التنزيل أو التحضير للرفع...",
++  "handlers.universal.handle_universal_progress_callback.af0e785d": "🚀 اكتمل التنزيل! جارٍ الإرسال إلى تيليجرام...",
++  "handlers.universal.handle_universal_progress_callback.d5ee793e": "⏳ جارٍ بدء التنزيل أو التحضير للرفع...",
++  "handlers.universal.process_universal_link.3381938f": "جارٍ الحساب...",
++  "handlers.universal.process_universal_link.d5ad0a70": "جارٍ الحساب...",
++  "handlers.universal.process_universal_link.f976eb28": "جارٍ التنزيل...",
++  "handlers.xvideos_actions.handle_xvideos_button.97d3b9a1": "الرسالة غير متاحة.",
++  "handlers.xvideos_actions.handle_xvideos_button.9b20c71e": "انتهت صلاحية الرابط. أرسل الرابط الأصلي مجددًا.",
++  "handlers.xvideos_actions.handle_xvideos_button.b6739551": "تعذرت معالجة هذا الملف الآن.",
++  "handlers.youtube.download_video.4d78938a": "فيديو من YouTube",
++  "handlers.youtube.download_youtube_mp3_callback.9a1621b8": "افتح البوت لتنزيل ملف MP3",
++  "handlers.youtube_inline._plan.0182142f": "فيديو على YouTube من {p0}",
++  "handlers.youtube_inline._send_downloaded.070dca9c": "موسيقى على YouTube من {p0}",
++  "handlers.youtube_inline.handle_youtube_music_inline_query.6921a7ca": "YouTube Music",
++  "keyboards.inline_keyboards._stats_keyboard_legacy_bottom.f91511a7": "تقسيم العرض: {p0}",
++  "keyboards.inline_keyboards.admin_keyboard.12fcc45b": "👥 فحص المستخدمين النشطين",
++  "keyboards.inline_keyboards.admin_keyboard.2a590dea": "✉️ إرسال رسالة بمعرّف المحادثة",
++  "keyboards.inline_keyboards.admin_keyboard.8327ef78": "📄 عرض السجل",
++  "keyboards.inline_keyboards.admin_keyboard.8b7c5961": "🩺 حالة البوت",
++  "keyboards.inline_keyboards.admin_keyboard.aba430a5": "📦 التشغيل",
++  "keyboards.inline_keyboards.admin_keyboard.b46312b3": "🗑️ حذف السجل",
++  "keyboards.inline_keyboards.admin_keyboard.d58ef935": "🔄 تحديث",
++  "keyboards.inline_keyboards.admin_keyboard.da65b090": "📬 إرسال جماعي",
++  "keyboards.inline_keyboards.cancel_keyboard.5387009b": "❌ إلغاء",
++  "keyboards.inline_keyboards.channel_subscription_keyboard.c920ce5f": "📢 الانضمام إلى القناة",
++  "keyboards.inline_keyboards.channel_subscription_keyboard.dfd4cbcf": "✅ التحقق من الاشتراك",
++  "keyboards.inline_keyboards.downloads_admin_keyboard.2d1ff93c": "🧹 تنظيف التنزيلات",
++  "keyboards.inline_keyboards.inline_send_video_keyboard.3375997f": "إرسال الفيديو داخل المحادثة",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.1fade508": "ℹ️ أزرار المعلومات",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.212dd6c3": "🎬 جودة الفيديو",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.225133b6": "🔗 زر الرابط",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.2270c082": "🎵 زر Shazam",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.61d6b99f": "📄 إرسال كملف",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.6d4e17cf": "🎧 زر MP3",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.72a83146": "🗑️ حذف الرسائل",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.ae6c66c0": "📄 زر الملف",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.c1a8466f": "📝 التسميات التوضيحية",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.c35ace5e": "🎵 صيغة الصوت",
++  "keyboards.inline_keyboards.return_category_settings_keyboard.d3a31fe9": "⬅️ العودة إلى الفئات",
++  "keyboards.inline_keyboards.return_field_keyboard.0b5bc6d9": "🔴 تعطيل",
++  "keyboards.inline_keyboards.return_field_keyboard.0de92430": "أعلى جودة (1080p+)",
++  "keyboards.inline_keyboards.return_field_keyboard.0eddd19c": "🟢 مفعّل حاليًا",
++  "keyboards.inline_keyboards.return_field_keyboard.122722ab": "M4A (AAC)",
++  "keyboards.inline_keyboards.return_field_keyboard.33f3d5ca": "صوت MP3",
++  "keyboards.inline_keyboards.return_field_keyboard.4ec9edf5": "متوازن (720p)",
++  "keyboards.inline_keyboards.return_field_keyboard.5dd22918": "⬅️ رجوع",
++  "keyboards.inline_keyboards.return_field_keyboard.62d289e2": "توفير البيانات (480p)",
++  "keyboards.inline_keyboards.return_field_keyboard.6a6947ff": "FLAC / الصيغة الأصلية",
++  "keyboards.inline_keyboards.return_field_keyboard.72f0ee85": "🔴 معطّل حاليًا",
++  "keyboards.inline_keyboards.return_field_keyboard.aae5cba9": "🟢 تفعيل",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.321c8d6b": "💬 المحادثة والتنظيف",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.3488f6e3": "🎨 المظهر والأزرار",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.8a25df2a": "🎬 الوسائط والجودة",
++  "keyboards.inline_keyboards.return_settings_categories_keyboard.fd617ec9": "🌐 اللغة",
++  "keyboards.inline_keyboards.return_video_info_keyboard.44d7f8be": "🎵 التعرّف على الموسيقى",
++  "keyboards.inline_keyboards.return_video_info_keyboard.e1a659b6": "🔗 الرابط",
++  "keyboards.inline_keyboards.start_keyboard.14a43343": "🚀 مشاركة البوت",
++  "keyboards.inline_keyboards.start_keyboard.1ead3001": "➕ إضافة إلى مجموعة",
++  "keyboards.inline_keyboards.start_keyboard.27958719": "⚡ تجربة الوضع المضمّن",
++  "keyboards.inline_keyboards.start_keyboard.4f709810": "بوت سريع للتنزيل من Instagram وTikTok وYouTube وغيرها!",
++  "keyboards.inline_keyboards.start_keyboard.ed2a3ac4": "⚙️ الإعدادات",
++  "keyboards.inline_keyboards.start_private_chat_keyboard.da1fac2e": "💬 فتح محادثة البوت",
++  "keyboards.inline_keyboards.stats_keyboard.1322ff5d": "شهر",
++  "keyboards.inline_keyboards.stats_keyboard.1c5b7004": "سنة",
++  "keyboards.inline_keyboards.stats_keyboard.3563ec14": "العرض: الإجمالي",
++  "keyboards.inline_keyboards.stats_keyboard.51656a29": "أسبوع",
++  "keyboards.inline_keyboards.stats_keyboard.5413cca6": "العرض: حسب المنصة",
++  "messages.admin_messages.active_users_check_completed.bb320f4d": "<b>اكتمل فحص إمكانية الوصول.</b>\nإجمالي المستخدمين الذين شملهم الفحص: <b>{total_users}</b>\nيمكن الوصول إليهم: <b>{reachable_users}</b>\nيتعذر الوصول إليهم: <b>{unreachable_users}</b>",
++  "messages.admin_messages.active_users_check_no_targets.2fedfd2d": "لا يوجد مستخدمون لفحصهم.",
++  "messages.admin_messages.active_users_check_started.a6dae91f": "بدء فحص إمكانية الوصول إلى {p0} مستخدم...",
++  "messages.admin_messages.admin_panel.e57c5508": "<b>مرحبًا بك في لوحة الإدارة.</b>\n\n👥 إجمالي المحادثات: <b>{total_count}</b>\n👤 مستخدمو المحادثات الخاصة: <b>{private_count}</b>\n🏘 المجموعات: <b>{group_count}</b>\n\n✅ نشط: <b>{active_user_count}</b>\n🚫 غير نشط: <b>{inactive_user_count}</b>",
++  "messages.admin_messages.canceled.6b393aaf": "تم إلغاء الإجراء!",
++  "messages.admin_messages.chat_message_failed.00a0d249": "تعذر إرسال الرسالة إلى المحادثة {p0}. تأكد من أن البوت عضو فيها ولديه إذن بإرسال الرسائل.",
++  "messages.admin_messages.chat_message_sending.ad3bc129": "جارٍ إرسال الرسالة...",
++  "messages.admin_messages.chat_message_sent.f0d437f3": "تم تسليم الرسالة إلى المحادثة {p0}.",
++  "messages.admin_messages.downloads_cleanup_blocked.70ff67f8": "تم تخطي التنظيف لوجود تنزيلات جارية. المهام النشطة={active_jobs}، المهام المنتظرة={queued_jobs}.",
++  "messages.admin_messages.downloads_cleanup_finished.d2d2bf55": "اكتمل تنظيف التنزيلات. حُذف {removed_files} ملف و {removed_dirs} مجلد. تم تخطي {skipped_recent_files} ملف حديث.",
++  "messages.admin_messages.enter_chat_id.cb7daa80": "أدخل معرّف المحادثة (مثل ‎-1001234567890):",
++  "messages.admin_messages.enter_chat_message.82bec69a": "أدخل الرسالة المراد إرسالها إلى هذه المحادثة:",
++  "messages.admin_messages.finish_mailing.eeb0d3d8": "اكتمل الإرسال الجماعي!",
++  "messages.admin_messages.invalid_chat_id.d2c2ee63": "يجب أن يكون معرّف المحادثة رقمًا مثل ‎-1001234567890. حاول مجددًا أو اضغط على إلغاء.",
++  "messages.admin_messages.known_chat_target.53c5897f": "<b>المحادثة المسجّلة</b>\nالمعرّف: <b>{chat_id}</b>\nالاسم: <b>{chat_name}</b>\nاسم المستخدم: <b>{chat_username}</b>\nالحالة: <b>{status}</b>",
++  "messages.admin_messages.log_deleted.68f12c61": "حُذف السجل وبدأت كتابة سجل جديد.",
++  "messages.admin_messages.mailing_audience_preview.e947c329": "<b>معاينة جمهور الإرسال الجماعي</b>\nالمستخدمون المستهدفون: <b>{total_users}</b>\nنشط: <b>{active_users}</b>\nغير نشط: <b>{inactive_users}</b>\nمحظور: <b>{banned_users}</b>\nالمحادثات الخاصة: <b>{private_users}</b>\nالمجموعات: <b>{group_users}</b>\n\nأدخل الرسالة المراد إرسالها:",
++  "messages.admin_messages.not_groups.acedf6d6": "لا يمكن استخدام هذا الأمر في مجموعة!",
++  "messages.admin_messages.please_type_message.433f4098": "اكتب الرسالة:",
++  "messages.admin_messages.something_went_wrong.084416cc": "حدث خطأ. راجع السجل للاطلاع على التفاصيل!",
++  "messages.admin_messages.start_mailing.bd3869fa": "جارٍ بدء الإرسال الجماعي...",
++  "messages.admin_messages.unknown_chat_target.70b3b7ce": "المحادثة {chat_id} غير مسجّلة في قاعدة البيانات المحلية بعد. سأحاول الإرسال إذا كان لدي إذن بالوصول.",
++  "messages.admin_messages.your_message_sent.674c8272": "تم إرسال رسالتك!",
++  "messages.user_messages.admin_rights_granted.937753ca": "شكرًا لمنحي صلاحيات الإشراف في <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\n💻 سأتولى تشغيل التنزيلات بسلاسة.",
++  "messages.user_messages.audio_download_failed.ff719ff2": "فشل تنزيل الصوت. حاول مجددًا لاحقًا.",
++  "messages.user_messages.audio_fetch_failed.54a50e5e": "تعذر جلب معلومات الصوت. حاول مجددًا لاحقًا.",
++  "messages.user_messages.audio_too_large.e963ea5a": "الملف الصوتي كبير جدًا لإرساله عبر تيليجرام. جرّب مقطعًا أقصر أو رابطًا من مصدر آخر.",
++  "messages.user_messages.batch_link_progress.0fc96f97": "جارٍ معالجة الرابط {p0}/{p1}: {p2}...",
++  "messages.user_messages.batch_links_finished.7d94657d": "اكتملت المعالجة الجماعية لعدد {p0} من الروابط.",
++  "messages.user_messages.batch_links_started.202f1982": "تم العثور على {p0} من الروابط المدعومة. سأعالجها واحدًا تلو الآخر لتسهيل متابعة المحادثة.",
++  "messages.user_messages.batch_links_started.9ca42ef8": "تم العثور على {p0} من الروابط المدعومة. سأعالج أول {p1} منها واحدًا تلو الآخر لتسهيل متابعة المحادثة.",
++  "messages.user_messages.batch_links_started.a75f7fec": "تم العثور على {p0} من الروابط المدعومة. سأعالج أول {p1} منها واحدًا تلو الآخر لتسهيل متابعة المحادثة.",
++  "messages.user_messages.batch_links_started.f44054ae": "تم العثور على {p0} من الروابط المدعومة. سأعالجها واحدًا تلو الآخر لتسهيل متابعة المحادثة.",
++  "messages.user_messages.callback_processing_error.577ed7a7": "حدث خطأ أثناء معالجة الضغط على الزر.",
++  "messages.user_messages.cancel.80f1a33f": "✖️ إلغاء",
++  "messages.user_messages.category_settings_text.3e5e3eee": "<b>🎬 إعدادات الوسائط والجودة</b>\n\nاضبط دقة الفيديو وصيغة الملف وخيارات الصوت:",
++  "messages.user_messages.category_settings_text.cb64f58b": "<b>🎨 المظهر والأزرار</b>\n\nخصّص أوصاف المنشورات وروابطها الأصلية وأزرار الإجراءات:",
++  "messages.user_messages.category_settings_text.d1cf9a94": "<b>💬 المحادثة والتنظيف</b>\n\nاضبط سلوك البوت في المجموعات وإعدادات تنظيف الرسائل:",
++  "messages.user_messages.channel_subscription_required.c5f0e4af": "<tg-emoji emoji-id=\"5816448972297866361\">🔴</tg-emoji> <b>الاشتراك مطلوب</b>\n\n<tg-emoji emoji-id=\"5303106526800524582\">🔠</tg-emoji> لاستخدام Save Vídeo DL Bot، عليك الانضمام إلى قناتنا الرسمية.\n\n<tg-emoji emoji-id=\"5866185097312474258\">👇</tg-emoji> انضم إلى القناة ثم تحقّق من اشتراكك للمتابعة.",
++  "messages.user_messages.delete_permission_warning.2ecbc803": "تعذر الحذف التلقائي. امنح البوت إذن حذف الرسائل في هذه المحادثة أو عطّل الحذف التلقائي في الإعدادات.",
++  "messages.user_messages.dm_start_required.696ff0fc": "<tg-emoji emoji-id='5472308992514464048'>🔒</tg-emoji> يلزم إعداد البوت أولًا. افتح المحادثة الخاصة واضغط على «بدء» ثم أعد إرسال الرابط.",
++  "messages.user_messages.downloading_audio_status.541f28ad": "{p0} جارٍ تنزيل الصوت...",
++  "messages.user_messages.downloading_file_status.8b01351d": "{p0} جارٍ تنزيل الملف...",
++  "messages.user_messages.downloading_video_status.5628b1df": "{p0} جارٍ تنزيل الصورة...",
++  "messages.user_messages.downloading_video_status.810ef308": "{p0} جارٍ تنزيل الصور...",
++  "messages.user_messages.downloading_video_status.89e178d6": "{p0} جارٍ التنزيل...",
++  "messages.user_messages.downloading_video_status.8efb7c69": "{p0} جارٍ تنزيل الفيديو...",
++  "messages.user_messages.duplicate_link_processing.17e7b36b": "تجري معالجة هذا الرابط بالفعل. انتظر بضع ثوانٍ.",
++  "messages.user_messages.duplicate_link_recently_processed.4a226f59": "عولج هذا الرابط للتو. إذا كنت ما زلت بحاجة إليه، فحاول بعد بضع ثوانٍ.",
++  "messages.user_messages.get_field_text.074f52d4": "<b>الإعدادات</b>\nلا يتوفر وصف لهذا الخيار بعد.",
++  "messages.user_messages.get_field_text.3589a96c": "<b>📄 إرسال كملف</b>\nعند التفعيل، تُرسل مقاطع الفيديو والصور كمستندات غير مضغوطة (.mp4 / .jpg) للحفاظ على الجودة الأصلية كاملة.",
++  "messages.user_messages.get_field_text.4e1f9b46": "<b>🔗 زر الرابط</b>\nإظهار أو إخفاء زر رابط المنشور الأصلي.",
++  "messages.user_messages.get_field_text.5b27c1b3": "<b>🎵 صيغة الصوت</b>\nاختر صيغة الصوت الافتراضية لتنزيل الموسيقى:\n\n• <b>MP3</b>: صيغة صوت شائعة ومتوافقة مع معظم الأجهزة.\n• <b>M4A (AAC)</b>: صيغة مضغوطة عالية الجودة لأجهزة iOS وMac.\n• <b>FLAC / الصيغة الأصلية</b>: صوت بلا فقدان للجودة عند توفره.",
++  "messages.user_messages.get_field_text.7f6129d4": "<b>ℹ️ أزرار المعلومات</b>\nإظهار أو إخفاء أزرار المعلومات الإضافية أسفل الوسائط المنزّلة.",
++  "messages.user_messages.get_field_text.7f94496f": "<b>🗑️ حذف الرسائل</b>\nاحذف رسالتك التي تحتوي على الرابط تلقائيًا بعد معالجة التنزيل.",
++  "messages.user_messages.get_field_text.88c9daba": "<b>🎵 زر Shazam</b>\nإظهار أو إخفاء زر التعرّف على الموسيقى في فيديوهات Instagram وTikTok باستخدام Shazam.",
++  "messages.user_messages.get_field_text.8accbb18": "<b>🎬 جودة الفيديو</b>\nاختر دقة تنزيل الفيديو المفضلة:\n\n• <b>أعلى جودة (1080p+)</b>: أعلى دقة متاحة.\n• <b>متوازن (720p)</b>: توازن بين الجودة والسرعة.\n• <b>توفير البيانات (480p)</b>: تنزيل أسرع بأقل استهلاك للبيانات.",
++  "messages.user_messages.get_field_text.9a258f03": "<b>📄 زر الملف</b>\nإظهار أو إخفاء زر تنزيل الملف أسفل الفيديو لتنزيل النسخة الأصلية غير المضغوطة عند الطلب.",
++  "messages.user_messages.get_field_text.d03f091c": "<b>🎧 زر MP3</b>\nإظهار أو إخفاء زر تنزيل MP3 عند توفر الصوت.",
++  "messages.user_messages.get_field_text.feb36852": "<b>📝 الأوصاف</b>\nإظهار أو إخفاء وصف المنشور عند تنزيل الوسائط. قد لا توفر بعض المصادر وصفًا.",
++  "messages.user_messages.guest_no_link_description.2a8613ae": "أرسل رسالة تحتوي على رابط مدعوم أو رُد عليها.",
++  "messages.user_messages.guest_no_link_message.c98f3840": "❌ <b>لم أجد رابطًا مدعومًا.</b>\n\nاستدعِ البوت وأرفق الرابط، أو رُد على رسالة تحتوي عليه.",
++  "messages.user_messages.guest_no_link_title.46f00e42": "لم يتم العثور على رابط",
++  "messages.user_messages.guest_open_private_button.4c9393ea": "فتح المحادثة الخاصة",
++  "messages.user_messages.guest_restricted_service_name.60bbf043": "الخدمة غير متاحة",
++  "messages.user_messages.guest_slow_down_description.ce2d7955": "انتظر قليلًا قبل المحاولة مجددًا.",
++  "messages.user_messages.guest_slow_down_message.7c65c576": "⏳ انتظر قليلًا وحاول مجددًا.",
++  "messages.user_messages.guest_slow_down_title.802600d1": "طلبات كثيرة جدًا",
++  "messages.user_messages.guest_unavailable_description.a9ad5227": "افتح البوت في محادثة خاصة للمتابعة.",
++  "messages.user_messages.guest_unavailable_message.72f01872": "ℹ️ <b>{p0}</b> لا يستطيع إكمال هذا الطلب مباشرةً في وضع الضيف بعد.\n\nافتح محادثة خاصة مع البوت وأرسل الرابط هناك.",
++  "messages.user_messages.guest_unavailable_message.cf3bfbe9": "هذه الخدمة",
++  "messages.user_messages.guest_unavailable_title.44aaa969": "{p0} في وضع الضيف",
++  "messages.user_messages.guest_unavailable_title.e33214d1": "وضع الضيف",
++  "messages.user_messages.help_message.9640b060": "<b>📖 دليل استخدام Save Vídeo DL Bot</b>\n\nأرسل رابطًا واحدًا أو عدة روابط في رسالة واحدة. سيستخرج البوت الوسائط ويرسلها تلقائيًا.\n\n<blockquote expandable><b>📷 Instagram وThreads</b>\n• تنزيل المنشورات والريلز ومقاطع IGTV والقصص\n• تنزيل المنشورات متعددة الصور وألبومات الوسائط\n• لنسخ الرابط، اضغط على «مشاركة» ثم «نسخ الرابط»</blockquote>\n\n<blockquote expandable><b>🎵 TikTok</b>\n• تنزيل مقاطع الفيديو دون علامة مائية\n• تنزيل المنشورات متعددة الصور وعروض الشرائح\n• استخراج الصوت بصيغة MP3</blockquote>\n\n<blockquote expandable><b>▶️ YouTube وYouTube Music</b>\n• تنزيل مقاطع Shorts ومقاطع الفيديو العادية\n• تنزيل الصوت والفيديو بجودة عالية\n• اضغط على زر MP3 لتنزيل الصوت</blockquote>\n\n<blockquote expandable><b>🐦 X / Twitter و📌 Pinterest</b>\n• تنزيل الفيديوهات والصور المتحركة والثابتة من X / Twitter\n• تنزيل منشورات الفيديو والصور من Pinterest</blockquote>\n\n<blockquote expandable><b>🎧 SoundCloud و🟢 Spotify</b>\n• تنزيل المقاطع الصوتية من SoundCloud بجودة عالية\n• البحث عن مقاطع Spotify المطابقة وتنزيل الصوت</blockquote>\n\n<blockquote expandable><b>⚡ الوضع المضمّن</b>\n• اكتب <code>@{p0} [الرابط]</code> في أي محادثة\n• معاينة فورية ومشاركة الوسائط مباشرةً</blockquote>\n\n<blockquote expandable><b>📦 تنزيل عدة روابط</b>\n• الصق ما يصل إلى 6 روابط في رسالة واحدة\n• تُرسل النتائج واحدة تلو الأخرى لتسهيل متابعة المحادثة</blockquote>\n\n🎧 Audible: أرسل الرابط في محادثة خاصة واربط حسابك باستخدام /audible. يجب أن يكون الكتاب في مكتبتك. لقطع الاتصال استخدم /audible_logout.",
++  "messages.user_messages.inline_album_description.504ad33c": "فتح الألبوم كاملًا في البوت",
++  "messages.user_messages.inline_album_link_invalid.8d2d8799": "رابط الألبوم منتهي الصلاحية أو غير صالح.",
++  "messages.user_messages.inline_album_title.44a7cb63": "ألبوم {p0}",
++  "messages.user_messages.inline_media_title.d357175c": "وسائط",
++  "messages.user_messages.inline_only_button_warning.dc3040b2": "هذا الزر يعمل في الوضع المضمّن فقط.",
++  "messages.user_messages.inline_open_full_album_button.f5ce3ba7": "فتح الألبوم كاملًا",
++  "messages.user_messages.inline_open_result.ddf133ea": "فتح هذه النتيجة في البوت.",
++  "messages.user_messages.inline_photo_description.bb7bd65f": "صورة واحدة",
++  "messages.user_messages.inline_photo_title.714f2b56": "صورة من {p0}",
++  "messages.user_messages.inline_photos_not_supported.f84f3b40": "صور {p0} غير مدعومة في الوضع المضمّن.",
++  "messages.user_messages.inline_photos_title.2af6816f": "صور من {p0}",
++  "messages.user_messages.inline_send_audio_button.eaf6404b": "إرسال الصوت داخل المحادثة",
++  "messages.user_messages.inline_send_audio_description.e4313522": "اضغط على الزر لإرسال هذا الصوت داخل المحادثة.",
++  "messages.user_messages.inline_send_audio_prompt.5a1ea930": "{p0} جارٍ تحضير الصوت...\nإذا لم يبدأ الإرسال تلقائيًا، فاضغط على الزر أدناه.",
++  "messages.user_messages.inline_send_photo_button.1855ed29": "إرسال الصورة داخل المحادثة",
++  "messages.user_messages.inline_send_photo_description.89b2b9d5": "اضغط على الزر لإرسال هذه الصورة داخل المحادثة.",
++  "messages.user_messages.inline_send_photo_prompt.eae8529e": "{p0} جارٍ تحضير الصورة...\nإذا لم يبدأ الإرسال تلقائيًا، فاضغط على الزر أدناه.",
++  "messages.user_messages.inline_send_video_description.bbccdc63": "اضغط على الزر لإرسال هذا الفيديو داخل المحادثة.",
++  "messages.user_messages.inline_send_video_prompt.87cdb267": "{p0} جارٍ تحضير الفيديو...\nإذا لم يبدأ الإرسال تلقائيًا، فاضغط على الزر أدناه.",
++  "messages.user_messages.inline_single_video_only.a8e0a14e": "لا يدعم الوضع المضمّن سوى مقاطع {p0} المنفردة.",
++  "messages.user_messages.inline_video_already_processing.31db6958": "يجري تحضير هذا الفيديو بالفعل.",
++  "messages.user_messages.inline_video_already_sent.68262216": "أُرسل هذا الفيديو بالفعل.",
++  "messages.user_messages.inline_video_title.cc2d0fd3": "فيديو من {p0}",
++  "messages.user_messages.invalid_settings_option.b9659ef8": "خيار الإعدادات غير صالح.",
++  "messages.user_messages.join_group.2f22e10f": "شكرًا لإضافتي إلى <b>{chat_title}</b> <tg-emoji emoji-id='5280764381804650651'>🌸</tg-emoji>\nيرجى منحي <b>صلاحيات الإشراف</b> لتفعيل جميع الميزات 🔓",
++  "messages.user_messages.keyboard_removed.6ad6a688": "أُزيلت لوحة أزرار الرد.",
++  "messages.user_messages.media_transfer_status.2eabdcaf": "جارٍ الإرسال إلى تيليجرام…",
++  "messages.user_messages.media_transfer_status.cc5d009a": "جارٍ تنزيل المحتوى…",
++  "messages.user_messages.mediafire_document_caption.5c39bac9": "{p0} ملف من MediaFire",
++  "messages.user_messages.no_queue_metrics_yet.694604d3": "لا توجد مقاييس لقائمة الانتظار بعد.",
++  "messages.user_messages.nothing_found.ac1e1f92": "لم أعثر على وسائط. تأكد من أن الرابط عام وساري الصلاحية ويؤدي مباشرةً إلى المنشور أو الفيديو.",
++  "messages.user_messages.open_bot_for_audio.1fae42ac": "افتح البوت في محادثة خاصة لتنزيل الصوت.",
++  "messages.user_messages.open_bot_to_download_mp3.a09899db": "افتح البوت لتنزيل ملف MP3.",
++  "messages.user_messages.ping_message.4b2bebbf": "بطيء",
++  "messages.user_messages.ping_message.4bf7ae0f": "يقيس هذا الاختبار زمن الاستجابة بين البوت وواجهة تيليجرام البرمجية.",
++  "messages.user_messages.ping_message.5f0c2aa6": "{p0} <b>البوت متصل!</b>\n\n{p1} <b>زمن الاستجابة:</b> <code>{p2} مللي ثانية</code>\n\n{p3} <b>{p4}:</b> {p5} {p6}\n\n<blockquote>{p7} <i><b>{p8}:</b> {p9}</i></blockquote>\n{p10} <i>{p11}</i>\n\n{p12}",
++  "messages.user_messages.ping_message.6df83bbf": "ستُحذف هذه الرسالة ورسالة الأمر بعد 5 دقائق.",
++  "messages.user_messages.ping_message.920e413c": "الحالة",
++  "messages.user_messages.ping_message.c939327c": "الحالة جيدة",
++  "messages.user_messages.ping_message.f7b19afc": "متوسط",
++  "messages.user_messages.ping_unavailable.8196132a": "❌ تعذر قياس زمن الاستجابة الآن.",
++  "messages.user_messages.referral_message.9012a5e9": "<b>👥 برنامج الإحالة الخاص بك</b>\n\nادعُ أصدقاءك لاستخدام Save Vídeo DL Bot! شارك رابط دعوتك الشخصي:\n<code>{p0}</code>\n\nعدد المستخدمين الذين دعوتهم: <b>{p1}</b>",
++  "messages.user_messages.retrying_again_status.d71e3176": "حدث خطأ، جارٍ إعادة المحاولة… ({p0}/{p1})",
++  "messages.user_messages.settings.918d2a64": "<b>⚙️ الإعدادات</b>\nاستخدم الأزرار أدناه لتخصيص طريقة إرسال التنزيلات. تنطبق هذه الإعدادات على حسابك فقط.",
++  "messages.user_messages.settings_admin_only.a65eb7a7": "يمكن لمشرفي المجموعة فقط فتح /settings في محادثة المجموعة.",
++  "messages.user_messages.settings_private_only.8f9b59fe": "تتوفر الإعدادات في المحادثات الخاصة فقط. افتح محادثة خاصة مع البوت لتغيير تفضيلاتك.",
++  "messages.user_messages.something_went_wrong.d2e288ca": "تعذر إكمال الطلب.\nلم يذكر المصدر سببًا محددًا. تأكد من أن الرابط يفتح بشكل طبيعي وحاول مجددًا لاحقًا.",
++  "messages.user_messages.spotify_metadata_failed.480184fd": "تعذرت قراءة هذا المقطع من Spotify. تحقق من الرابط وحاول مجددًا.",
++  "messages.user_messages.spotify_source_not_found.8b705fec": "تعذر العثور على مصدر صوت مطابق لهذا المقطع من Spotify.",
++  "messages.user_messages.stats_temporarily_unavailable.195d4b5b": "تعذر إنشاء الإحصاءات الآن. حاول مجددًا لاحقًا.",
++  "messages.user_messages.tiktok_live_not_supported.8bc518aa": "البث المباشر من TikTok غير مدعوم بعد. أرسل رابط منشور عادي من TikTok.",
++  "messages.user_messages.tiktok_stat_label.355f79f2": "التعليقات",
++  "messages.user_messages.tiktok_stat_label.69c40459": "المشاهدات",
++  "messages.user_messages.tiktok_stat_label.a145ab34": "المتابعون",
++  "messages.user_messages.tiktok_stat_label.c9a96394": "مقاطع الفيديو",
++  "messages.user_messages.tiktok_stat_label.cca0662f": "تسجيلات الإعجاب",
++  "messages.user_messages.tiktok_stat_label.d4ea333d": "المشاركات",
++  "messages.user_messages.timeout_error.727ad602": "انتهت مهلة الطلب. قد يكون المصدر بطيئًا الآن. حاول مجددًا لاحقًا.",
++  "messages.user_messages.translation_error.25624904": "❌ حدث خطأ أثناء الترجمة.",
++  "messages.user_messages.translation_failed.89834e7d": "❌ تعذرت ترجمة هذا النص الآن.",
++  "messages.user_messages.translation_invalid_language.db2baa18": "❌ رمز اللغة غير صالح.\n\nأمثلة: <code>pt-BR</code>, <code>en</code>, <code>es</code>, <code>fr</code>, <code>de</code>, <code>ja</code>",
++  "messages.user_messages.translation_result.098e3e47": "{p0} بواسطة <a href=\"https://t.me/{p1}\">Save Vídeo DL Bot</a>",
++  "messages.user_messages.translation_result.5385fea9": "{p0} بواسطة Save Vídeo DL Bot",
++  "messages.user_messages.translation_service_unavailable.37e7194a": "❌ خدمة الترجمة غير متاحة حاليًا.",
++  "messages.user_messages.translation_text_too_long.ec745c0c": "❌ النص أطول من الحد المسموح للترجمة.\nالحد الأقصى: {p0} حرفًا.",
++  "messages.user_messages.translation_timeout.43852865": "⏳ انتهت مهلة الترجمة. حاول مجددًا.",
++  "messages.user_messages.translation_usage.de61c325": "🌐 <b>المترجم</b>\n\nأرسل:\n<code>/trad pt-BR مرحبًا، كيف حالك؟</code>\n\nأو رُد على رسالة بالأمر:\n<code>/trad es</code>\n\nتُكتشف لغة النص تلقائيًا.",
++  "messages.user_messages.unknown_data.709e425b": "بيانات غير معروفة.",
++  "messages.user_messages.uploading_file_status.82c4258f": "{p0} جارٍ رفع الملف إلى تيليجرام...",
++  "messages.user_messages.video_too_large.1fbef359": "الفيديو كبير جدًا لإرساله عبر تيليجرام. جرّب فيديو أقصر أو اختر تنزيل الصوت إذا كان متاحًا.",
++  "messages.user_messages.welcome_message.3a38a165": "<b>مرحبًا بك في Save Vídeo DL Bot <tg-emoji emoji-id=\"5420141555233071341\">❤️</tg-emoji></b>\n\nأرسل رابطًا واحدًا أو الصق عدة روابط في رسالة واحدة وسأنزّل ما أستطيع.\n\n<b>المواقع المدعومة</b>\n<tg-emoji emoji-id=\"5233671414023753035\">📷</tg-emoji> Instagram\n<tg-emoji emoji-id=\"5370693953236539466\">🧵</tg-emoji> Threads\n<tg-emoji emoji-id=\"5233597424622144804\">🎵</tg-emoji> TikTok\n<tg-emoji emoji-id=\"5233311027612913110\">▶️</tg-emoji> YouTube\n<tg-emoji emoji-id=\"5231309843435919433\">🐦</tg-emoji> X / Twitter\n<tg-emoji emoji-id=\"5233448977667492819\">🎧</tg-emoji> SoundCloud\n<tg-emoji emoji-id=\"5391001065418172193\">🟢</tg-emoji> Spotify\n<tg-emoji emoji-id=\"5233210422298974231\">📌</tg-emoji> Pinterest\n\nاستخدم الأزرار أدناه لتجربة الوضع المضمّن أو ضبط الإعدادات أو مشاركة البوت.",
++  "middlewares.antiflood._flood_message.10627b85": "أرسلت طلبات كثيرة. انتظر بضع ثوانٍ.",
++  "middlewares.ban_middleware._ban_message.5f711a17": "حسابك محظور. تواصل مع الدعم لمزيد من المعلومات!",
++  "middlewares.ban_middleware._service_unavailable_message.1d4c98d3": "الخدمة غير متاحة مؤقتًا. حاول مجددًا لاحقًا.",
++  "middlewares.channel_subscription.__call__.9a1bd4d8": "📢 الاشتراك مطلوب",
++  "middlewares.channel_subscription.__call__.b9856f8c": "📢 انضم إلى القناة لاستخدام البوت.",
++  "middlewares.channel_subscription._resume_after_verify.3697e4d3": "✅ تم تأكيد الاشتراك. أرسل الرابط مجددًا.",
++  "middlewares.channel_subscription._verify.5e6165cc": "⚠️ تعذرت المتابعة تلقائيًا. حاول مجددًا.",
++  "middlewares.channel_subscription._verify.78ab70b3": "❌ لم تنضم إلى القناة بعد.",
++  "middlewares.channel_subscription._verify.d416f349": "⚠️ تعذر التحقق الآن. حاول مجددًا.",
++  "middlewares.channel_subscription._verify.e3133c9a": "✅ تم تأكيد الاشتراك!",
++  "middlewares.channel_subscription._verify.f5951464": "⏳ تجري معالجة الطلب بالفعل.",
++  "services.inline.send_flow._plan.422ec3bf": "صورة على {p0} من {p1}",
++  "services.inline.send_flow._plan.6a9c386c": "فيديو على {p0} من {p1}",
++  "services.inline.send_flow._plan.ca2a0427": "فيديو من {p0}",
++  "services.inline.send_flow.ensure_album_preview_file_id.6776f7f2": "معاينة ألبوم {p0}",
++  "services.inline.send_flow.handle_post_inline_query.2cf95b13": "منشور من {p0}",
++  "services.inline.send_flow.handle_post_inline_query.b25984f6": "منشور نصي من {p0}.",
++  "services.inline.send_flow.handle_post_inline_query.d8cd02a9": "محتوى من {p0}",
++  "services.stats.chart.build_stats_caption.22c300c5": "<b>إحصاءات {p0}</b>",
++  "services.stats.chart.build_stats_caption.4c08fcb4": "المتوسط لكل {p0}: <b>{p1}</b>",
++  "services.stats.chart.build_stats_caption.b5e56dff": "<b>أبرز المنصات</b>",
++  "services.stats.chart.build_stats_caption.c1f30324": "إجمالي التنزيلات: <b>{p0}</b>",
++  "services.stats.chart.build_stats_caption.c821f4df": "{p0}\n\nلم تُسجّل تنزيلات لهذه الفترة بعد.",
++  "services.stats.chart.build_stats_caption.f097afb9": "الذروة {p0}: <b>{p1}</b> - <b>{p2}</b>",
++  "services.stats.chart.render_stats_chart.1cc0298a": "الذروة {p0}",
++  "services.stats.chart.render_stats_chart.218a8c97": "مقارنة المنصات",
++  "services.stats.chart.render_stats_chart.28daa113": "لا توجد تنزيلات لهذه الفترة بعد",
++  "services.stats.chart.render_stats_chart.99c40ab4": "التاريخ",
++  "services.stats.chart.render_stats_chart.af7ba346": "النشاط الإجمالي",
++  "services.stats.chart.render_stats_chart.b38ae2c5": "المتوسط",
++  "services.stats.chart.render_stats_chart.c9b3c382": "الإجمالي",
++  "services.stats.chart.render_stats_chart.d5fdc1af": "التنزيلات",
++  "services.stats.chart.render_stats_chart.dcc563b7": "نظرة عامة على التنزيلات",
++  "language.prompt": "🌐 <b>اختر لغة البوت:</b>",
++  "language.changed": "✅ تم تغيير اللغة إلى العربية!",
++  "language.back": "⬅️ رجوع",
++  "language.invalid": "اللغة غير صالحة. اختر لغة من القائمة.",
++  "language.save_failed": "تعذر حفظ اللغة. حاول مجددًا.",
++  "stats.period.Week": "أسبوع",
++  "stats.period.Month": "شهر",
++  "stats.period.Year": "سنة",
++  "stats.unit.month": "شهر",
++  "stats.unit.day": "يوم",
++  "commands.start": "بدء استخدام البوت",
++  "commands.help": "المواقع المدعومة ونصائح الاستخدام",
++  "commands.trad": "ترجمة نص",
++  "commands.settings": "الإعدادات",
++  "commands.stats": "الإحصاءات",
++  "commands.ping": "قياس زمن استجابة البوت",
++  "commands.lang": "تغيير اللغة",
++  "stats.month.1": "يناير",
++  "stats.month.2": "فبراير",
++  "stats.month.3": "مارس",
++  "stats.month.4": "أبريل",
++  "stats.month.5": "مايو",
++  "stats.month.6": "يونيو",
++  "stats.month.7": "يوليو",
++  "stats.month.8": "أغسطس",
++  "stats.month.9": "سبتمبر",
++  "stats.month.10": "أكتوبر",
++  "stats.month.11": "نوفمبر",
++  "stats.month.12": "ديسمبر",
++  "stats.weekday.0": "الاثنين",
++  "stats.weekday.1": "الثلاثاء",
++  "stats.weekday.2": "الأربعاء",
++  "stats.weekday.3": "الخميس",
++  "stats.weekday.4": "الجمعة",
++  "stats.weekday.5": "السبت",
++  "stats.weekday.6": "الأحد",
++  "settings.label.video_quality": "🎬 جودة الفيديو",
++  "settings.label.as_document": "📄 إرسال كملف",
++  "settings.label.audio_format": "🎵 صيغة الصوت",
++  "settings.label.captions": "📝 الأوصاف",
++  "settings.label.info_buttons": "ℹ️ أزرار المعلومات",
++  "settings.label.audio_button": "🎧 زر MP3",
++  "settings.label.music_button": "🎵 زر Shazam",
++  "settings.label.file_button": "📄 زر الملف",
++  "settings.label.url_button": "🔗 زر الرابط",
++  "settings.label.delete_message": "🗑️ حذف الرسائل",
++  "admin.access_required": "يلزم امتلاك صلاحيات المشرف.",
++  "progress.view": "📊 عرض التقدّم",
++  "common.yes": "نعم",
++  "common.no": "لا",
++  "caption.footer": "<tg-emoji emoji-id=\"5283080528818360566\">🚀</tg-emoji> بواسطة <a href=\"{url}\">Save Vídeo DL Bot</a>",
++  "admin.bound.balanced": "متوازن",
++  "download_error.header": "❌ <b>{platform}: تعذر إكمال التنزيل.</b>",
++  "download_error.delivery_header": "❌ <b>{platform}: تعذر إكمال الإرسال.</b>",
++  "download_error.generic_platform": "تنزيل",
++  "download_error.reason_label": "<b>السبب:</b> {reason}",
++  "download_error.action_label": "<b>ما يمكنك فعله:</b> {action}",
++  "download_error.reference": "الرقم المرجعي: <code>{reference}</code>",
++  "download_error.action.retry": "انتظر قليلًا وحاول مجددًا. إذا استمرت المشكلة، فأرسل الرقم المرجعي إلى الدعم.",
++  "download_error.action.link": "تأكد من أن المنشور يفتح بشكل طبيعي وأرسل رابطه المباشر.",
++  "download_error.action.limit": "جرّب ملفًا أصغر أو اختر تنزيل الصوت إذا كان متاحًا.",
++  "download_error.action.support": "حاول مجددًا لاحقًا. إذا استمرت المشكلة، فأرسل الرقم المرجعي إلى الدعم ليتحقق من إمكانية وصول البوت.",
++  "download_error.action.delivery": "تأكد من أن البوت يستطيع إرسال الرسائل والملفات في هذه المحادثة ثم حاول مجددًا.",
++  "download_error.reason.unknown": "لم يذكر المصدر سببًا محددًا.",
++  "download_error.reason.timeout": "لم يستجب المصدر ضمن المهلة المحددة.",
++  "download_error.reason.authentication": "طلبت المنصة تسجيل الدخول أو رفضت جلسة البوت.",
++  "download_error.reason.access_denied": "رفض المصدر طلب الوصول من البوت.",
++  "download_error.reason.rate_limited": "تم بلوغ الحد الأقصى للطلبات.",
++  "download_error.reason.not_found": "العنوان المطلوب غير موجود أو لم يعد متاحًا.",
++  "download_error.reason.region": "أفاد المصدر بأن هذا المحتوى خاضع لقيود جغرافية.",
++  "download_error.reason.unsupported": "لم تتعرّف أداة التنزيل على صيغة الرابط.",
++  "download_error.reason.connection": "تعذر إنشاء اتصال بالمصدر أو الحفاظ عليه.",
++  "download_error.reason.redirect_loop": "دخل المصدر في حلقة إعادة توجيه ولم يعرض المنشور.",
++  "download_error.reason.restricted": "أفاد المصدر بأن المحتوى خاص أو محذوف أو مقيّد.",
++  "download_error.reason.too_large": "يتجاوز الملف الحد الأقصى للحجم لدى البوت أو تيليجرام.",
++  "download_error.reason.delivery": "رفض تيليجرام عمليةً لازمة لإرسال الرد.",
++  "download_error.reason.internal": "حدث خطأ داخلي أثناء معالجة الطلب.",
++  "download_error.reason.verification": "تعذر التحقق من أن الوسائط تخص المنشور المطلوب.",
++  "collection.fetching": "🎶 {platform}: جارٍ قراءة قائمة التشغيل أو الألبوم…",
++  "collection.cancel": "✖️ إلغاء تنزيل المجموعة",
++  "collection.expired": "اكتملت معالجة هذه المجموعة بالفعل.",
++  "collection.owner_only": "يمكن فقط لمن طلب تنزيل المجموعة إلغاء العملية.",
++  "collection.cancelling": "طُلب الإلغاء. ستتوقف المعالجة بعد اكتمال العنصر الحالي.",
++  "collection.busy": "⏳ يجري تنزيل مجموعة لحسابك أو تم بلوغ الحد الأقصى للمجموعات المتزامنة. حاول مجددًا لاحقًا.",
++  "collection.progress": "<b>{title}</b>\nالعنصر {index}/{count}: {item}",
++  "collection.limit": "⚠️ يقتصر الطلب على أول {limit} عنصرًا.",
++  "collection.partial": "⚠️ عرض المصدر جزءًا فقط من القائمة العامة. قد لا تظهر بعض المقاطع.",
++  "collection.empty": "لم يتم العثور على عناصر متاحة في قائمة التشغيل أو الألبوم.",
++  "collection.finished": "✅ <b>{title}</b>\nتم الإرسال: {sent} · تعذر الإرسال: {failed} · غير متاح: {unavailable} · المتبقي: {remaining}",
++  "collection.cancelled": "⏹️ <b>{title}</b>: توقفت المعالجة.\nتم الإرسال: {sent} · تعذر الإرسال: {failed} · غير متاح: {unavailable} · المتبقي: {remaining}",
++  "collection.stopped": "⏸️ <b>{title}</b>: توقفت المعالجة بسبب قيود الخدمة أو خطأ من تيليجرام.\nتم الإرسال: {sent} · تعذر الإرسال: {failed} · غير متاح: {unavailable} · المتبقي: {remaining}",
++  "collection.error": "❌ تعذر تحميل هذه المجموعة أو إكمال معالجتها.",
++  "audible.explain": "🎧 <b>اربط حسابك في Audible</b>\n\nيتطلب Audible تسجيل الدخول للتحقق من الكتب الموجودة في مكتبتك والسماح بتنزيلها. الرابط وحده لا يكفي للوصول إلى الكتاب.\n\nيربط كل مستخدم حسابه الخاص. سجّل الدخول في صفحة Amazon فقط. لا ترسل كلمة المرور أو رمز التحقق إلى البوت أبدًا. بعد تسجيل الدخول، يطلب البوت رابط العودة فقط لإكمال التفويض.\n\nتُحفظ جلستك على الخادم بمعزل عن الحسابات الأخرى إلى أن تقطع الاتصال. يستطيع البوت الوصول إلى مكتبتك عبر هذه الجلسة. استخدم /audible_logout لحذف الجلسة والملفات المحلية. التنزيل متاح فقط في المحادثات الخاصة.",
++  "audible.connect": "🔐 ربط حسابي",
++  "audible.disconnect": "🔓 قطع الاتصال بـ Audible",
++  "audible.cancel": "✖️ إلغاء",
++  "audible.cancelled": "أُلغيت عملية Audible.",
++  "audible.disconnected": "تم قطع الاتصال بـ Audible وحذف جلستك وملفاتك المحلية. يمكنك أيضًا إلغاء تسجيل الجهاز في إعدادات Amazon.",
++  "audible.connected": "✅ حسابك في Audible متصل.\n\nأرسل رابط الكتاب الصوتي لتنزيله. يجب أن يكون الكتاب محفوظًا في مكتبة هذا الحساب.\n\nلقطع الاتصال استخدم /audible_logout.",
++  "audible.email": "أرسل فقط عنوان البريد الإلكتروني لحسابك في Amazon أو Audible لبدء تسجيل الدخول إلى Amazon. لا ترسل كلمة المرور أو رمز التحقق.",
++  "audible.browser": "١. اضغط على <b>تسجيل الدخول إلى Amazon</b> وسجّل الدخول باستخدام متصفحك.\n٢. بعد الانتهاء، انسخ الرابط كاملًا من شريط العنوان حتى إذا عرضت الصفحة الأخيرة خطأً.\n٣. الصق الرابط في هذه المحادثة الخاصة فقط. سيحاول البوت حذف الرسالة بعد استلامها.\n\nتنتهي مهلة تسجيل الدخول بعد 10 دقائق. لا ترسل كلمة المرور أو رمز التحقق إلى البوت أبدًا.",
++  "audible.amazon": "تسجيل الدخول إلى Amazon",
++  "audible.private": "🔐 يعمل Audible في المحادثات الخاصة فقط. يجب على كل مستخدم ربط حسابه الخاص للوصول إلى مكتبته.",
++  "audible.open_private": "🎧 المتابعة في محادثة خاصة",
++  "audible.market": "استخدم /audible متبوعًا برمز بلد حسابك: br أو us أو uk أو de أو fr أو it أو es أو ca أو au أو jp أو in.",
++  "audible.checking": "🎧 Audible: جارٍ التحقق من مكتبتك وتجهيز التنزيل…",
++  "audible.finished": "✅ تم إرسال الكتاب الصوتي.",
++  "audible.stopped": "تعذر إكمال تنزيل الكتاب الصوتي.",
++  "audible.error.busy": "⏳ توجد عملية جارية لحسابك أو أن الخدمة مشغولة. حاول مجددًا بعد بضع دقائق.",
++  "audible.error.unavailable": "خدمة Audible غير متاحة على هذا الخادم. تواصل مع الدعم.",
++  "audible.error.session": "انتهت صلاحية جلسة Audible أو أن حسابك غير متصل في هذا البلد. استخدم /audible أو أرسل الرابط مجددًا لربط حسابك.",
++  "audible.error.library": "🎧 لتنزيل هذا الكتاب الصوتي، يجب أن يكون محفوظًا في مكتبة حساب Audible المتصل.\n\nافتح Audible وأضف الكتاب إلى مكتبتك ثم أعد إرسال الرابط. إذا كان موجودًا بالفعل، فتأكد من أنك تستخدم الحساب نفسه والمتجر نفسه.",
++  "audible.error.timeout": "تأخر رد Audible فتوقفت العملية. حاول مجددًا لاحقًا.",
++  "audible.error.too_large": "يتجاوز حجم الكتاب الصوتي الحد المسموح به في البوت. تم إيقاف التنزيل.",
++  "audible.error.email": "أرسل عنوان بريد إلكتروني صالحًا. لا ترسل كلمة المرور.",
++  "audible.error.expired": "انتهت مهلة تسجيل الدخول أو أُعيد تشغيل البوت. استخدم /audible للبدء مجددًا.",
++  "audible.error.response": "رابط العودة غير صالح. انسخ الرابط كاملًا من الصفحة الأخيرة في Amazon أو Audible وأرسله هنا في المحادثة الخاصة.",
++  "audible.error.login": "تعذر إكمال تسجيل الدخول. استخدم /audible لبدء تفويض جديد.",
++  "audible.error.download": "تعذر إكمال تنزيل الكتاب الصوتي أو إرساله. حاول مجددًا لاحقًا. لن تتم مشاركة حسابك مع أي مستخدم آخر."
++}
 diff --git a/i18n/locales/de.json b/i18n/locales/de.json
 new file mode 100644
-index 0000000..b1330bb
+index 0000000..746fc7b
 --- /dev/null
 +++ b/i18n/locales/de.json
 @@ -0,0 +1,529 @@
@@ -1751,7 +2277,7 @@ index 0000000..b1330bb
 +  "audible.cancel": "✖️ Abbrechen",
 +  "audible.cancelled": "Audible-Vorgang abgebrochen.",
 +  "audible.disconnected": "Audible-Konto getrennt. Sitzung und lokale Dateien wurden gelöscht. Du kannst das Gerät auch in deinen Amazon-Einstellungen widerrufen.",
-+  "audible.connected": "✅ Dein Audible-Konto ist verbunden. Sende einen Link zu einem verfügbaren Buch deiner Bibliothek. Mit /audible_logout löschst du die Sitzung.",
++  "audible.connected": "✅ Dein Audible-Konto ist verbunden.\n\nSende den Link zum gewünschten Hörbuch. Das Buch muss in der Bibliothek dieses Kontos gespeichert sein.\n\nZum Trennen verwende /audible_logout.",
 +  "audible.email": "Sende nur die E-Mail-Adresse deines Amazon-/Audible-Kontos. Sende kein Passwort und keinen Bestätigungscode. Die Adresse wird für die Amazon-Anmeldung benötigt.",
 +  "audible.browser": "1. Tippe auf <b>Bei Amazon anmelden</b> und melde dich im Browser an.\n2. Kopiere danach die vollständige URL aus der Adressleiste, auch wenn die letzte Seite einen Fehler anzeigt.\n3. Füge diese URL nur in diesen privaten Chat ein. Der Bot versucht, die Nachricht nach Empfang zu löschen.\n\nDie Anmeldung läuft nach 10 Minuten ab. Sende dem Bot niemals dein Passwort oder deinen Bestätigungscode.",
 +  "audible.amazon": "Bei Amazon anmelden",
@@ -1764,7 +2290,7 @@ index 0000000..b1330bb
 +  "audible.error.busy": "⏳ Für dein Konto läuft bereits ein Vorgang oder alle Audible-Plätze sind belegt. Versuche es in einigen Minuten erneut.",
 +  "audible.error.unavailable": "Der Audible-Dienst ist auf diesem Server nicht verfügbar. Kontaktiere den Support.",
 +  "audible.error.session": "Deine Audible-Sitzung ist abgelaufen oder für dieses Land nicht verbunden. Verwende /audible oder sende den Link erneut, um dein Konto zu verbinden.",
-+  "audible.error.library": "Das Buch wurde in der verbundenen Bibliothek nicht zum Download gefunden oder Audible hat den Zugriff verweigert. Füge es mit demselben Konto hinzu oder kaufe es und versuche es erneut.",
++  "audible.error.library": "🎧 Zum Herunterladen muss dieses Hörbuch in der Bibliothek deines verbundenen Audible-Kontos gespeichert sein.\n\nÖffne Audible, füge das Buch deiner Bibliothek hinzu und sende den Link erneut. Falls es bereits dort ist, prüfe, ob du dasselbe Konto und denselben Marktplatz verwendest.",
 +  "audible.error.timeout": "Audible hat zu lange nicht geantwortet. Der Vorgang wurde beendet; versuche es später erneut.",
 +  "audible.error.too_large": "Das Hörbuch überschreitet das Größenlimit des Bots. Der Download wurde beendet.",
 +  "audible.error.email": "Sende eine gültige E-Mail-Adresse. Sende nicht dein Passwort.",
@@ -1774,7 +2300,7 @@ index 0000000..b1330bb
 +  "audible.error.download": "Download oder Versand des Hörbuchs fehlgeschlagen. Versuche es später erneut. Dein Konto wird nicht mit anderen Nutzern geteilt."
 +}
 diff --git a/i18n/locales/en.json b/i18n/locales/en.json
-index 8bb4cec..05bdf0d 100644
+index 8bb4cec..43ecdde 100644
 --- a/i18n/locales/en.json
 +++ b/i18n/locales/en.json
 @@ -302,7 +302,7 @@
@@ -1829,7 +2355,7 @@ index 8bb4cec..05bdf0d 100644
 +  "audible.cancel": "✖️ Cancel",
 +  "audible.cancelled": "Audible operation cancelled.",
 +  "audible.disconnected": "Audible disconnected. Your session and local files were deleted. You can also revoke the device in your Amazon settings.",
-+  "audible.connected": "✅ Your Audible account is connected. Send a link to a book available in your library. Use /audible_logout to delete the session.",
++  "audible.connected": "✅ Your Audible account is connected.\n\nSend the audiobook link to download it. The book must be saved in this account’s library.\n\nTo disconnect, use /audible_logout.",
 +  "audible.email": "Send only your Amazon/Audible account email address. Do not send a password or verification code. The email is used to start Amazon sign-in.",
 +  "audible.browser": "1. Tap <b>Sign in to Amazon</b> and sign in using your browser.\n2. Copy the full address-bar URL when finished, even if the final page shows an error.\n3. Paste that URL only in this private chat. The bot will try to delete the message after receiving it.\n\nSign-in expires in 10 minutes. Never send your password or verification code to the bot.",
 +  "audible.amazon": "Sign in to Amazon",
@@ -1842,7 +2368,7 @@ index 8bb4cec..05bdf0d 100644
 +  "audible.error.busy": "⏳ An operation for your account is already running or the Audible slots are busy. Try again in a few minutes.",
 +  "audible.error.unavailable": "The Audible service is unavailable on this server. Contact support.",
 +  "audible.error.session": "Your Audible session expired or is not connected for this country. Use /audible or send the link again to connect your account.",
-+  "audible.error.library": "The book was not found for download in the connected library, or Audible did not authorize access. Add or purchase it using the same account and try again.",
++  "audible.error.library": "🎧 To download this audiobook, it must be saved in the library of your connected Audible account.\n\nOpen Audible, add the book to your library and send the link again. If it is already there, check that you are using the same account and marketplace.",
 +  "audible.error.timeout": "Audible took too long to respond. The operation was stopped; try again later.",
 +  "audible.error.too_large": "The audiobook exceeds the bot size limit. The download was stopped.",
 +  "audible.error.email": "Send a valid email address. Do not send your password.",
@@ -1852,7 +2378,7 @@ index 8bb4cec..05bdf0d 100644
 +  "audible.error.download": "Could not finish downloading or sending the audiobook. Try again later. Your account will not be shared with other users."
  }
 diff --git a/i18n/locales/es.json b/i18n/locales/es.json
-index 242b05f..4e59e3c 100644
+index 242b05f..ae7bd6f 100644
 --- a/i18n/locales/es.json
 +++ b/i18n/locales/es.json
 @@ -302,7 +302,7 @@
@@ -1907,7 +2433,7 @@ index 242b05f..4e59e3c 100644
 +  "audible.cancel": "✖️ Cancelar",
 +  "audible.cancelled": "Operación de Audible cancelada.",
 +  "audible.disconnected": "Cuenta Audible desconectada. Se borraron la sesión y los archivos locales. También puedes revocar el dispositivo en los ajustes de Amazon.",
-+  "audible.connected": "✅ Tu cuenta Audible está conectada. Envía el enlace de un libro disponible en tu biblioteca. Usa /audible_logout para borrar la sesión.",
++  "audible.connected": "✅ Tu cuenta Audible está conectada.\n\nEnvía el enlace del audiolibro que quieres descargar. El libro debe estar guardado en la biblioteca de esta cuenta.\n\nPara desconectarte, usa /audible_logout.",
 +  "audible.email": "Envía solo el correo de tu cuenta Amazon/Audible. No envíes contraseña ni código de verificación. El correo se usará para iniciar la sesión en Amazon.",
 +  "audible.browser": "1. Toca <b>Iniciar sesión en Amazon</b> y accede desde el navegador.\n2. Copia la URL completa de la barra de direcciones al terminar, aunque la página final muestre un error.\n3. Pega esa URL solo en esta conversación privada. El bot intentará borrar el mensaje al recibirlo.\n\nEl inicio de sesión caduca en 10 minutos. Nunca envíes tu contraseña ni código de verificación al bot.",
 +  "audible.amazon": "Iniciar sesión en Amazon",
@@ -1920,7 +2446,7 @@ index 242b05f..4e59e3c 100644
 +  "audible.error.busy": "⏳ Ya hay una operación de tu cuenta en curso o los espacios de Audible están ocupados. Inténtalo en unos minutos.",
 +  "audible.error.unavailable": "El servicio Audible no está disponible en este servidor. Contacta con soporte.",
 +  "audible.error.session": "Tu sesión Audible caducó o no está conectada para este país. Usa /audible o vuelve a enviar el enlace para conectar tu cuenta.",
-+  "audible.error.library": "No se encontró el libro para descargar en la biblioteca conectada, o Audible no autorizó el acceso. Añádelo o cómpralo con la misma cuenta e inténtalo de nuevo.",
++  "audible.error.library": "🎧 Para descargar este audiolibro, debe estar guardado en la biblioteca de tu cuenta Audible conectada.\n\nAbre Audible, añade el libro a tu biblioteca y vuelve a enviar el enlace. Si ya está allí, comprueba que usas la misma cuenta y el mismo país.",
 +  "audible.error.timeout": "Audible tardó demasiado en responder. Se detuvo la operación; inténtalo más tarde.",
 +  "audible.error.too_large": "El audiolibro supera el límite de tamaño del bot. Se detuvo la descarga.",
 +  "audible.error.email": "Envía un correo electrónico válido. No envíes tu contraseña.",
@@ -1930,7 +2456,7 @@ index 242b05f..4e59e3c 100644
 +  "audible.error.download": "No se pudo terminar la descarga o el envío del audiolibro. Inténtalo más tarde. Tu cuenta no se compartirá con otros usuarios."
  }
 diff --git a/i18n/locales/pt.json b/i18n/locales/pt.json
-index 0604960..8794027 100644
+index 0604960..c4a06f4 100644
 --- a/i18n/locales/pt.json
 +++ b/i18n/locales/pt.json
 @@ -302,7 +302,7 @@
@@ -1985,7 +2511,7 @@ index 0604960..8794027 100644
 +  "audible.cancel": "✖️ Cancelar",
 +  "audible.cancelled": "Operação do Audible cancelada.",
 +  "audible.disconnected": "Conta Audible desconectada. A sessão e os arquivos locais foram apagados. Você também pode revogar o dispositivo nas configurações da Amazon.",
-+  "audible.connected": "✅ Sua conta Audible está conectada. Envie o link de um livro disponível na sua biblioteca. Para apagar a sessão, use /audible_logout.",
++  "audible.connected": "✅ Sua conta Audible está conectada.\n\nEnvie o link do audiolivro que deseja baixar. O livro precisa estar salvo na biblioteca dessa conta.\n\nPara desconectar, use /audible_logout.",
 +  "audible.email": "Envie somente o e-mail da sua conta Amazon/Audible. Não envie senha nem código de verificação. O e-mail será usado para iniciar o login na Amazon.",
 +  "audible.browser": "1. Toque em <b>Entrar na Amazon</b> e faça o login no navegador.\n2. Ao terminar, copie a URL completa da barra de endereços, mesmo se a página final exibir um erro.\n3. Cole essa URL somente nesta conversa privada. O bot tentará apagar essa mensagem após recebê-la.\n\nO login expira em 10 minutos. Nunca envie sua senha ou código de verificação ao bot.",
 +  "audible.amazon": "Entrar na Amazon",
@@ -1998,7 +2524,7 @@ index 0604960..8794027 100644
 +  "audible.error.busy": "⏳ Já existe uma operação da sua conta em andamento ou os slots do Audible estão ocupados. Tente novamente em alguns minutos.",
 +  "audible.error.unavailable": "O serviço Audible não está disponível neste servidor. Informe o suporte.",
 +  "audible.error.session": "Sua sessão Audible expirou ou não está conectada para este país. Use /audible ou envie o link novamente para conectar sua conta.",
-+  "audible.error.library": "O livro não foi encontrado para download na biblioteca conectada, ou a Audible não autorizou o acesso. Adicione ou adquira o título na mesma conta e tente novamente.",
++  "audible.error.library": "🎧 Para baixar este audiolivro, ele precisa estar salvo na biblioteca da sua conta Audible conectada.\n\nAbra a Audible, adicione o livro à sua biblioteca e envie o link novamente. Se ele já estiver lá, confira se está usando a mesma conta e o mesmo país.",
 +  "audible.error.timeout": "A Audible demorou demais para responder. A operação foi encerrada; tente novamente mais tarde.",
 +  "audible.error.too_large": "O audiolivro excede o limite de tamanho do bot. O download foi interrompido.",
 +  "audible.error.email": "Envie um endereço de e-mail válido. Não envie sua senha.",
