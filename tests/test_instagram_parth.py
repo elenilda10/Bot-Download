@@ -1,5 +1,6 @@
 """Isolated tests for the optional parth-dl post fallback."""
 
+import importlib.util
 import sys
 import tempfile
 import types
@@ -7,7 +8,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from services.platforms import instagram_parth as source
+# Import only the extractor, not services/__init__.py (which boots the full bot).
+_ROOT = Path(__file__).resolve().parents[1]
+_services = types.ModuleType("services")
+_services.__path__ = [str(_ROOT / "services")]
+_platforms = types.ModuleType("services.platforms")
+_platforms.__path__ = [str(_ROOT / "services" / "platforms")]
+_spec = importlib.util.spec_from_file_location(
+    "_instagram_parth_test_module", _ROOT / "services/platforms/instagram_parth.py"
+)
+source = importlib.util.module_from_spec(_spec)
+with patch.dict(sys.modules, {"services": _services, "services.platforms": _platforms}):
+    _spec.loader.exec_module(source)
 
 
 class ParthFallbackTests(unittest.TestCase):
