@@ -19,7 +19,7 @@ from utils.cobalt_client import fetch_cobalt_data
 
 logger = logging.getLogger(__name__)
 
-# INSTAGRAM_FIREFOX_STORY_PATCH_V1
+# Instagram público: Stories são tratados pelo SaveInsta antes dos fallbacks.
 INSTAGRAM_STORY_GDL_BIN = os.getenv('INSTAGRAM_STORY_GDL_BIN', '').strip()
 
 GDL_BIN = "/root/Bot-Download/venv/bin/gallery-dl"
@@ -645,7 +645,7 @@ async def fetch_instagram_media(url: str, output_dir: str = "/root/Bot-Download/
             time.monotonic() - _t,
         )
 
-    # 4. Instâncias públicas do Cobalt.
+    # Cobalt: instâncias públicas.
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
