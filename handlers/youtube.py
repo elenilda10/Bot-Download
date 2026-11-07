@@ -4,7 +4,7 @@ import re
 import time
 from typing import Any, Optional
 from aiogram import types, Router, F
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import FSInputFile
 from yt_dlp import YoutubeDL
 import keyboards as kb
 import messages as bm
@@ -83,14 +83,6 @@ def _is_pt(lang: Optional[str]) -> bool:
         return True
     code = lang.strip().lower()
     return code == "pt" or code.startswith("pt_") or code.startswith("pt-")
-
-
-def _make_progress_keyboard(video_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
-    text = "📊 Ver Progresso" if _is_pt(lang) else "📊 View Progress"
-    norm_lang = "pt" if _is_pt(lang) else "en"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"ytprog:{video_id}:{norm_lang}")]]
-    )
 
 
 def safe_int(value, default: int = 0) -> int:
@@ -360,12 +352,10 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             return
 
         video_id = yt.get("id") or "video"
-        progress_kb = _make_progress_keyboard(video_id, lang=user_lang)
 
         if show_service_status:
             status_message = await message.answer(
                 bm.downloading_video_status(lang=user_lang),
-                reply_markup=progress_kb,
             )
 
         video = await asyncio.to_thread(get_video_stream, yt)
@@ -423,7 +413,7 @@ async def download_video(message: types.Message, direct_url: Optional[str] = Non
             })
 
         async def _edit_status(text: str) -> None:
-            await safe_edit_text(status_message, text, reply_markup=progress_kb)
+            await safe_edit_text(status_message, text)
 
         on_retry_download = make_retry_status_notifier(_edit_status, lang=user_lang)
 
