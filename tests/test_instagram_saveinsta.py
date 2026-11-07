@@ -200,12 +200,21 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
 
         httpx.AsyncClient = RejectingClient
 
+        root = Path(__file__).resolve().parents[1]
+        # Avoid services/__init__.py, which initializes the entire bot and loads
+        # unrelated configuration. Namespace packages allow isolated imports.
+        services_pkg = types.ModuleType("services")
+        services_pkg.__path__ = [str(root / "services")]
+        platforms_pkg = types.ModuleType("services.platforms")
+        platforms_pkg.__path__ = [str(root / "services" / "platforms")]
+
         spec = importlib.util.spec_from_file_location(
-            "_instagram_media_tests", Path(__file__).resolve().parents[1]
-            / "services/platforms/instagram_media.py",
+            "_instagram_media_tests", root / "services/platforms/instagram_media.py"
         )
         cls.service = importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules, {
+            "services": services_pkg,
+            "services.platforms": platforms_pkg,
             spec.name: cls.service, "config": config,
             "httpx": httpx, "utils.cobalt_client": cobalt,
             "services.platforms.instagram_saveinsta": source,
