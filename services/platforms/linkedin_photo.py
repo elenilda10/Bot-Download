@@ -126,4 +126,5 @@ async def find_post_photo(post_url, user_agent):
                     return PostPhoto(image, description)
     except (aiohttp.ClientError, TimeoutError, ValueError):
         pass
-    return None
+    from services.platforms.linkedin_browser import browser_photo
+    return await browser_photo(post_url)

@@ -17,9 +17,12 @@ def main():
     registry = target / "services/platforms/universal_extractor.py"
     previous_handler = (target / "handlers/linkedin.py").is_file() and (target / "services/links/linkedin.py").is_file()
     incremental = previous_handler and registry.is_file() and "await resolve_linkedin_url(url)" in registry.read_text()
+    bundle = "linkedin_vps"
+    if incremental:
+        bundle = "linkedin_browser_vps" if (target / "services/platforms/linkedin_photo.py").is_file() else "linkedin_photo_vps"
     try:
         changes = prepare(
-            target, reference=reference, bundle="linkedin_photo_vps" if incremental else "linkedin_vps"
+            target, reference=reference, bundle=bundle
         )
     except RuntimeConflict as exc:
         if args.diagnose and exc.details:

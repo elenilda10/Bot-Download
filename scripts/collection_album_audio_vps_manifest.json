@@ -1,6 +1,6 @@
 {
   "base_commit": "62d7f3ec5d285f5caf3a16d772c88f1a6444c060",
-  "patch_sha256": "b256f21f9a50cbc5bd2b6e64eb3a4c1b9732548f094407a248bfeafdd9d6962e",
+  "patch_sha256": "22266bebb667780baa4e7520c23f63bab6935943997cad5f18ab747abef8ff28",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2",
@@ -94,9 +94,13 @@
       "base_sha256": null,
       "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
     },
+    "services/platforms/linkedin_browser.py": {
+      "base_sha256": null,
+      "result_sha256": "6b67e086b82db43344c330e994c30ab4ed362726ce59a74e8c496c901a715623"
+    },
     "services/platforms/linkedin_photo.py": {
       "base_sha256": null,
-      "result_sha256": "a33a99fa089322259ac5770de4395a98550996e112d24f597f3a822516975cfd"
+      "result_sha256": "9b78e6f8b0d0fac1e5f1a911fe3b416e7e231fd919a1b39a2ab8275e3a9fee3e"
     },
     "services/platforms/media_collections.py": {
       "base_sha256": "a7d4fb66885be35fd0b1dcdc1290fdbea791e910696faff51395a971df25bf77",

@@ -1,6 +1,6 @@
 {
   "base_commit": "4284cb55f20db391080be7c28ef98ad1c3c03876",
-  "patch_sha256": "ddc00972370367a9a5a98b906db205e793212f58d57255538a2b1998373d328d",
+  "patch_sha256": "3c7d0d34713bbba8fda8e8b36900a7f887ea6273b9fd1f98d2223c992529a653",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "82a5f43d3e4ec017f5e17b2841010cfd177314dbc92f309fb487f40a8cf311f2",
@@ -90,9 +90,13 @@
       "base_sha256": null,
       "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
     },
+    "services/platforms/linkedin_browser.py": {
+      "base_sha256": null,
+      "result_sha256": "6b67e086b82db43344c330e994c30ab4ed362726ce59a74e8c496c901a715623"
+    },
     "services/platforms/linkedin_photo.py": {
       "base_sha256": null,
-      "result_sha256": "a33a99fa089322259ac5770de4395a98550996e112d24f597f3a822516975cfd"
+      "result_sha256": "9b78e6f8b0d0fac1e5f1a911fe3b416e7e231fd919a1b39a2ab8275e3a9fee3e"
     },
     "services/platforms/universal_extractor.py": {
       "base_sha256": "45e219c84f26b081a6207a1dfd3e4d4ddc995da9934064aa34f310d85f94a346",

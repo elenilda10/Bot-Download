@@ -16,8 +16,11 @@ def page(html):
 
 
 class LinkedInPhotoTests(unittest.TestCase):
-    def resolve(self, pages):
-        with patch("services.platforms.linkedin_photo._read_page", new_callable=AsyncMock, side_effect=pages) as read:
+    def resolve(self, pages, rendered=None):
+        with patch("services.platforms.linkedin_photo._read_page", new_callable=AsyncMock, side_effect=pages) as read, patch(
+            "services.platforms.linkedin_browser.browser_photo", new_callable=AsyncMock, return_value=rendered,
+        ) as browser:
+            self.browser = browser
             return asyncio.run(find_post_photo(POST, "test")), read
 
     def test_public_post_keeps_caption_and_signed_query(self):
@@ -44,3 +47,13 @@ class LinkedInPhotoTests(unittest.TestCase):
         ):
             with self.subTest(html=html):
                 self.assertIsNone(self.resolve([page(html), None])[0])
+
+    def test_missing_html_photo_renders_the_same_post(self):
+        from services.platforms.linkedin_photo import PostPhoto
+        rendered = PostPhoto(IMAGE, "Utrecht")
+        self.assertEqual(self.resolve([None, None], rendered)[0], rendered)
+        self.browser.assert_awaited_once_with(POST)
+
+    def test_video_skips_browser(self):
+        self.resolve([page('<meta property="og:type" content="video.other">')])
+        self.browser.assert_not_awaited()
