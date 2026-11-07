@@ -1,6 +1,7 @@
 from i18n import normalize_locale as _normalize_locale
 from i18n import t as _t
 import asyncio
+from urllib.parse import unquote, urlsplit
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ from typing import Optional, Any
 from aiogram import F, Router, types
 from aiogram.enums import ChatAction, ParseMode
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InputMediaAudio, FSInputFile, InputMediaPhoto, InputMediaVideo, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
 import keyboards as kb
 import messages as bm
@@ -97,7 +98,7 @@ def _cache_key(url_hash: str, media_kind: str) -> str:
     """Keep audio/document caches; refresh old previewless videos and albums."""
     # Telegram file_ids from older uploads preserve their original thumbnails.
     # A new namespace makes the first post-fix request rebuild the preview.
-    version = "v3" if media_kind in {"video", "album"} else "v2"
+    version = "v5" if media_kind in {"video", "album"} else "v2"
     if media_kind == "photo" and LINKEDIN_URL.fullmatch(_get_url_from_hash(url_hash) or ""):
         version = "v4"
     return build_media_cache_key(
@@ -158,7 +159,7 @@ async def _try_cached_universal(
             except TelegramBadRequest:
                 logging.warning("Universal document cache ID rejected")
     else:
-        for kind in ("video", "photo"):
+        for kind in ("original_audio", "video", "photo"):
             cached_id = await db.get_file_id(_cache_key(url_hash, kind))
             if not cached_id:
                 continue
@@ -166,7 +167,13 @@ async def _try_cached_universal(
                 url, url_hash, settings, lang=lang, is_video=(kind == "video")
             )
             try:
-                if kind == "video":
+                if kind == "original_audio":
+                    sent = await message.answer_audio(
+                        audio=cached_id, caption=caption or None, parse_mode=ParseMode.HTML,
+                        reply_markup=keyboard, allow_sending_without_reply=True,
+                    )
+                    valid = bool(sent and sent.audio)
+                elif kind == "video":
                     sent = await message.answer_video(
                         video=cached_id, caption=caption or None,
                         parse_mode=ParseMode.HTML, supports_streaming=True,
@@ -205,7 +212,9 @@ async def _try_cached_universal(
             if not isinstance(file_id, str) or not file_id:
                 return False
             item_caption = (caption or None) if index == 0 else None
-            if kind == "video":
+            if kind == "audio":
+                album.append(InputMediaAudio(media=file_id, caption=item_caption, parse_mode=ParseMode.HTML))
+            elif kind == "video":
                 album.append(InputMediaVideo(
                     media=file_id, caption=item_caption, parse_mode=ParseMode.HTML,
                     supports_streaming=True,
@@ -229,6 +238,8 @@ async def _try_cached_universal(
 
 def _is_image_item(item) -> bool:
     item_type = getattr(item, "type", "") or ""
+    if item_type == "audio":
+        return False
     if item_type in {"photo", "image"}:
         return True
 
@@ -463,7 +474,7 @@ async def process_universal_link(
         is_first_image = _is_image_item(first_item) if first_item else False
         keyboard = _universal_keyboard(
             url, url_hash, user_settings, lang=user_lang,
-            is_video=not is_first_image,
+            is_video=first_item.type == "video" and not is_first_image,
         )
 
         for media_item in res.media_list:
@@ -502,6 +513,17 @@ async def process_universal_link(
                         sent_message.document.file_id, "document",
                     )
                     logging.info("Universal cache stored: document")
+            elif item.type == "audio":
+                filename = os.path.basename(unquote(urlsplit(url).path))
+                title = item.title or (os.path.splitext(filename)[0] if os.path.splitext(filename)[1] else None)
+                sent_message = await message.answer_audio(
+                    audio=source_file, title=title, performer=item.performer,
+                    duration=item.duration or None, caption=caption or None,
+                    parse_mode=ParseMode.HTML, reply_markup=keyboard,
+                    allow_sending_without_reply=True,
+                )
+                if sent_message and sent_message.audio and not is_facebook:
+                    await db.add_file(_cache_key(url_hash, "original_audio"), sent_message.audio.file_id, "audio")
             elif not is_image and item.type == "video":
                 preview_path = (
                     item.thumb if item.thumb and os.path.isfile(item.thumb)
@@ -561,7 +583,13 @@ async def process_universal_link(
 
                 item_caption = caption if idx == 0 else None
                 is_image = _is_image_item(item)
-                if not is_image and item.type == "video":
+                if item.type == "audio":
+                    media_group.append(InputMediaAudio(
+                        media=FSInputFile(item.url) if is_local else URLInputFile(item.url),
+                        title=item.title, performer=item.performer, duration=item.duration or None,
+                        caption=item_caption, parse_mode=ParseMode.HTML,
+                    ))
+                elif not is_image and item.type == "video":
                     file_input = (
                         FSInputFile(item.url) if is_local else URLInputFile(item.url)
                     )
@@ -596,7 +624,22 @@ async def process_universal_link(
             if media_group:
                 sent_album = []
                 start = 0
+                mixed_audio = any(isinstance(m, InputMediaAudio) for m in media_group) and any(
+                    not isinstance(m, InputMediaAudio) for m in media_group
+                )
                 while start < len(media_group):
+                    if mixed_audio:
+                        media = media_group[start]
+                        kind = media.type.value if hasattr(media.type, "value") else media.type
+                        send = getattr(message, f"answer_{kind}")
+                        attributes = ("caption", "parse_mode", "title", "performer", "duration",
+                                      "width", "height", "thumbnail", "supports_streaming")
+                        fields = {key: getattr(media, key) for key in attributes
+                                  if getattr(media, key, None) is not None}
+                        fields[kind] = media.media
+                        await send(**fields, allow_sending_without_reply=True)
+                        start += 1
+                        continue
                     # Leave two items for the last group when eleven remain.
                     size = 9 if len(media_group) - start == 11 else 10
                     batch = media_group[start:start + size]
@@ -607,7 +650,9 @@ async def process_universal_link(
                 if len(sent_album) == len(media_group) <= 10:
                     album_entries = []
                     for item in sent_album:
-                        if item.video:
+                        if item.audio:
+                            album_entries.append({"kind": "audio", "file_id": item.audio.file_id})
+                        elif item.video:
                             album_entries.append({
                                 "kind": "video", "file_id": item.video.file_id,
                             })
