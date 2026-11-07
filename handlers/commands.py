@@ -537,6 +537,7 @@ def _clean_translation_input(text: str) -> str:
             or "Powered by Save Video DL Bot" in stripped
             or "Desenvolvido por Save Vídeo DL Bot" in stripped
             or "Desarrollado por Save Vídeo DL Bot" in stripped
+            or "بواسطة Save Vídeo DL Bot" in stripped
         ):
             continue
 
