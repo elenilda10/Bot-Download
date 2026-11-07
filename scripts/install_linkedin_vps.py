@@ -13,9 +13,13 @@ def main():
     parser.add_argument("--diagnose", action="store_true")
     args = parser.parse_args()
     target = args.target.resolve()
+    reference = Path(__file__).resolve().parent
+    registry = target / "services/platforms/universal_extractor.py"
+    previous_handler = (target / "handlers/linkedin.py").is_file() and (target / "services/links/linkedin.py").is_file()
+    incremental = previous_handler and registry.is_file() and "await resolve_linkedin_url(url)" in registry.read_text()
     try:
         changes = prepare(
-            target, reference=Path(__file__).resolve().parent, bundle="linkedin_vps"
+            target, reference=reference, bundle="linkedin_photo_vps" if incremental else "linkedin_vps"
         )
     except RuntimeConflict as exc:
         if args.diagnose and exc.details:

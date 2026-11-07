@@ -1,6 +1,6 @@
 {
   "base_commit": "fc89407d2b44c826da80722a2b3325edba8ccaa3",
-  "patch_sha256": "02da0c5dd0dfb594562a703c9c9b9add47975ef0bdd2fe26f2f79510cf87f2e4",
+  "patch_sha256": "95cb2dfc0793313fe81de6a53ea8fcdf0dc7eec861090655a66ab4e1440cf0b5",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -262,6 +262,10 @@
       "base_sha256": "88000548aca50aa4f7e9c250c27ddeb1d02db664ccd7b867dd7aeb35a726fe7a",
       "result_sha256": "6d6b8be4ca9c3ff58461aaa86953e0d282e5717171d0ce1d8a0477b74b818e2a"
     },
+    "services/platforms/linkedin_photo.py": {
+      "base_sha256": null,
+      "result_sha256": "a33a99fa089322259ac5770de4395a98550996e112d24f597f3a822516975cfd"
+    },
     "services/platforms/media_collections.py": {
       "base_sha256": null,
       "result_sha256": "219146f0e9af4e199d36c8e3535bc9118b3b3f4c4e1ce786559c1c79bb625c3c"
@@ -272,7 +276,7 @@
     },
     "services/platforms/universal_extractor.py": {
       "base_sha256": "0efcd32b0520e046bb83b95ddfe1566b3c89763cc5e0c6143758c12a09b88714",
-      "result_sha256": "0d2d3f06e230415d79c767f450f416910dd63577b9ceec1db7aea0e7a9bfffd3"
+      "result_sha256": "a2df65635eb23584037d5b48bb23ffa9864dcc420cbeb2fd3c0537c9681bc047"
     },
     "services/platforms/youtube_media.py": {
       "base_sha256": "1943a287258a4a512f807d091e09cd43ac2487f69caf1c744c623d63d2ac73b0",
