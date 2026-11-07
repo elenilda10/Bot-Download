@@ -50,6 +50,8 @@ class UniversalMediaItem:
     height: Optional[int] = 720
     duration: Optional[int] = 0
     index: int = 0
+    title: Optional[str] = None
+    performer: Optional[str] = None
 
 
 @dataclass
@@ -144,15 +146,16 @@ async def _download_direct_image(url: str, output_dir: str, post_id: str) -> Opt
 
 async def _get_video_metadata(file_path: str) -> dict:
     """Use the actual video dimensions instead of arbitrary 1280x720 defaults."""
-    unknown = {"width": None, "height": None, "duration": None}
+    audio_extension = os.path.splitext(file_path)[1].lower() in {".mp3", ".m4a", ".aac", ".wav", ".flac", ".oga", ".opus"}
+    unknown = {"width": None, "height": None, "duration": None, "type": "audio" if audio_extension else "video"}
     if not os.path.isfile(file_path) or os.path.getsize(file_path) == 0:
         return unknown
 
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,duration:format=duration",
+            "ffprobe", "-v", "error",
+            "-show_entries", "stream=codec_type,width,height,duration:stream_disposition=attached_pic:format=duration:format_tags=title,artist",
             "-of", "json", file_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
@@ -161,7 +164,10 @@ async def _get_video_metadata(file_path: str) -> dict:
         if proc.returncode != 0:
             return unknown
         data = json.loads(data_bytes)
-        stream = next(iter(data.get("streams") or []), {})
+        streams = data.get("streams") or []
+        stream = next((s for s in streams if s.get("codec_type") == "video"
+                       and not (s.get("disposition") or {}).get("attached_pic")), {})
+        audio_only = not stream and any(s.get("codec_type") == "audio" for s in streams)
         data_format = data.get("format") or {}
 
         def positive_int(value):
@@ -174,6 +180,9 @@ async def _get_video_metadata(file_path: str) -> dict:
                 return None
 
         return {
+            "type": "audio" if audio_only else "video",
+            "title": (data_format.get("tags") or {}).get("title"),
+            "performer": (data_format.get("tags") or {}).get("artist"),
             "width": positive_int(stream.get("width")),
             "height": positive_int(stream.get("height")),
             "duration": positive_int(data_format.get("duration"))
@@ -508,9 +517,10 @@ async def _download_with_gallery_dl(
                 # gallery-dl (including Reddit) doesn't supply Telegram
                 # preview/ffprobe metadata. Derive both from the local file.
                 meta = await _get_video_metadata(path)
+                m_type = meta.get("type", "video")
                 thumb = await _generate_thumbnail(
                     path, os.path.join(output_dir, f"{post_id}_{idx}_thumb.jpg")
-                )
+                ) if m_type == "video" else None
             else:
                 meta = {"width": None, "height": None, "duration": None}
                 thumb = path
@@ -518,6 +528,7 @@ async def _download_with_gallery_dl(
                 UniversalMediaItem(
                     url=path,
                     type=m_type,
+                    title=meta.get("title"), performer=meta.get("performer"),
                     thumb=thumb,
                     width=meta["width"],
                     height=meta["height"],
@@ -771,12 +782,13 @@ async def _download_with_ytdlp(
             )
 
         meta = await _get_video_metadata(target_video)
-        thumb = await _generate_thumbnail(target_video, thumb_path)
+        kind = meta.get("type", "video")
+        thumb = await _generate_thumbnail(target_video, thumb_path) if kind == "video" else None
         return UniversalMediaResult(
             id=post_id, description=title, author=uploader,
             media_list=[UniversalMediaItem(
                 url=target_video,
-                type="video", thumb=thumb,
+                type=kind, thumb=thumb, title=meta.get("title") or title, performer=meta.get("performer"),
                 width=meta["width"], height=meta["height"],
                 duration=meta["duration"], index=0,
             )],
