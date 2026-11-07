@@ -1,6 +1,6 @@
 {
   "base_commit": "f88a0902dc220bad72d9a013d7db3f2a8ffdd3e6",
-  "patch_sha256": "61c1343953d04c1dcc8ac813fe2a457f719d2fcd9a4db3cda7fad73001a01738",
+  "patch_sha256": "9474db3618ef8f67255f319c91e60325b0b165f7ef4dfc9bb5f9d008de899fbb",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -36,7 +36,7 @@
     },
     "i18n/__init__.py": {
       "base_sha256": "1ee63f527f437515e0c0f42b59c552d45d8baa5783d893dad9e3d4c5246025ab",
-      "result_sha256": "54f0a2f6965227f25ec0d07582315f2c052bf5017c1b130997700cc130707cd3"
+      "result_sha256": "5fd1aab40afec2c07c34d33d31d1e4895bff28a9dab9f1f7f7d18efdbd73ab46"
     },
     "i18n/locales/ar.json": {
       "base_sha256": null,
@@ -53,6 +53,10 @@
     "i18n/locales/es.json": {
       "base_sha256": "d901d7776e31edaba8087dda293aeb812d4c16238ec56a8b6260e4b89b298ad4",
       "result_sha256": "c0a1a86f60d2a6539b0868bc211e543214098730ebb86f013af6a0474f51f64c"
+    },
+    "i18n/locales/it.json": {
+      "base_sha256": null,
+      "result_sha256": "7a846d1bfd3657f962efd3dc96a401522bc10d7a362e50b7eb5b52b8e85f8f0d"
     },
     "i18n/locales/pt.json": {
       "base_sha256": "9b1565a753f42447b268483eb6b2c49534664d25044c936154c841e8e9686730",
