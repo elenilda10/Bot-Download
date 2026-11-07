@@ -16,25 +16,32 @@ _browser_slots = asyncio.Semaphore(1)
 _READ_POST = """({postId, embed}) => {
     const uris = [...document.querySelectorAll('link[rel="canonical"],meta[property="og:url"]')]
         .map(node => node.href || node.content).filter(Boolean);
-    if (uris.some(uri => !new RegExp('(?:-|:)' + postId + '(?:-|/|[?#]|$)').test(uri))) return false;
+    // Dedicated embeds are already bound to the post by their final URL.
+    // Generic metadata can omit an ID; reject metadata identifying another post.
+    const conflictingEmbed = uri => {
+        const match = uri.match(/(?:urn:li:(?:activity|share|ugcPost):|-(?:activity|share|ugcPost)-)([0-9]+)/i);
+        return match && match[1] !== postId;
+    };
+    if (embed && uris.some(conflictingEmbed)) return false;
+    if (!embed && uris.some(uri => !new RegExp('(?:-|:)' + postId + '(?:-|/|[?#]|$)').test(uri))) return false;
     const roots = [...document.querySelectorAll('[data-urn], [data-id], [data-entity-urn]')];
-    const root = roots.find(el => ['data-urn','data-id','data-entity-urn']
+    const root = embed ? document.body : roots.find(el => ['data-urn','data-id','data-entity-urn']
         .some(attr => ['activity','share','ugcPost'].some(kind =>
-            el.getAttribute(attr) === 'urn:li:' + kind + ':' + postId)))
-        || (embed && (document.querySelector('main') || document.body));
+            el.getAttribute(attr) === 'urn:li:' + kind + ':' + postId)));
     const meta = name => document.querySelector('meta[property="' + name + '"]')?.content || '';
     if (meta('og:video') || meta('og:video:url') || meta('og:type').startsWith('video')
         || root?.querySelector('video')) return {video: true};
     const candidates = [];
     const images = root ? root.querySelectorAll('img') : [];
     for (const img of images) {
-        if (img.closest('aside, nav, header, footer, [class*="comment"], [class*="related"]')) continue;
+        if (img.closest('aside, nav, header, footer, [class*="comment-item"], [class*="comments-"], [class*="related"]')) continue;
         const options = [img.currentSrc, img.dataset.delayedUrl, img.dataset.src, img.src];
         for (const value of options) {
             if (value && value.includes('/feedshare-')) candidates.push(value);
         }
     }
-    candidates.push(meta('og:image:secure_url'), meta('og:image'));
+    candidates.push(meta('og:image:secure_url'), meta('og:image'),
+        document.querySelector('meta[name="twitter:image"]')?.content);
     const urls = candidates.filter(s => {
         try { const u = new URL(s); return u.protocol === 'https:' &&
             ['media.licdn.com','media-exp1.licdn.com'].includes(u.host) &&
