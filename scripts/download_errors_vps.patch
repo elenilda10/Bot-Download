@@ -824,8 +824,35 @@ index 09cbfd2..6b7e4e1 100644
      finally:
          await safe_delete_message(status_message)
          await _cleanup(result)
+diff --git a/handlers/linkedin.py b/handlers/linkedin.py
+new file mode 100644
+index 0000000..bddce2c
+--- /dev/null
++++ b/handlers/linkedin.py
+@@ -0,0 +1,21 @@
++"""Telegram entry point for public LinkedIn posts and lnkd.in links."""
++
++from services.links.linkedin import LINKEDIN_URL
++
++DIRECT_LINK_HINT = {
++    "pt": "Não consegui abrir esse link do LinkedIn. Abra a publicação no navegador e envie o endereço completo da barra de endereços (linkedin.com/posts/… ou linkedin.com/feed/update/…).",
++    "en": "I couldn't open this LinkedIn link. Open the post in your browser and send the full address from the address bar (linkedin.com/posts/… or linkedin.com/feed/update/…).",
++    "es": "No pude abrir este enlace de LinkedIn. Abre la publicación en el navegador y envía la dirección completa de la barra de direcciones (linkedin.com/posts/… o linkedin.com/feed/update/…).",
++    "de": "Ich konnte diesen LinkedIn-Link nicht öffnen. Öffne den Beitrag im Browser und sende die vollständige Adresse aus der Adressleiste (linkedin.com/posts/… oder linkedin.com/feed/update/…).",
++    "ar": "تعذر فتح رابط LinkedIn. افتح المنشور في المتصفح وأرسل الرابط الكامل من شريط العنوان (linkedin.com/posts/… أو linkedin.com/feed/update/…).",
++    "it": "Non riesco ad aprire questo link di LinkedIn. Apri il post nel browser e invia l’indirizzo completo dalla barra degli indirizzi (linkedin.com/posts/… o linkedin.com/feed/update/…).",
++}
++
++
++async def process_linkedin(message, direct_url=None):
++    from handlers.universal import process_universal_link
++    from handlers.utils import get_message_text
++
++    match = LINKEDIN_URL.search(direct_url or get_message_text(message) or "")
++    if match:
++        await process_universal_link(message, direct_url=match[0].rstrip(".,;:!?)]}>"))
 diff --git a/handlers/media_download.py b/handlers/media_download.py
-index 8b66f0f..0f66689 100644
+index 8b66f0f..9a90c4f 100644
 --- a/handlers/media_download.py
 +++ b/handlers/media_download.py
 @@ -67,6 +67,11 @@ async def _process_pending_message(message: types.Message) -> None:
@@ -840,6 +867,18 @@ index 8b66f0f..0f66689 100644
      if service == "tiktok":
          from handlers import tiktok
          await tiktok.process_tiktok(message, direct_url=url)
+@@ -77,6 +82,11 @@ async def _process_supported_link(message: types.Message, service: str, url: str
+         await kwai.process_kwai_link(message, direct_url=url)
+         return
+ 
++    if service == "linkedin":
++        from handlers.linkedin import process_linkedin
++        await process_linkedin(message, direct_url=url)
++        return
++
+     if service == "reddit":
+         from handlers import reddit
+         await reddit.process_reddit(message, direct_url=url)
 diff --git a/handlers/pinterest.py b/handlers/pinterest.py
 index 42a0a7f..0d4a965 100644
 --- a/handlers/pinterest.py
@@ -1187,10 +1226,78 @@ index f143dbd..adc2cbb 100644
          if request_lease is not None:
              request_lease.finish()
 diff --git a/handlers/universal.py b/handlers/universal.py
-index 1556d71..2736912 100644
+index 1556d71..dc79f2d 100644
 --- a/handlers/universal.py
 +++ b/handlers/universal.py
-@@ -623,7 +623,7 @@ async def process_universal_link(
+@@ -18,6 +18,8 @@ import messages as bm
+ from app_context import bot, db, send_analytics
+ from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
+ from handlers import commands as cmd_mod
++from handlers.linkedin import DIRECT_LINK_HINT, process_linkedin
++from services.links.linkedin import LINKEDIN_URL, LinkedInRedirectError
+ from handlers.request_dedupe import claim_message_request
+ from handlers.utils import (
+     get_bot_avatar_thumbnail,
+@@ -286,6 +288,11 @@ async def handle_universal_progress_callback(call: types.CallbackQuery):
+     await call.answer(msg, show_alert=True)
+ 
+ 
++_linkedin_filter = (F.text.regexp(LINKEDIN_URL, mode="search") | F.caption.regexp(LINKEDIN_URL, mode="search")) & ~F.text.startswith("/")
++router.message.register(process_linkedin, _linkedin_filter)
++router.business_message.register(process_linkedin, _linkedin_filter)
++
++
+ @router.message(
+     (
+         F.text.regexp(_UNIVERSAL_LINK_REGEX, mode="search")
+@@ -327,6 +334,7 @@ async def process_universal_link(
+         return
+ 
+     url = request_url_match.group(0).strip()
++    platform = "LinkedIn" if LINKEDIN_URL.fullmatch(url) else "Link"
+     request_lease = await claim_message_request(message, service="universal", url=url)
+     if request_lease is None:
+         return
+@@ -349,7 +357,7 @@ async def process_universal_link(
+ 
+     if business_id is None:
+         status_message = await message.answer(
+-            bm.downloading_video_status(lang=user_lang, platform='Link'),
++            bm.downloading_video_status(lang=user_lang, platform=platform),
+             reply_markup=progress_kb,
+         )
+ 
+@@ -395,7 +403,7 @@ async def process_universal_link(
+             await send_analytics(
+                 user_id=message.from_user.id,
+                 chat_type=message.chat.type,
+-                action_name="universal",
++                action_name="linkedin" if platform == "LinkedIn" else "universal",
+             )
+         bot_url = await get_bot_url(bot)
+ 
+@@ -437,7 +445,7 @@ async def process_universal_link(
+             UNIVERSAL_PROGRESS[post_id]["status"] = "uploading"
+ 
+         if status_message:
+-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Link'))
++            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform=platform))
+ 
+         user_captions_mode = user_settings.get("captions", "on")
+         caption = bm.captions(user_captions_mode, res.description, bot_url)
+@@ -618,12 +626,19 @@ async def process_universal_link(
+             request_lease.mark_success()
+         await maybe_delete_user_message(message, user_settings.get("delete_message"))
+ 
++    except LinkedInRedirectError:
++        if status_message:
++            await safe_delete_message(status_message)
++        await handle_download_error(
++            message, text=DIRECT_LINK_HINT.get(_normalize_locale(user_lang), DIRECT_LINK_HINT["en"]),
++            business_id=business_id, skip_if_business=False,
++        )
+     except Exception as exc:
+         logging.exception("Error processing universal download: %s", exc)
          if status_message:
              await safe_delete_message(status_message)
          await react_to_message(message, "👎", business_id=business_id)
@@ -1199,7 +1306,7 @@ index 1556d71..2736912 100644
      finally:
          if post_id and post_id in UNIVERSAL_PROGRESS:
              UNIVERSAL_PROGRESS.pop(post_id, None)
-@@ -726,7 +726,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
+@@ -726,7 +741,7 @@ async def download_universal_doc_callback(call: types.CallbackQuery):
                  await remove_file(first_item.thumb)
      except Exception as exc:
          logging.error("Universal file button failed: %s", type(exc).__name__)
@@ -1208,7 +1315,7 @@ index 1556d71..2736912 100644
      finally:
          await safe_delete_message(status_message)
  
-@@ -873,6 +873,6 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
+@@ -873,6 +888,6 @@ async def download_universal_audio_callback(call: types.CallbackQuery):
  
      except Exception as exc:
          logging.exception("Erro ao processar audio:univ: %s", exc)
@@ -3705,24 +3812,26 @@ index 0000000..35a93e8
 +    except ValueError:
 +        return False
 diff --git a/services/links/detection.py b/services/links/detection.py
-index 8d7a4b8..4af818b 100644
+index 8d7a4b8..01a9061 100644
 --- a/services/links/detection.py
 +++ b/services/links/detection.py
-@@ -3,10 +3,13 @@ from __future__ import annotations
+@@ -3,10 +3,15 @@ from __future__ import annotations
  import re
  from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
  
++from services.links.linkedin import LINKEDIN_URL
 +from services.links.audible import AUDIBLE_URL_REGEX
 +
  
  _TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
  
  _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
++    ("linkedin", LINKEDIN_URL),
 +    ("audible", re.compile("(" + AUDIBLE_URL_REGEX + ")", re.IGNORECASE)),
      (
          "tiktok",
          re.compile(r"(https?://(www\.|vm\.|vt\.|vn\.)?tiktok\.com/\S+)", re.IGNORECASE),
-@@ -45,7 +48,7 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+@@ -45,7 +50,7 @@ _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
      (
          "spotify",
          re.compile(
@@ -3731,6 +3840,138 @@ index 8d7a4b8..4af818b 100644
              re.IGNORECASE,
          ),
      ),
+@@ -88,6 +93,8 @@ def canonicalize_supported_url(service: str, url: str) -> str:
+             if key in {"v", "list", "t", "start"}:
+                 keep.append((key, value))
+         query = urlencode(keep)
++    elif service == "linkedin" and parsed.hostname == "lnkd.in":
++        query = parsed.query
+     elif service == "reddit" and parsed.hostname in {"i.redd.it", "v.redd.it", "preview.redd.it"}:
+         query = parsed.query
+     elif service in {"soundcloud", "spotify"}:
+diff --git a/services/links/linkedin.py b/services/links/linkedin.py
+new file mode 100644
+index 0000000..7a668bc
+--- /dev/null
++++ b/services/links/linkedin.py
+@@ -0,0 +1,117 @@
++"""Resolve public LinkedIn post links without following redirects off LinkedIn."""
++
++import asyncio
++from html.parser import HTMLParser
++import re
++from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
++
++LINKEDIN_URL = re.compile(
++    r"""(https?://(?:lnkd\.in/|(?:www\.)?linkedin\.com/(?:posts/|feed/update/))[^\s<>"']+)""",
++    re.IGNORECASE,
++)
++_POST = re.compile(r"/posts/[^/?#]+-\d+-[\w-]{4}/?")
++_ACTIVITY = re.compile(r"/feed/update/urn:li:activity:\d+/?")
++_HOSTS = {"lnkd.in", "linkedin.com", "www.linkedin.com"}
++_REDIRECT = {301, 302, 303, 307, 308}
++
++
++class LinkedInRedirectError(ValueError):
++    pass
++
++
++def _checked(url):
++    try:
++        parts = urlsplit(url)
++        if (parts.scheme not in {"http", "https"} or parts.netloc.lower() not in _HOSTS
++                or "\\" in url or any(ord(c) < 32 for c in url)):
++            raise LinkedInRedirectError("Unexpected LinkedIn redirect destination")
++    except ValueError as exc:
++        raise LinkedInRedirectError("Invalid LinkedIn URL") from exc
++    return parts
++
++
++class _PageLinks(HTMLParser):
++    def __init__(self):
++        super().__init__(convert_charrefs=True)
++        self.targets = []
++
++    def handle_starttag(self, tag, attrs):
++        a = dict(attrs)
++        if tag == "meta" and (a.get("http-equiv") or "").lower() == "refresh":
++            match = re.fullmatch(r"\s*\d+\s*;\s*url\s*=\s*(.+)", a.get("content") or "", re.I)
++            if match:
++                self.targets.append(match[1].strip(" \"'"))
++        elif tag == "link" and "canonical" in (a.get("rel") or "").lower().split():
++            self.targets.append(a.get("href"))
++        elif tag == "meta" and a.get("property") == "og:url":
++            self.targets.append(a.get("content"))
++
++
++async def _request(session, url):
++    import aiohttp
++
++    try:
++        async with session.get(url, allow_redirects=False) as response:
++            if response.status in _REDIRECT:
++                return response.headers.get("Location")
++            if response.status == 200:
++                parser = _PageLinks()
++                body = bytearray()
++                async for chunk in response.content.iter_chunked(8192):
++                    body.extend(chunk)
++                    if len(body) >= 65536:
++                        break
++                parser.feed(body.decode("utf-8", "replace"))
++                return next((v for v in parser.targets if v and urljoin(url, v) != url), None)
++            return None
++    except (aiohttp.ClientConnectionError, asyncio.TimeoutError):
++        # Retry transport failures with the VPS curl client over IPv4/HTTP 1.1.
++        # Do not use -L: the caller checks every destination before contacting it.
++        proc = await asyncio.create_subprocess_exec(
++            "curl", "-q", "-4", "--http1.1", "--silent", "--max-time", "6",
++            "--max-filesize", "65536", "--output", "/dev/null", "--write-out",
++            "%{redirect_url}", "--", url, stdout=asyncio.subprocess.PIPE,
++            stderr=asyncio.subprocess.DEVNULL,
++        )
++        try:
++            out, _ = await proc.communicate()
++        finally:
++            if proc.returncode is None:
++                proc.kill()
++                await proc.wait()
++        return out.decode().strip() if proc.returncode == 0 else None
++
++
++async def _resolve(url, request):
++    seen = set()
++    for _ in range(7):
++        parts = _checked(url)
++        path = unquote(parts.path)
++        if parts.hostname != "lnkd.in":
++            if _POST.fullmatch(parts.path) or _ACTIVITY.fullmatch(path):
++                canonical_path = path if _ACTIVITY.fullmatch(path) else parts.path
++                return urlunsplit(("https", "www.linkedin.com", canonical_path, "", ""))
++            if parts.path.rstrip("/") not in {"/redir/redirect", "/safety/go"}:
++                break
++        url = urlunsplit(("https", parts.netloc.lower(), parts.path, parts.query, ""))
++        if url in seen:
++            break
++        seen.add(url)
++        location = await request(url)
++        if not location:
++            break
++        url = urljoin(url, location)
++    raise LinkedInRedirectError("Could not resolve a public LinkedIn post")
++
++
++async def resolve_linkedin_url(url):
++    import aiohttp
++
++    async with aiohttp.ClientSession(
++        timeout=aiohttp.ClientTimeout(total=6), cookie_jar=aiohttp.DummyCookieJar(),
++        headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36"},
++    ) as session:
++        try:
++            return await asyncio.wait_for(_resolve(url, lambda link: _request(session, link)), 20)
++        except (OSError, asyncio.TimeoutError, aiohttp.ClientError) as exc:
++            raise LinkedInRedirectError("LinkedIn short link unavailable") from exc
 diff --git a/services/media/audio_flow.py b/services/media/audio_flow.py
 index ff64863..256bb98 100644
 --- a/services/media/audio_flow.py
@@ -4902,7 +5143,7 @@ index ba0b7e4..fb18d39 100644
          return None
      if not result or not result.media_list:
 diff --git a/services/platforms/universal_extractor.py b/services/platforms/universal_extractor.py
-index 5eff1fb..5e71a59 100644
+index 5eff1fb..6c018a8 100644
 --- a/services/platforms/universal_extractor.py
 +++ b/services/platforms/universal_extractor.py
 @@ -1,3 +1,4 @@
@@ -4910,7 +5151,15 @@ index 5eff1fb..5e71a59 100644
  from services.platforms.firefox_cookies import firefox_cookie_args
  import asyncio
  import glob
-@@ -414,6 +415,7 @@ async def _download_with_gallery_dl(
+@@ -9,6 +10,7 @@ from dataclasses import dataclass
+ from typing import Optional, Any, Callable
+ import aiohttp
+ 
++from services.links.linkedin import LINKEDIN_URL, resolve_linkedin_url
+ from services.logger import logger as logging
+ from services.platforms.kwai_media import _DEFAULT_UA as _KWAI_UA, extract_kwai_video_page, is_kwai_url
+ from services.platforms.facebook_media import (
+@@ -414,6 +416,7 @@ async def _download_with_gallery_dl(
                  timeout=75 if _is_facebook_url(url) else None,
              )
          except asyncio.TimeoutError:
@@ -4918,7 +5167,7 @@ index 5eff1fb..5e71a59 100644
              proc.kill()
              await proc.communicate()
              logging.warning("gallery-dl timed out: facebook=%s", _is_facebook_url(url))
-@@ -455,6 +457,7 @@ async def _download_with_gallery_dl(
+@@ -455,6 +458,7 @@ async def _download_with_gallery_dl(
  
          if not downloaded:
              if proc.returncode != 0 and stderr:
@@ -4926,7 +5175,7 @@ index 5eff1fb..5e71a59 100644
                  if _is_facebook_url(url):
                      logging.warning(
                          "Facebook gallery-dl failed: code=%s reason=%s",
-@@ -558,6 +561,7 @@ async def _download_with_gallery_dl(
+@@ -558,6 +562,7 @@ async def _download_with_gallery_dl(
      except asyncio.CancelledError:
          raise
      except Exception as exc:
@@ -4934,7 +5183,7 @@ index 5eff1fb..5e71a59 100644
          logging.warning("gallery-dl extraction failed: facebook=%s error=%s",
                          _is_facebook_url(url), type(exc).__name__)
          return None
-@@ -690,6 +694,7 @@ async def _download_with_ytdlp(
+@@ -690,6 +695,7 @@ async def _download_with_ytdlp(
              await asyncio.wait_for(_consume(), timeout=180 if is_facebook else 900)
              await asyncio.wait_for(proc.wait(), timeout=15)
          except asyncio.TimeoutError:
@@ -4942,7 +5191,7 @@ index 5eff1fb..5e71a59 100644
              if proc.returncode is None:
                  proc.kill()
              await proc.communicate()
-@@ -706,6 +711,7 @@ async def _download_with_ytdlp(
+@@ -706,6 +712,7 @@ async def _download_with_ytdlp(
              raise
  
          if proc.returncode != 0:
@@ -4950,7 +5199,7 @@ index 5eff1fb..5e71a59 100644
              logging.warning(
                  "Universal yt-dlp download failed: mode=%s code=%s reason=%s",
                  "chrome99" if impersonate == "chrome99" else
-@@ -776,10 +782,12 @@ async def _download_with_ytdlp(
+@@ -776,10 +783,12 @@ async def _download_with_ytdlp(
      except asyncio.CancelledError:
          raise
      except Exception as exc:
@@ -4963,6 +5212,17 @@ index 5eff1fb..5e71a59 100644
  async def download_universal_media(
      url: str,
      output_dir: str = "downloads",
+@@ -795,6 +804,10 @@ async def download_universal_media(
+         clean = url.split("#", 1)[0].strip()
+         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
+ 
++    if LINKEDIN_URL.fullmatch(url):
++        post_url = await resolve_linkedin_url(url)
++        return await _download_with_ytdlp(post_url, output_dir=output_dir, on_progress=on_progress, post_id=post_id, **kwargs)
++
+     if _is_facebook_url(url):
+         return await download_facebook_media(
+             url,
 diff --git a/services/platforms/youtube_media.py b/services/platforms/youtube_media.py
 index a6f61e6..2e8494d 100644
 --- a/services/platforms/youtube_media.py

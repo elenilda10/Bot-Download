@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional, Any, Callable
 import aiohttp
 
+from services.links.linkedin import LINKEDIN_URL, resolve_linkedin_url
 from services.logger import logger as logging
 from services.platforms.kwai_media import _DEFAULT_UA as _KWAI_UA, extract_kwai_video_page, is_kwai_url
 from services.platforms.facebook_media import (
@@ -802,6 +803,10 @@ async def download_universal_media(
         # Keep meaningful query parameters in the media identity.
         clean = url.split("#", 1)[0].strip()
         post_id = hashlib.blake2s(clean.encode("utf-8"), digest_size=8).hexdigest()
+
+    if LINKEDIN_URL.fullmatch(url):
+        post_url = await resolve_linkedin_url(url)
+        return await _download_with_ytdlp(post_url, output_dir=output_dir, on_progress=on_progress, post_id=post_id, **kwargs)
 
     if _is_facebook_url(url):
         return await download_facebook_media(

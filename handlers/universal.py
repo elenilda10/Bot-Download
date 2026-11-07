@@ -18,6 +18,8 @@ import messages as bm
 from app_context import bot, db, send_analytics
 from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
 from handlers import commands as cmd_mod
+from handlers.linkedin import DIRECT_LINK_HINT, process_linkedin
+from services.links.linkedin import LINKEDIN_URL, LinkedInRedirectError
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
     get_bot_avatar_thumbnail,
@@ -286,6 +288,11 @@ async def handle_universal_progress_callback(call: types.CallbackQuery):
     await call.answer(msg, show_alert=True)
 
 
+_linkedin_filter = (F.text.regexp(LINKEDIN_URL, mode="search") | F.caption.regexp(LINKEDIN_URL, mode="search")) & ~F.text.startswith("/")
+router.message.register(process_linkedin, _linkedin_filter)
+router.business_message.register(process_linkedin, _linkedin_filter)
+
+
 @router.message(
     (
         F.text.regexp(_UNIVERSAL_LINK_REGEX, mode="search")
@@ -327,6 +334,7 @@ async def process_universal_link(
         return
 
     url = request_url_match.group(0).strip()
+    platform = "LinkedIn" if LINKEDIN_URL.fullmatch(url) else "Link"
     request_lease = await claim_message_request(message, service="universal", url=url)
     if request_lease is None:
         return
@@ -349,7 +357,7 @@ async def process_universal_link(
 
     if business_id is None:
         status_message = await message.answer(
-            bm.downloading_video_status(lang=user_lang, platform='Link'),
+            bm.downloading_video_status(lang=user_lang, platform=platform),
             reply_markup=progress_kb,
         )
 
@@ -395,7 +403,7 @@ async def process_universal_link(
             await send_analytics(
                 user_id=message.from_user.id,
                 chat_type=message.chat.type,
-                action_name="universal",
+                action_name="linkedin" if platform == "LinkedIn" else "universal",
             )
         bot_url = await get_bot_url(bot)
 
@@ -437,7 +445,7 @@ async def process_universal_link(
             UNIVERSAL_PROGRESS[post_id]["status"] = "uploading"
 
         if status_message:
-            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform='Link'))
+            await safe_edit_text(status_message, bm.uploading_status(lang=user_lang, platform=platform))
 
         user_captions_mode = user_settings.get("captions", "on")
         caption = bm.captions(user_captions_mode, res.description, bot_url)
@@ -618,6 +626,13 @@ async def process_universal_link(
             request_lease.mark_success()
         await maybe_delete_user_message(message, user_settings.get("delete_message"))
 
+    except LinkedInRedirectError:
+        if status_message:
+            await safe_delete_message(status_message)
+        await handle_download_error(
+            message, text=DIRECT_LINK_HINT.get(_normalize_locale(user_lang), DIRECT_LINK_HINT["en"]),
+            business_id=business_id, skip_if_business=False,
+        )
     except Exception as exc:
         logging.exception("Error processing universal download: %s", exc)
         if status_message:

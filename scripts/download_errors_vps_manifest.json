@@ -1,6 +1,6 @@
 {
   "base_commit": "85cf09898b93ccacfd4c19cfd623866494dd1fea",
-  "patch_sha256": "e8ea2282c1dd2c1801b1df8d42e7e780843fa343214c2478e993c18c15181d97",
+  "patch_sha256": "b9167a453a60c4f2702c0087123578cfedc7af576655bee06bda94dd589f38f8",
   "files": {
     "handlers/__init__.py": {
       "base_sha256": "d444f814cda96555c833e6f4620f7fee3c89c3eb0e4d64710002b6abb5f9cb94",
@@ -38,9 +38,13 @@
       "base_sha256": "00ad1ef744d569fb461bb4616d49c6673f5ea21365085aa32e028549f6b9f3d9",
       "result_sha256": "95be6a44a2faabf34fc37d8f0c12d8cad4102671bdb0ff3b40158ac471a22542"
     },
+    "handlers/linkedin.py": {
+      "base_sha256": null,
+      "result_sha256": "35694c652b029f9b40ac462c7dfe89645517df962319e8901a87a7c10ca4e615"
+    },
     "handlers/media_download.py": {
       "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
-      "result_sha256": "e8de32e812abe4c63066eb5eb0d552ebdfe3062c5b9618d4a989ee61c6d56eba"
+      "result_sha256": "8951c0daaba3ed581a932904efed823fbe852f4c4e84db3f099ec2e2bf2443a5"
     },
     "handlers/pinterest.py": {
       "base_sha256": "f4e2742a4832ba9ea1111a6f23ce354905739c197b05399d60410c8b6777fd84",
@@ -88,7 +92,7 @@
     },
     "handlers/universal.py": {
       "base_sha256": "4a97d83542bcac369991306de97292cf0a09003623e216a951198347a243a2e7",
-      "result_sha256": "15c155e009fd6f7ac4e3b18f431a4f2a7cc4d2105cadd60af7f4d48f5184ef9b"
+      "result_sha256": "7ec970fd8319dfad0b32a69b76eb4e65a06f866166e7264a434d975cf540e80e"
     },
     "handlers/xvideos.py": {
       "base_sha256": "5f19931dbaeda5f5c144aaf23c7c66c273d22abf3f6f1c8705644271f4e4e425",
@@ -160,7 +164,11 @@
     },
     "services/links/detection.py": {
       "base_sha256": "4721943998e3ad3b5adbd199dd007ce2a226efeca00b16ca8163a61c16c91c5e",
-      "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+      "result_sha256": "295fc213c9725bcb63d4cd2f457c85641ae6fc1fd6d39e4a8394921038fcef17"
+    },
+    "services/links/linkedin.py": {
+      "base_sha256": null,
+      "result_sha256": "e0e3434426febba5414b71437bd4e2ba11726adc5d1d2bb362c2fd7ffd7207a6"
     },
     "services/media/audio_flow.py": {
       "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
@@ -188,7 +196,7 @@
     },
     "services/platforms/universal_extractor.py": {
       "base_sha256": "0efcd32b0520e046bb83b95ddfe1566b3c89763cc5e0c6143758c12a09b88714",
-      "result_sha256": "45e219c84f26b081a6207a1dfd3e4d4ddc995da9934064aa34f310d85f94a346"
+      "result_sha256": "0d2d3f06e230415d79c767f450f416910dd63577b9ceec1db7aea0e7a9bfffd3"
     },
     "services/platforms/youtube_media.py": {
       "base_sha256": "1943a287258a4a512f807d091e09cd43ac2487f69caf1c744c623d63d2ac73b0",

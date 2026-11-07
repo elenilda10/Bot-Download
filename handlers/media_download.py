@@ -82,6 +82,11 @@ async def _process_supported_link(message: types.Message, service: str, url: str
         await kwai.process_kwai_link(message, direct_url=url)
         return
 
+    if service == "linkedin":
+        from handlers.linkedin import process_linkedin
+        await process_linkedin(message, direct_url=url)
+        return
+
     if service == "reddit":
         from handlers import reddit
         await reddit.process_reddit(message, direct_url=url)
