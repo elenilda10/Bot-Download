@@ -87,7 +87,7 @@ class VpsInstallTests(unittest.TestCase):
         updated = installer.patch_service(LEGACY)
         self.assertEqual(updated, installer.patch_service(updated))
         self.assertIn("from services.platforms.instagram_parth import download_parth", updated)
-        self.assertIn('"--config-ignore"', updated)
+        self.assertIn("'--config-ignore'", updated)
         self.assertIn("'--no-cookies'", updated)
         self.assertNotIn('cmd.extend(["--cookies", EXTENSION_COOKIES_PATH])', updated)
 
