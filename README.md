@@ -306,3 +306,73 @@ If Downloader-Bot saves you time, you can support ongoing development and infras
 ## License
 
 Released under the [MIT License](./LICENCE).
+# Instagram: alternativa Save Insta na VPS
+
+Para posts públicos (`/p/`, `/reel/`, `/reels/`), a ordem é:
+**Save Insta → parth-dl → Cobalt local/público → yt-dlp → gallery-dl (último)**.
+Nenhuma etapa usa cookies de conta do Instagram. O Save Insta usa `curl` e
+`ffprobe`; o parth-dl (1.2.1) é uma dependência Python e também valida as mídias
+com `ffprobe`. Os arquivos passam pelo mesmo handler, configurações e cache
+existentes. Falha em um item do álbum não é tratada como sucesso parcial.
+Álbuns maiores que dez mídias são divididos em grupos do Telegram.
+
+O Save Insta não retornou legenda nos testes. Após baixar suas mídias, a integração
+consulta a incorporação (`/embed/captioned/`) do próprio Instagram para recuperar
+legenda completa e autor. A leitura aceita os dados estruturados ou o HTML visível da legenda, excluindo
+comentários e conferindo a identidade da publicação. Também recupera legendas
+ausentes em mídias antigas do cache e em resultados de outros extratores. Essa consulta tem limite de doze segundos; se indisponível,
+o download continua sem legenda. Não são usados cookies nessa consulta.
+Os resultados sem descrição usam a mesma rotina `fetch_post_metadata()` para recuperar legenda completa e autor do Instagram.
+Stories públicos com link `/stories/usuario/ID/` usam diretamente o Save Insta,
+sem Firefox nem cookies. O ID é conferido pela chave de cache do CDN na própria
+mídia ou na miniatura associada ao vídeo. Apenas o item com o ID solicitado é
+baixado; ID ausente ou ambíguo não retorna outros Stories da conta. Não há
+tentativa posterior com a conta Firefox. Stories privados e expirados podem
+permanecer indisponíveis. Falha em qualquer item de um post descarta os arquivos
+parciais e permite tentar os próximos extratores.
+
+`scripts/apply_instagram_public_stories.py` instala essa rota na VPS preservando
+o restante de `fetch_instagram_media`, verifica clientes conhecidos, cria backup,
+valida a sintaxe e restaura os arquivos em caso de falha.
+
+Para desativar individualmente os provedores, use
+`INSTAGRAM_SAVEINSTA_ENABLED=0` e/ou `INSTAGRAM_PARTH_ENABLED=0` no ambiente
+do serviço e reinicie o bot. A integração Save Insta depende de rotas internas
+que podem mudar. O parth-dl não suporta Stories nem Destaques; Stories públicos
+continuam exclusivamente no extrator Save Insta existente.
+
+Na VPS, instale o novo pacote no venv do bot antes de reiniciar:
+```bash
+/root/Bot-Download/venv/bin/pip install 'parth-dl==1.2.1'
+```
+Para aplicar a prioridade à VPS **sem substituir o serviço por inteiro**,
+use o instalador de migração a partir do worktree do PR. O padrão é simulação,
+e a instalação recusa estruturas locais incompatíveis, cria backup e não reinicia
+o serviço automaticamente:
+
+```bash
+cd /root/Bot-Download
+git fetch origin feature/instagram-saveinsta-fallback
+git -C /tmp/bot-download-pr60-check switch --detach origin/feature/instagram-saveinsta-fallback
+/root/Bot-Download/venv/bin/pip install 'parth-dl==1.2.1'
+python3 /tmp/bot-download-pr60-check/scripts/install_instagram_parth_vps.py --target /root/Bot-Download
+# Após conferir a simulação:
+python3 /tmp/bot-download-pr60-check/scripts/install_instagram_parth_vps.py --target /root/Bot-Download --apply
+python3 -m py_compile /root/Bot-Download/services/platforms/instagram_media.py
+systemctl restart bot-download.service
+systemctl is-active bot-download.service
+```
+
+Valide o instalador isoladamente com
+`python3 -m unittest discover -s tests -p test_instagram_parth_installer.py -v`.
+Não faça `git checkout` dos arquivos do PR no checkout de produção.
+
+O teste inicial confirmado na VPS pelo usuário baixou duas imagens 1080×1350
+do post `DfcIKMLjNKh` via parth-dl, sem login.
+
+Validação isolada, sem iniciar o bot nem conectar ao banco:
+
+```bash
+python3 -m unittest discover -s tests -p test_instagram_saveinsta.py -v
+python3 -m unittest discover -s tests -p test_instagram_parth.py -v
+```

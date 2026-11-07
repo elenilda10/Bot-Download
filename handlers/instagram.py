@@ -32,6 +32,7 @@ from handlers.utils import (
 )
 from services.logger import logger as logging, summarize_text_for_log
 from services.platforms.instagram_media import fetch_instagram_media, get_instagram_preview_url, strip_instagram_url
+from services.platforms.instagram_saveinsta import fetch_post_metadata
 from utils.media_cache import build_media_cache_key
 
 logging = logging.bind(service="instagram")
@@ -89,11 +90,41 @@ async def _try_instagram_cache(
     # Telegram file_id across users.
     if _instagram_identity(url).startswith("story:"):
         return False
-    caption = bm.captions(settings.get("captions", "on"), None, bot_url)
+    post_caption = None
+    cached_caption = await db.get_file_id(_cache_key(url, "caption"))
+    if cached_caption:
+        try:
+            data = json.loads(cached_caption)
+            if data.get("version") == 1 and isinstance(data.get("description"), str):
+                post_caption = data["description"]
+        except (ValueError, TypeError, AttributeError):
+            pass
+    caption = bm.captions(settings.get("captions", "on"), post_caption, bot_url)
+    caption_checked = False
+
+    async def recover_caption():
+        nonlocal caption, caption_checked
+        if caption_checked or post_caption or settings.get("captions", "on") != "on":
+            return
+        caption_checked = True
+        try:
+            metadata = await asyncio.to_thread(fetch_post_metadata, url)
+            description = metadata.get("description")
+            if description:
+                await db.add_file(
+                    _cache_key(url, "caption"),
+                    json.dumps({"version": 1, "description": description}),
+                    "instagram_caption",
+                )
+                caption = bm.captions("on", description, bot_url)
+        except Exception as exc:
+            logging.warning("Instagram cached caption unavailable: %s", type(exc).__name__)
+
     for kind in ("video", "photo"):
         cached_id = await db.get_file_id(_cache_key(url, kind))
         if not cached_id:
             continue
+        await recover_caption()
         try:
             keyboard = _cached_keyboard(url, settings, kind, lang)
             if kind == "video":
@@ -125,6 +156,7 @@ async def _try_instagram_cache(
         if (data.get("version") != 1 or not isinstance(entries, list)
                 or not 2 <= len(entries) <= 10):
             return False
+        await recover_caption()
         group = []
         for index, entry in enumerate(entries):
             if not isinstance(entry, dict):
@@ -292,7 +324,7 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                         logging.info("Instagram cache stored: photo")
             else:
                 group = []
-                for index, item in enumerate(video_data.media_list[:10]):
+                for index, item in enumerate(video_data.media_list):
                     file_input = (
                         FSInputFile(item.url) if os.path.isfile(item.url)
                         else URLInputFile(item.url)
@@ -313,10 +345,16 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                     else:
                         group.append(InputMediaPhoto(**common))
 
-                sent_group = await message.answer_media_group(
-                    media=group, allow_sending_without_reply=True
-                )
-                if sent_group and len(sent_group) == len(group):
+                chunks = [group[index:index + 10] for index in range(0, len(group), 10)]
+                # Telegram requires 2–10 items per media group (e.g. 11 → 9+2).
+                if len(chunks) > 1 and len(chunks[-1]) == 1:
+                    chunks[-1].insert(0, chunks[-2].pop())
+                sent_group = []
+                for chunk in chunks:
+                    sent_group.extend(await message.answer_media_group(
+                        media=chunk, allow_sending_without_reply=True
+                    ))
+                if sent_group and len(sent_group) == len(group) and len(group) <= 10:
                     entries = []
                     for sent in sent_group:
                         if sent.video:
@@ -341,6 +379,12 @@ async def process_instagram(message: types.Message, direct_url: Optional[str] = 
                 "Instagram timing: stage=telegram_upload seconds=%.2f",
                 time.monotonic() - upload_started,
             )
+            if video_data.description and not _instagram_identity(url).startswith("story:"):
+                await db.add_file(
+                    _cache_key(url, "caption"),
+                    json.dumps({"version": 1, "description": video_data.description}),
+                    "instagram_caption",
+                )
             if request_lease is not None:
                 request_lease.mark_success()
             await maybe_delete_user_message(
