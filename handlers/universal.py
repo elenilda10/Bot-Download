@@ -54,14 +54,6 @@ def _is_pt(lang: Optional[str]) -> bool:
     return code == "pt" or code.startswith("pt_") or code.startswith("pt-")
 
 
-def _make_progress_keyboard(post_id: str, lang: Optional[str] = "pt") -> InlineKeyboardMarkup:
-    text = "📊 Ver Progresso" if _is_pt(lang) else "📊 View Progress"
-    norm_lang = "pt" if _is_pt(lang) else "en"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=f"univprog:{post_id}:{norm_lang}")]]
-    )
-
-
 def _store_url_hash(url: str) -> str:
     short_hash = hashlib.md5(url.encode()).hexdigest()[:12]
     _URL_CACHE[short_hash] = url
@@ -349,12 +341,10 @@ async def process_universal_link(
     post_id = hashlib.blake2s(progress_url.encode("utf-8"), digest_size=8).hexdigest()
 
     status_message: Optional[types.Message] = None
-    progress_kb = _make_progress_keyboard(post_id, lang=user_lang)
 
     if business_id is None:
         status_message = await message.answer(
             bm.downloading_video_status(lang=user_lang),
-            reply_markup=progress_kb,
         )
 
     initial_status_text = "Baixando..." if _is_pt(user_lang) else "Downloading..."
