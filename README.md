@@ -345,6 +345,28 @@ Na VPS, instale o novo pacote no venv do bot antes de reiniciar:
 ```bash
 /root/Bot-Download/venv/bin/pip install 'parth-dl==1.2.1'
 ```
+Para aplicar a prioridade à VPS **sem substituir o serviço por inteiro**,
+use o instalador de migração a partir do worktree do PR. O padrão é simulação,
+e a instalação recusa estruturas locais incompatíveis, cria backup e não reinicia
+o serviço automaticamente:
+
+```bash
+cd /root/Bot-Download
+git fetch origin feature/instagram-saveinsta-fallback
+git -C /tmp/bot-download-pr60-check switch --detach origin/feature/instagram-saveinsta-fallback
+/root/Bot-Download/venv/bin/pip install 'parth-dl==1.2.1'
+python3 /tmp/bot-download-pr60-check/scripts/install_instagram_parth_vps.py --target /root/Bot-Download
+# Após conferir a simulação:
+python3 /tmp/bot-download-pr60-check/scripts/install_instagram_parth_vps.py --target /root/Bot-Download --apply
+python3 -m py_compile /root/Bot-Download/services/platforms/instagram_media.py
+systemctl restart bot-download.service
+systemctl is-active bot-download.service
+```
+
+Valide o instalador isoladamente com
+`python3 -m unittest discover -s tests -p test_instagram_parth_installer.py -v`.
+Não faça `git checkout` dos arquivos do PR no checkout de produção.
+
 O teste inicial confirmado na VPS pelo usuário baixou duas imagens 1080×1350
 do post `DfcIKMLjNKh` via parth-dl, sem login.
 
