@@ -128,6 +128,8 @@ async def handle_twitter_message(message: types.Message, **kwargs):
         if request_lease is None:
             return
 
+        await react_to_message(message, "👾", business_id=business_id)
+
         if business_id:
             await bot.send_chat_action(message.chat.id, ChatAction.RECORD_VIDEO, business_connection_id=business_id)
         else:
