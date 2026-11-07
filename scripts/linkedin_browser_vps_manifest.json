@@ -1,0 +1,14 @@
+{
+  "base_commit": "6480740b86447bf648c3bd467a899947fb22d14f",
+  "patch_sha256": "99b50b4fb3754b9b375ed03a33d3a70c65772d9d17c3a0289fb5f188200d5388",
+  "files": {
+    "services/platforms/linkedin_browser.py": {
+      "base_sha256": null,
+      "result_sha256": "6b67e086b82db43344c330e994c30ab4ed362726ce59a74e8c496c901a715623"
+    },
+    "services/platforms/linkedin_photo.py": {
+      "base_sha256": "a33a99fa089322259ac5770de4395a98550996e112d24f597f3a822516975cfd",
+      "result_sha256": "9b78e6f8b0d0fac1e5f1a911fe3b416e7e231fd919a1b39a2ab8275e3a9fee3e"
+    }
+  }
+}

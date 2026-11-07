@@ -3,12 +3,14 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from services.links.linkedin import LINKEDIN_URL
 from services.links.audible import AUDIBLE_URL_REGEX
 
 
 _TRAILING_URL_PUNCTUATION = ".,;:!?)]}>\"'"
 
 _SERVICE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("linkedin", LINKEDIN_URL),
     ("audible", re.compile("(" + AUDIBLE_URL_REGEX + ")", re.IGNORECASE)),
     (
         "tiktok",
@@ -91,6 +93,8 @@ def canonicalize_supported_url(service: str, url: str) -> str:
             if key in {"v", "list", "t", "start"}:
                 keep.append((key, value))
         query = urlencode(keep)
+    elif service == "linkedin" and parsed.hostname == "lnkd.in":
+        query = parsed.query
     elif service == "reddit" and parsed.hostname in {"i.redd.it", "v.redd.it", "preview.redd.it"}:
         query = parsed.query
     elif service in {"soundcloud", "spotify"}:

@@ -9,9 +9,17 @@
       "base_sha256": null,
       "result_sha256": "d46eea2b851e7303ff9abf24336d434e3694aed8fd7f2c7a4dd319a433d86edd"
     },
+    "handlers/linkedin.py": {
+      "base_sha256": null,
+      "result_sha256": "35694c652b029f9b40ac462c7dfe89645517df962319e8901a87a7c10ca4e615"
+    },
     "handlers/media_download.py": {
       "base_sha256": "50055bcee47e2b74ff39b51dbc93be88fb6ec7af2f63e6f57de08b74bc994b58",
-      "result_sha256": "e8de32e812abe4c63066eb5eb0d552ebdfe3062c5b9618d4a989ee61c6d56eba"
+      "result_sha256": "8951c0daaba3ed581a932904efed823fbe852f4c4e84db3f099ec2e2bf2443a5"
+    },
+    "handlers/universal.py": {
+      "base_sha256": "15c155e009fd6f7ac4e3b18f431a4f2a7cc4d2105cadd60af7f4d48f5184ef9b",
+      "result_sha256": "7ec970fd8319dfad0b32a69b76eb4e65a06f866166e7264a434d975cf540e80e"
     },
     "i18n/locales/de.json": {
       "base_sha256": "9e22cdf4da352a82f80f585bea084defec133ac3f8997ba3f1603cc9a60fcfe2",
@@ -35,7 +43,11 @@
     },
     "services/links/detection.py": {
       "base_sha256": "8d1fa15a668d4c61e2ae3e100feee886f374abb2e6764c7074d3bce04e0380b0",
-      "result_sha256": "c79da2ee8e8322c9de095d315ee100f91690d0f708a36aba38dcca49408a0942"
+      "result_sha256": "295fc213c9725bcb63d4cd2f457c85641ae6fc1fd6d39e4a8394921038fcef17"
+    },
+    "services/links/linkedin.py": {
+      "base_sha256": null,
+      "result_sha256": "e0e3434426febba5414b71437bd4e2ba11726adc5d1d2bb362c2fd7ffd7207a6"
     },
     "services/media/audio_flow.py": {
       "base_sha256": "4287781b43467b0872ff89eefa9789a1acba7ec729f718fb46d7caccabf68e93",
@@ -45,10 +57,22 @@
       "base_sha256": null,
       "result_sha256": "702d28b67ffe10989b0caa1cdfb1951fa8eea88a4d26554b7e54ff7c0e791e61"
     },
+    "services/platforms/linkedin_browser.py": {
+      "base_sha256": null,
+      "result_sha256": "6b67e086b82db43344c330e994c30ab4ed362726ce59a74e8c496c901a715623"
+    },
+    "services/platforms/linkedin_photo.py": {
+      "base_sha256": null,
+      "result_sha256": "9b78e6f8b0d0fac1e5f1a911fe3b416e7e231fd919a1b39a2ab8275e3a9fee3e"
+    },
+    "services/platforms/universal_extractor.py": {
+      "base_sha256": "45e219c84f26b081a6207a1dfd3e4d4ddc995da9934064aa34f310d85f94a346",
+      "result_sha256": "a2df65635eb23584037d5b48bb23ffa9864dcc420cbeb2fd3c0537c9681bc047"
+    },
     "services/stats/constants.py": {
       "base_sha256": "f742a9f395e10e416ad1f3c61e5a6e16b828b9ab966b3d0db0da26629165a8d1",
       "result_sha256": "356623d731bc1d133145434c66bbf90832b015df9daf26bd0bed366a9bc0a709"
     }
   },
-  "patch_sha256": "5e119a3d5ecb073d77785af5e190997bb05f9ec3371ff14999f00559835e51dd"
+  "patch_sha256": "e895686f00dce41678f3786827f80309d087f1084150577bc68e68d88530215f"
 }

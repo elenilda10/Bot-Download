@@ -1,0 +1,304 @@
+diff --git a/services/platforms/linkedin_browser.py b/services/platforms/linkedin_browser.py
+new file mode 100644
+index 0000000..9809928
+--- /dev/null
++++ b/services/platforms/linkedin_browser.py
+@@ -0,0 +1,137 @@
++"""Render a public LinkedIn post with Chromium; also runnable with python -m."""
++
++import argparse
++import asyncio
++import logging
++from pathlib import Path
++from urllib.parse import urlsplit
++
++from services.links.linkedin import resolve_linkedin_url
++from services.platforms.linkedin_photo import PostPhoto, _identity, _photo_url
++
++log = logging.getLogger(__name__)
++_browser_slots = asyncio.Semaphore(1)
++
++# Read only the requested article. For the dedicated embed, main is the post.
++_READ_POST = """({postId, embed}) => {
++    const uris = [...document.querySelectorAll('link[rel="canonical"],meta[property="og:url"]')]
++        .map(node => node.href || node.content).filter(Boolean);
++    if (uris.some(uri => !new RegExp('(?:-|:)' + postId + '(?:-|/|[?#]|$)').test(uri))) return false;
++    const roots = [...document.querySelectorAll('[data-urn], [data-id], [data-entity-urn]')];
++    const root = roots.find(el => ['data-urn','data-id','data-entity-urn']
++        .some(attr => ['activity','share','ugcPost'].some(kind =>
++            el.getAttribute(attr) === 'urn:li:' + kind + ':' + postId)))
++        || (embed && (document.querySelector('main') || document.body));
++    const meta = name => document.querySelector('meta[property="' + name + '"]')?.content || '';
++    if (meta('og:video') || meta('og:video:url') || meta('og:type').startsWith('video')
++        || root?.querySelector('video')) return {video: true};
++    const candidates = [];
++    const images = root ? root.querySelectorAll('img') : [];
++    for (const img of images) {
++        if (img.closest('aside, nav, header, footer, [class*="comment"], [class*="related"]')) continue;
++        const options = [img.currentSrc, img.dataset.delayedUrl, img.dataset.src, img.src];
++        for (const value of options) {
++            if (value && value.includes('/feedshare-')) candidates.push(value);
++        }
++    }
++    candidates.push(meta('og:image:secure_url'), meta('og:image'));
++    const urls = candidates.filter(s => {
++        try { const u = new URL(s); return u.protocol === 'https:' &&
++            ['media.licdn.com','media-exp1.licdn.com'].includes(u.host) &&
++            u.pathname.includes('/dms/image/') && u.pathname.includes('/feedshare-'); }
++        catch { return false; }
++    });
++    return urls.length ? {url: urls[0], description:
++        root?.querySelector('[data-test-id="main-feed-activity-card__commentary"],.share-update-card__update-text')
++            ?.textContent.trim() || meta('og:description')} : false;
++}"""
++
++
++async def _render(page, url, post_id, embed):
++    response = await page.goto(url, wait_until="domcontentloaded", timeout=10000)
++    if not response or not response.ok or _identity(page.url) != post_id:
++        return None
++    handle = await page.wait_for_function(
++        _READ_POST, arg={"postId": post_id, "embed": embed}, timeout=5000,
++    )
++    try:
++        if _identity(page.url) != post_id:
++            return None
++        return await handle.json_value()
++    finally:
++        await handle.dispose()
++
++
++async def browser_photo(post_url):
++    post_id = _identity(post_url)
++    if not post_id:
++        return None
++    try:
++        from playwright.async_api import Error, async_playwright
++    except ImportError:
++        log.warning("LinkedIn photo renderer unavailable: install Python Playwright and Chromium")
++        return None
++    kind = "ugcPost" if "-ugcPost-" in post_url else "share" if "-share-" in post_url else "activity"
++    embed_url = f"https://www.linkedin.com/embed/feed/update/urn:li:{kind}:{post_id}"
++
++    async def restrict(route):
++        host = urlsplit(route.request.url).hostname or ""
++        if (route.request.resource_type in {"media", "font"}
++                or not any(host == d or host.endswith("." + d) for d in ("linkedin.com", "licdn.com"))):
++            await route.abort()
++        else:
++            await route.continue_()
++
++    try:
++        async with asyncio.timeout(40), _browser_slots, async_playwright() as pw:
++            browser = await pw.chromium.launch(headless=True)
++            try:
++                context = await browser.new_context(service_workers="block")
++                await context.route("**/*", restrict)
++                page = await context.new_page()
++                for url in (embed_url, post_url):
++                    try:
++                        data = await _render(page, url, post_id, url == embed_url)
++                    except Error:
++                        continue
++                    if data and data.get("video"):
++                        return None
++                    if data and (image := _photo_url(data.get("url", ""))):
++                        return PostPhoto(image, data.get("description") or "")
++            finally:
++                await browser.close()
++    except (Error, TimeoutError, OSError) as exc:
++        log.warning("LinkedIn Chromium render failed: %s", (str(exc) or type(exc).__name__).partition("\n")[0])
++    return None
++
++
++async def _download(url, output):
++    import aiohttp
++
++    post = await resolve_linkedin_url(url)
++    photo = await browser_photo(post)
++    if not photo:
++        raise SystemExit("Nenhuma foto pública identificada pelo Chromium.")
++    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
++        async with client.get(photo.url, allow_redirects=False) as response:
++            if response.status != 200 or not response.content_type.startswith("image/"):
++                raise SystemExit(f"CDN não retornou uma imagem (HTTP {response.status}).")
++            # Read completely before creating the destination or reporting success.
++            data = bytearray()
++            async for chunk in response.content.iter_chunked(65536):
++                data.extend(chunk)
++                if len(data) > 32 * 1024 * 1024:
++                    raise SystemExit("Imagem maior que 32 MiB.")
++    if not data:
++        raise SystemExit("O CDN retornou uma imagem vazia.")
++    with output.open("xb") as f:
++        f.write(data)
++    print(f"Foto salva em {output.resolve()} ({len(data)} bytes)")
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("url")
++    parser.add_argument("--output", type=Path, required=True)
++    args = parser.parse_args()
++    asyncio.run(_download(args.url, args.output))
+diff --git a/services/platforms/linkedin_photo.py b/services/platforms/linkedin_photo.py
+new file mode 100644
+index 0000000..22509bf
+--- /dev/null
++++ b/services/platforms/linkedin_photo.py
+@@ -0,0 +1,130 @@
++"""Read the public post's own photo, preserving LinkedIn's signed CDN query."""
++
++from dataclasses import dataclass
++from html.parser import HTMLParser
++from urllib.parse import urlsplit
++import asyncio
++import re
++
++import aiohttp
++
++
++def _identity(url):
++    try:
++        parts = urlsplit(url)
++        if parts.hostname not in {"www.linkedin.com", "linkedin.com"}:
++            return None
++        if parts.path.startswith("/posts/"):
++            match = re.search(r"-(\d+)-[\w-]{4}/?$", parts.path)
++        else:
++            match = re.fullmatch(r"/(?:embed/)?feed/update/urn:li:(?:activity|share|ugcPost):(\d+)/?", parts.path)
++        return match[1] if match else None
++    except ValueError:
++        return None
++
++
++def _photo_url(value):
++    try:
++        parts = urlsplit(value)
++        if (parts.scheme == "https" and parts.netloc.lower() in {"media.licdn.com", "media-exp1.licdn.com"}
++                and "/feedshare-" in parts.path and "/dms/image/" in parts.path):
++            return value
++    except ValueError:
++        pass
++    return None
++
++
++class _PostPage(HTMLParser):
++    def __init__(self):
++        super().__init__(convert_charrefs=True)
++        self.meta = {}
++        self.canonical = []
++        self.embed_photos = []
++        self.video = False
++        self.video_element = False
++
++    def handle_starttag(self, tag, attrs):
++        a = dict(attrs)
++        if tag == "meta":
++            key = (a.get("property") or a.get("name") or "").lower()
++            value = a.get("content") or ""
++            if value:
++                self.meta.setdefault(key, value)
++            if key.startswith("og:video") or (key == "og:type" and value.startswith("video")):
++                self.video = True
++        elif tag == "link" and "canonical" in (a.get("rel") or "").lower().split():
++            self.canonical.append(a.get("href") or "")
++        elif tag == "video":
++            self.video_element = True
++        elif tag == "img":
++            classes = (a.get("class") or "").split()
++            if any(c in {"share-images__image", "feed-shared-image__image"} for c in classes):
++                for key in ("data-delayed-url", "data-src", "src"):
++                    url = _photo_url(a.get(key) or "")
++                    if url:
++                        self.embed_photos.append(url)
++                        break
++
++    def matches(self, post_id):
++        urls = list(self.canonical)
++        if "og:url" in self.meta:
++            urls.append(self.meta["og:url"])
++        return all(_identity(url) == post_id for url in urls)
++
++    def photo(self, *, embed):
++        for key in ("og:image:secure_url", "og:image", "twitter:image"):
++            photo = _photo_url(self.meta.get(key, ""))
++            if photo:
++                return photo
++        if embed and len(set(self.embed_photos)) == 1:
++            return self.embed_photos[0]
++        return None
++
++
++@dataclass
++class PostPhoto:
++    url: str
++    description: str
++
++
++async def _read_page(session, url):
++    async with session.get(url, allow_redirects=False) as response:
++        if response.status != 200 or response.content_type != "text/html":
++            return None
++        body = bytearray()
++        async for chunk in response.content.iter_chunked(32768):
++            body.extend(chunk)
++            if len(body) >= 1024 * 1024:
++                break
++        parser = _PostPage()
++        parser.feed(body.decode("utf-8", "replace"))
++        return parser
++
++
++async def find_post_photo(post_url, user_agent):
++    post_id = _identity(post_url)
++    if not post_id:
++        return None
++    kind = "ugcPost" if "-ugcPost-" in post_url else "share" if "-share-" in post_url else "activity"
++    embed_url = f"https://www.linkedin.com/embed/feed/update/urn:li:{kind}:{post_id}"
++    try:
++        async with asyncio.timeout(12), aiohttp.ClientSession(
++            headers={"User-Agent": user_agent}, cookie_jar=aiohttp.DummyCookieJar(),
++        ) as session:
++            description = ""
++            for url in (post_url, embed_url):
++                page = await _read_page(session, url)
++                if not page:
++                    continue
++                if not page.matches(post_id):
++                    continue
++                if page.video or (url == embed_url and page.video_element):
++                    return None
++                description = description or page.meta.get("og:description", "")
++                image = page.photo(embed=url == embed_url)
++                if image:
++                    return PostPhoto(image, description)
++    except (aiohttp.ClientError, TimeoutError, ValueError):
++        pass
++    from services.platforms.linkedin_browser import browser_photo
++    return await browser_photo(post_url)
+diff --git a/services/platforms/universal_extractor.py b/services/platforms/universal_extractor.py
+index 6c018a8..25ad70d 100644
+--- a/services/platforms/universal_extractor.py
++++ b/services/platforms/universal_extractor.py
+@@ -10,6 +10,7 @@ from dataclasses import dataclass
+ from typing import Optional, Any, Callable
+ import aiohttp
+ 
++from services.platforms.linkedin_photo import find_post_photo
+ from services.links.linkedin import LINKEDIN_URL, resolve_linkedin_url
+ from services.logger import logger as logging
+ from services.platforms.kwai_media import _DEFAULT_UA as _KWAI_UA, extract_kwai_video_page, is_kwai_url
+@@ -806,6 +807,12 @@ async def download_universal_media(
+ 
+     if LINKEDIN_URL.fullmatch(url):
+         post_url = await resolve_linkedin_url(url)
++        photo = await find_post_photo(post_url, _DEFAULT_UA)
++        if photo:
++            return UniversalMediaResult(
++                id=post_id, author="LinkedIn", description=photo.description,
++                media_list=[UniversalMediaItem(url=photo.url, type="photo")],
++            )
+         return await _download_with_ytdlp(post_url, output_dir=output_dir, on_progress=on_progress, post_id=post_id, **kwargs)
+ 
+     if _is_facebook_url(url):
