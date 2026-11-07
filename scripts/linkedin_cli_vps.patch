@@ -1,0 +1,378 @@
+diff --git a/services/__init__.py b/services/__init__.py
+index 4f45199..954f597 100644
+--- a/services/__init__.py
++++ b/services/__init__.py
+@@ -1,23 +1,30 @@
+-from services.download import queue as download_queue
+-from services.download import worker_cli as download_worker_cli
+-from services.inline import album_links as inline_album_links
+-from services.inline import service_icons as inline_service_icons
+-from services.inline import video_requests as inline_video_requests
+-from services.links import detection as link_detection
+-from services.runtime import pending_requests
+-from services.runtime import state_store as runtime_state_store
+-from services.runtime import stats as runtime_stats
+-from services.storage import db
++"""Compatibility exports, loaded only when requested."""
++from importlib import import_module
+ 
+-__all__ = [
+-    "db",
+-    "download_queue",
+-    "download_worker_cli",
+-    "inline_album_links",
+-    "inline_service_icons",
+-    "inline_video_requests",
+-    "link_detection",
+-    "pending_requests",
+-    "runtime_state_store",
+-    "runtime_stats",
+-]
++
++_MODULES = {
++    "db": "services.storage.db",
++    "download_queue": "services.download.queue",
++    "download_worker_cli": "services.download.worker_cli",
++    "inline_album_links": "services.inline.album_links",
++    "inline_service_icons": "services.inline.service_icons",
++    "inline_video_requests": "services.inline.video_requests",
++    "link_detection": "services.links.detection",
++    "pending_requests": "services.runtime.pending_requests",
++    "runtime_state_store": "services.runtime.state_store",
++    "runtime_stats": "services.runtime.stats",
++}
++
++__all__ = list(_MODULES)
++
++
++def __getattr__(name):
++    if name not in _MODULES:
++        raise AttributeError(name)
++    value = import_module(_MODULES[name])
++    globals()[name] = value
++    return value
++
++
++def __dir__():
++    return sorted(set(globals()) | set(__all__))
+diff --git a/services/platforms/__init__.py b/services/platforms/__init__.py
+index 2b55b77..e3dc6b3 100644
+--- a/services/platforms/__init__.py
++++ b/services/platforms/__init__.py
+@@ -1,138 +1,34 @@
+-from abc import ABC, abstractmethod
+-from typing import Any, Awaitable, Callable, Optional
+-from urllib.parse import urlparse, urlunparse
+-
+-from utils.download_manager import (
+-    DownloadConfig,
+-    DownloadError,
+-    DownloadMetrics,
+-    DownloadQueueBusyError,
+-    DownloadRateLimitError,
+-    ResilientDownloader,
+-)
+-
+-
+-def strip_url_query(url: str) -> str:
+-    """Drop the query string and fragment from a URL, keeping the path."""
+-    try:
+-        parsed = urlparse(url)
+-    except Exception:
+-        return url
+-    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, "", ""))
+-
+-
+-class BasePlatformMediaService(ABC):
+-    """Abstract base for platform-specific media services (Instagram, TikTok, YouTube, etc.)."""
+-
+-    @abstractmethod
+-    async def fetch_data(self, url: str) -> Optional[Any]:
+-        """Fetch metadata / media info for the given URL."""
+-
+-    @abstractmethod
+-    async def download_media(
+-        self,
+-        url: str,
+-        filename: str,
+-        *,
+-        user_id: Optional[int] = None,
+-        chat_id: Optional[int] = None,
+-        request_id: Optional[str] = None,
+-        size_hint: Optional[int] = None,
+-        on_queued: Any = None,
+-        on_progress: Any = None,
+-        on_retry: Any = None,
+-    ) -> Optional[DownloadMetrics]:
+-        """Download media from the resolved URL to OUTPUT_DIR/filename."""
+-
+-
+-class CobaltMediaService:
+-    """Concrete shared base for Cobalt-backed platform media services.
+-
+-    Owns the common downloader configuration, the Cobalt request helper, and
+-    the retryable download_media wrapper shared by the Instagram, Pinterest,
+-    SoundCloud and Threads services.
+-    """
+-
+-    _COBALT_TIMEOUT_SECONDS = 15
+-    _COBALT_ATTEMPTS = 3
+-
+-    def __init__(
+-        self,
+-        output_dir: str,
+-        *,
+-        source: str,
+-        retry_async_operation_func: Callable[..., Awaitable[DownloadMetrics | None]],
+-        logger: Any,
+-        download_error_message: str,
+-        cobalt_api_url: Optional[str] = None,
+-        cobalt_api_key: Optional[str] = None,
+-        fetch_cobalt_data_func: Optional[Callable[..., Awaitable[dict | None]]] = None,
+-        download_headers: Optional[dict[str, str]] = None,
+-    ) -> None:
+-        self._source = source
+-        self._downloader = ResilientDownloader(
+-            output_dir,
+-            config=DownloadConfig(
+-                chunk_size=1024 * 1024,
+-                multipart_threshold=16 * 1024 * 1024,
+-                max_workers=6,
+-                retry_backoff=0.8,
+-            ),
+-            source=source,
+-        )
+-        self._cobalt_api_url = cobalt_api_url
+-        self._cobalt_api_key = cobalt_api_key
+-        self._fetch_cobalt_data = fetch_cobalt_data_func
+-        self._retry_async_operation = retry_async_operation_func
+-        self._download_headers = download_headers
+-        self._logger = logger
+-        self._download_error_message = download_error_message
+-
+-    async def _fetch_cobalt_json(self, payload: dict) -> Optional[dict]:
+-        return await self._fetch_cobalt_data(
+-            self._cobalt_api_url,
+-            self._cobalt_api_key,
+-            payload,
+-            source=self._source,
+-            timeout=self._COBALT_TIMEOUT_SECONDS,
+-            attempts=self._COBALT_ATTEMPTS,
+-        )
+-
+-    async def download_media(
+-        self,
+-        url: str,
+-        filename: str,
+-        *,
+-        user_id: Optional[int] = None,
+-        chat_id: Optional[int] = None,
+-        request_id: Optional[str] = None,
+-        size_hint: Optional[int] = None,
+-        on_queued=None,
+-        on_progress=None,
+-        on_retry=None,
+-    ) -> Optional[DownloadMetrics]:
+-        async def _download_once() -> DownloadMetrics:
+-            return await self._downloader.download(
+-                url,
+-                filename,
+-                headers=self._download_headers,
+-                user_id=user_id,
+-                chat_id=chat_id,
+-                request_id=request_id,
+-                size_hint=size_hint,
+-                on_queued=on_queued,
+-                on_progress=on_progress,
+-            )
+-
+-        try:
+-            return await self._retry_async_operation(
+-                _download_once,
+-                attempts=3,
+-                retry_on_exception=lambda exc: not isinstance(exc, (DownloadRateLimitError, DownloadQueueBusyError)),
+-                on_retry=on_retry,
+-            )
+-        except (DownloadRateLimitError, DownloadQueueBusyError):
+-            raise
+-        except DownloadError as exc:
+-            self._logger.error(self._download_error_message, url, exc)
+-            return None
++"""Shared platform API. Standalone extractors can be imported without bot configuration."""
++from importlib import import_module as _import_module
++
++__all__ = [
++    "ABC",
++    "abstractmethod",
++    "Any",
++    "Awaitable",
++    "Callable",
++    "Optional",
++    "urlparse",
++    "urlunparse",
++    "DownloadConfig",
++    "DownloadError",
++    "DownloadMetrics",
++    "DownloadQueueBusyError",
++    "DownloadRateLimitError",
++    "ResilientDownloader",
++    "strip_url_query",
++    "BasePlatformMediaService",
++    "CobaltMediaService",
++]
++
++
++def __getattr__(name):
++    if name not in __all__:
++        raise AttributeError(name)
++    value = getattr(_import_module(".base", __name__), name)
++    globals()[name] = value
++    return value
++
++
++def __dir__():
++    return sorted(set(globals()) | set(__all__))
+diff --git a/services/platforms/base.py b/services/platforms/base.py
+new file mode 100644
+index 0000000..2b55b77
+--- /dev/null
++++ b/services/platforms/base.py
+@@ -0,0 +1,138 @@
++from abc import ABC, abstractmethod
++from typing import Any, Awaitable, Callable, Optional
++from urllib.parse import urlparse, urlunparse
++
++from utils.download_manager import (
++    DownloadConfig,
++    DownloadError,
++    DownloadMetrics,
++    DownloadQueueBusyError,
++    DownloadRateLimitError,
++    ResilientDownloader,
++)
++
++
++def strip_url_query(url: str) -> str:
++    """Drop the query string and fragment from a URL, keeping the path."""
++    try:
++        parsed = urlparse(url)
++    except Exception:
++        return url
++    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, "", ""))
++
++
++class BasePlatformMediaService(ABC):
++    """Abstract base for platform-specific media services (Instagram, TikTok, YouTube, etc.)."""
++
++    @abstractmethod
++    async def fetch_data(self, url: str) -> Optional[Any]:
++        """Fetch metadata / media info for the given URL."""
++
++    @abstractmethod
++    async def download_media(
++        self,
++        url: str,
++        filename: str,
++        *,
++        user_id: Optional[int] = None,
++        chat_id: Optional[int] = None,
++        request_id: Optional[str] = None,
++        size_hint: Optional[int] = None,
++        on_queued: Any = None,
++        on_progress: Any = None,
++        on_retry: Any = None,
++    ) -> Optional[DownloadMetrics]:
++        """Download media from the resolved URL to OUTPUT_DIR/filename."""
++
++
++class CobaltMediaService:
++    """Concrete shared base for Cobalt-backed platform media services.
++
++    Owns the common downloader configuration, the Cobalt request helper, and
++    the retryable download_media wrapper shared by the Instagram, Pinterest,
++    SoundCloud and Threads services.
++    """
++
++    _COBALT_TIMEOUT_SECONDS = 15
++    _COBALT_ATTEMPTS = 3
++
++    def __init__(
++        self,
++        output_dir: str,
++        *,
++        source: str,
++        retry_async_operation_func: Callable[..., Awaitable[DownloadMetrics | None]],
++        logger: Any,
++        download_error_message: str,
++        cobalt_api_url: Optional[str] = None,
++        cobalt_api_key: Optional[str] = None,
++        fetch_cobalt_data_func: Optional[Callable[..., Awaitable[dict | None]]] = None,
++        download_headers: Optional[dict[str, str]] = None,
++    ) -> None:
++        self._source = source
++        self._downloader = ResilientDownloader(
++            output_dir,
++            config=DownloadConfig(
++                chunk_size=1024 * 1024,
++                multipart_threshold=16 * 1024 * 1024,
++                max_workers=6,
++                retry_backoff=0.8,
++            ),
++            source=source,
++        )
++        self._cobalt_api_url = cobalt_api_url
++        self._cobalt_api_key = cobalt_api_key
++        self._fetch_cobalt_data = fetch_cobalt_data_func
++        self._retry_async_operation = retry_async_operation_func
++        self._download_headers = download_headers
++        self._logger = logger
++        self._download_error_message = download_error_message
++
++    async def _fetch_cobalt_json(self, payload: dict) -> Optional[dict]:
++        return await self._fetch_cobalt_data(
++            self._cobalt_api_url,
++            self._cobalt_api_key,
++            payload,
++            source=self._source,
++            timeout=self._COBALT_TIMEOUT_SECONDS,
++            attempts=self._COBALT_ATTEMPTS,
++        )
++
++    async def download_media(
++        self,
++        url: str,
++        filename: str,
++        *,
++        user_id: Optional[int] = None,
++        chat_id: Optional[int] = None,
++        request_id: Optional[str] = None,
++        size_hint: Optional[int] = None,
++        on_queued=None,
++        on_progress=None,
++        on_retry=None,
++    ) -> Optional[DownloadMetrics]:
++        async def _download_once() -> DownloadMetrics:
++            return await self._downloader.download(
++                url,
++                filename,
++                headers=self._download_headers,
++                user_id=user_id,
++                chat_id=chat_id,
++                request_id=request_id,
++                size_hint=size_hint,
++                on_queued=on_queued,
++                on_progress=on_progress,
++            )
++
++        try:
++            return await self._retry_async_operation(
++                _download_once,
++                attempts=3,
++                retry_on_exception=lambda exc: not isinstance(exc, (DownloadRateLimitError, DownloadQueueBusyError)),
++                on_retry=on_retry,
++            )
++        except (DownloadRateLimitError, DownloadQueueBusyError):
++            raise
++        except DownloadError as exc:
++            self._logger.error(self._download_error_message, url, exc)
++            return None

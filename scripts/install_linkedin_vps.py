@@ -24,6 +24,7 @@ def main():
         changes = prepare(
             target, reference=reference, bundle=bundle
         )
+        changes.update(prepare(target, reference=reference, bundle="linkedin_cli_vps"))
     except RuntimeConflict as exc:
         if args.diagnose and exc.details:
             print(exc.details)

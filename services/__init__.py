@@ -1,23 +1,30 @@
-from services.download import queue as download_queue
-from services.download import worker_cli as download_worker_cli
-from services.inline import album_links as inline_album_links
-from services.inline import service_icons as inline_service_icons
-from services.inline import video_requests as inline_video_requests
-from services.links import detection as link_detection
-from services.runtime import pending_requests
-from services.runtime import state_store as runtime_state_store
-from services.runtime import stats as runtime_stats
-from services.storage import db
+"""Compatibility exports, loaded only when requested."""
+from importlib import import_module
 
-__all__ = [
-    "db",
-    "download_queue",
-    "download_worker_cli",
-    "inline_album_links",
-    "inline_service_icons",
-    "inline_video_requests",
-    "link_detection",
-    "pending_requests",
-    "runtime_state_store",
-    "runtime_stats",
-]
+
+_MODULES = {
+    "db": "services.storage.db",
+    "download_queue": "services.download.queue",
+    "download_worker_cli": "services.download.worker_cli",
+    "inline_album_links": "services.inline.album_links",
+    "inline_service_icons": "services.inline.service_icons",
+    "inline_video_requests": "services.inline.video_requests",
+    "link_detection": "services.links.detection",
+    "pending_requests": "services.runtime.pending_requests",
+    "runtime_state_store": "services.runtime.state_store",
+    "runtime_stats": "services.runtime.stats",
+}
+
+__all__ = list(_MODULES)
+
+
+def __getattr__(name):
+    if name not in _MODULES:
+        raise AttributeError(name)
+    value = import_module(_MODULES[name])
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
