@@ -34,6 +34,18 @@ def _photo_url(value):
     return None
 
 
+def ordered_photos(values):
+    photos = {}
+    for value in values:
+        if not value or not _photo_url(value):
+            continue
+        path = urlsplit(value).path
+        match = re.search(r"/([^/]+)/feedshare-[^/]+/", path)
+        if match:
+            photos.setdefault(match[1], value)
+    return list(photos.values())
+
+
 class _PostPage(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -85,6 +97,7 @@ class _PostPage(HTMLParser):
 class PostPhoto:
     url: str
     description: str
+    extra_urls: tuple[str, ...] = ()
 
 
 async def _read_page(session, url):
@@ -107,6 +120,7 @@ async def find_post_photo(post_url, user_agent):
         return None
     kind = "ugcPost" if "-ugcPost-" in post_url else "share" if "-share-" in post_url else "activity"
     embed_url = f"https://www.linkedin.com/embed/feed/update/urn:li:{kind}:{post_id}"
+    preview = None
     try:
         async with asyncio.timeout(12), aiohttp.ClientSession(
             headers={"User-Agent": user_agent}, cookie_jar=aiohttp.DummyCookieJar(),
@@ -123,8 +137,12 @@ async def find_post_photo(post_url, user_agent):
                 description = description or page.meta.get("og:description", "")
                 image = page.photo(embed=url == embed_url)
                 if image:
-                    return PostPhoto(image, description)
+                    preview = PostPhoto(image, description)
+                    break
     except (aiohttp.ClientError, TimeoutError, ValueError):
         pass
     from services.platforms.linkedin_browser import browser_photo
-    return await browser_photo(post_url)
+    rendered = await browser_photo(post_url)
+    if rendered and preview and not rendered.description:
+        rendered.description = preview.description
+    return rendered or preview

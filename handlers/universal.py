@@ -98,6 +98,8 @@ def _cache_key(url_hash: str, media_kind: str) -> str:
     # Telegram file_ids from older uploads preserve their original thumbnails.
     # A new namespace makes the first post-fix request rebuild the preview.
     version = "v3" if media_kind in {"video", "album"} else "v2"
+    if media_kind == "photo" and LINKEDIN_URL.fullmatch(_get_url_from_hash(url_hash) or ""):
+        version = "v4"
     return build_media_cache_key(
         "universal", variant=f"{version}:{media_kind}:{url_hash}"
     )
@@ -549,7 +551,8 @@ async def process_universal_link(
 
         else:
             media_group = []
-            for idx, item in enumerate(res.media_list[:10]):
+            items = res.media_list if platform == "LinkedIn" else res.media_list[:10]
+            for idx, item in enumerate(items):
                 is_local = os.path.exists(item.url)
                 if is_local:
                     local_files_to_clean.append(item.url)
@@ -591,11 +594,17 @@ async def process_universal_link(
                     )
 
             if media_group:
-                sent_album = await message.answer_media_group(
-                    media=media_group,
-                    allow_sending_without_reply=True,
-                )
-                if sent_album and len(sent_album) == len(media_group):
+                sent_album = []
+                start = 0
+                while start < len(media_group):
+                    # Leave two items for the last group when eleven remain.
+                    size = 9 if len(media_group) - start == 11 else 10
+                    batch = media_group[start:start + size]
+                    sent_album.extend(await message.answer_media_group(
+                        media=batch, allow_sending_without_reply=True,
+                    ))
+                    start += len(batch)
+                if len(sent_album) == len(media_group) <= 10:
                     album_entries = []
                     for item in sent_album:
                         if item.video:

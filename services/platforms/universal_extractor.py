@@ -811,7 +811,8 @@ async def download_universal_media(
         if photo:
             return UniversalMediaResult(
                 id=post_id, author="LinkedIn", description=photo.description,
-                media_list=[UniversalMediaItem(url=photo.url, type="photo")],
+                media_list=[UniversalMediaItem(url=image, type="photo")
+                            for image in (photo.url, *photo.extra_urls)],
             )
         return await _download_with_ytdlp(post_url, output_dir=output_dir, on_progress=on_progress, post_id=post_id, **kwargs)
 

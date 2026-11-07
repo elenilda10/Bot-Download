@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from services.links.linkedin import resolve_linkedin_url
-from services.platforms.linkedin_photo import PostPhoto, _identity, _photo_url
+from services.platforms.linkedin_photo import PostPhoto, _identity, _photo_url, ordered_photos
 
 log = logging.getLogger(__name__)
 _browser_slots = asyncio.Semaphore(1)
@@ -61,36 +61,30 @@ async def _render(page, url, post_id, embed):
     if not response or not response.ok or _identity(page.url) != post_id:
         log.info("Página descartada: HTTP %s, ID final %s", response.status if response else None, _identity(page.url))
         return None
-    try:
-        handle = await page.wait_for_function(
-            _READ_POST, arg={"postId": post_id, "embed": embed}, timeout=5000,
-        )
-    except PlaywrightTimeout:
-        if not embed or page.url != url:
-            log.info("Seletor expirou na página %s", "incorporada" if embed else "original")
-            return None
-        # The exact, post-specific embed may expose the signed image outside the card.
+    if embed and page.url == url:
+        try:
+            await page.wait_for_load_state("networkidle", timeout=6000)
+        except PlaywrightTimeout:
+            pass
         if await page.locator('video, meta[property^="og:video"], meta[property="og:type"][content^="video"]').count():
-            log.info("Vídeo identificado no embed")
-            return None
-        values = await page.locator(
-            'img, meta[property="og:image"], meta[property="og:image:secure_url"], meta[name="twitter:image"]'
-        ).evaluate_all("""els => els.flatMap(el => [
-            el.content, el.dataset.delayedUrl, el.dataset.src, el.currentSrc, el.src
-        ]).filter(Boolean)""")
-        photos = {}
-        for value in values:
-            if _photo_url(value):
-                parts = urlsplit(value)
-                photos.setdefault((parts.netloc, parts.path), value)
-        log.info("Embed: %d imagem(ns) feedshare distinta(s)", len(photos))
-        if len(photos) == 1 and page.url == url:
+            return {"video": True}
+        values = await page.locator("img").evaluate_all("""imgs => imgs
+            .filter(el => !el.closest('aside, nav, header, footer, [class*="comment-item"], [class*="related"]'))
+            .flatMap(el => [el.dataset.delayedUrl, el.dataset.src, el.currentSrc, el.src])""")
+        if not any(_photo_url(value) for value in values if value):
+            values = await page.locator(
+                'meta[property="og:image:secure_url"], meta[property="og:image"], meta[name="twitter:image"]'
+            ).evaluate_all("els => els.map(el => el.content)")
+        urls = ordered_photos(values)
+        if urls and page.url == url:
             description = await page.locator('meta[property="og:description"]').evaluate_all(
                 "els => els[0]?.content || ''"
             )
             if page.url == url:
-                return {"url": next(iter(photos.values())), "description": description}
-        return None
+                return {"url": urls[0], "extra_urls": urls[1:], "description": description}
+    handle = await page.wait_for_function(
+        _READ_POST, arg={"postId": post_id, "embed": embed}, timeout=5000,
+    )
     try:
         if _identity(page.url) != post_id:
             return None
@@ -136,7 +130,7 @@ async def browser_photo(post_url):
                         log.info("O seletor identificou um vídeo")
                         return None
                     if data and (image := _photo_url(data.get("url", ""))):
-                        return PostPhoto(image, data.get("description") or "")
+                        return PostPhoto(image, data.get("description") or "", tuple(data.get("extra_urls", ())))
             finally:
                 await browser.close()
     except (Error, TimeoutError, OSError) as exc:

@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from services.platforms.linkedin_photo import _PostPage, find_post_photo
+from services.platforms.linkedin_photo import PostPhoto, _PostPage, find_post_photo, ordered_photos
 
 
 POST = "https://www.linkedin.com/posts/utrecht-share-7524497580509286400-6KXD/"
@@ -57,3 +57,12 @@ class LinkedInPhotoTests(unittest.TestCase):
     def test_video_skips_browser(self):
         self.resolve([page('<meta property="og:type" content="video.other">')])
         self.browser.assert_not_awaited()
+
+    def test_album_deduplicates_signed_variants_in_post_order(self):
+        first = IMAGE.replace("example/feedshare", "D4E22AQEG4P6jT1utaA/feedshare")
+        second = IMAGE.replace("example/feedshare-shrink_1280", "D4E22AQHShXKZrHg1xg/feedshare-image-high-res")
+        values = [first, first.replace("_1280", "_800"), None, second, second]
+        self.assertEqual(ordered_photos(values), [first, second])
+        album = PostPhoto(first, "", (second,))
+        result, _ = self.resolve([page(f'<meta property="og:image" content="{first}">')], album)
+        self.assertEqual((result.url, *result.extra_urls), (first, second))
