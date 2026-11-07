@@ -308,11 +308,13 @@ If Downloader-Bot saves you time, you can support ongoing development and infras
 Released under the [MIT License](./LICENCE).
 # Instagram: alternativa Save Insta na VPS
 
-Para posts públicos (`/p/`, `/reel/`, `/reels/`), a extração tenta gallery-dl,
-Save Insta, yt-dlp e Cobalt, nessa ordem. O Save Insta usa `curl` e `ffprobe`
-instalados no sistema, sem nova dependência Python e sem enviar cookies do
-Instagram ao serviço. Os arquivos passam pelo handler, configurações e cache
-existentes. Álbuns maiores que dez mídias são divididos em grupos do Telegram.
+Para posts públicos (`/p/`, `/reel/`, `/reels/`), a ordem é:
+**Save Insta → parth-dl → Cobalt local/público → yt-dlp → gallery-dl (último)**.
+Nenhuma etapa usa cookies de conta do Instagram. O Save Insta usa `curl` e
+`ffprobe`; o parth-dl (1.2.1) é uma dependência Python e também valida as mídias
+com `ffprobe`. Os arquivos passam pelo mesmo handler, configurações e cache
+existentes. Falha em um item do álbum não é tratada como sucesso parcial.
+Álbuns maiores que dez mídias são divididos em grupos do Telegram.
 
 O Save Insta não retornou legenda nos testes. Após baixar suas mídias, a integração
 consulta a incorporação (`/embed/captioned/`) do próprio Instagram para recuperar
@@ -320,7 +322,7 @@ legenda completa e autor. A leitura aceita os dados estruturados ou o HTML visí
 comentários e conferindo a identidade da publicação. Também recupera legendas
 ausentes em mídias antigas do cache e em resultados de outros extratores. Essa consulta tem limite de doze segundos; se indisponível,
 o download continua sem legenda. Não são usados cookies nessa consulta.
-gallery-dl continua primeiro para preservar texto e autor quando disponíveis.
+Os resultados sem descrição usam a mesma rotina `fetch_post_metadata()` para recuperar legenda completa e autor do Instagram.
 Stories públicos com link `/stories/usuario/ID/` usam diretamente o Save Insta,
 sem Firefox nem cookies. O ID é conferido pela chave de cache do CDN na própria
 mídia ou na miniatura associada ao vídeo. Apenas o item com o ID solicitado é
@@ -333,12 +335,22 @@ parciais e permite tentar os próximos extratores.
 o restante de `fetch_instagram_media`, verifica clientes conhecidos, cria backup,
 valida a sintaxe e restaura os arquivos em caso de falha.
 
-Para desativar essa alternativa, defina `INSTAGRAM_SAVEINSTA_ENABLED=0` no
-ambiente do serviço e reinicie o bot. A integração depende das rotas internas
-do Save Insta e pode precisar de ajustes se o site mudar.
+Para desativar individualmente os provedores, use
+`INSTAGRAM_SAVEINSTA_ENABLED=0` e/ou `INSTAGRAM_PARTH_ENABLED=0` no ambiente
+do serviço e reinicie o bot. A integração Save Insta depende de rotas internas
+que podem mudar. O parth-dl não suporta Stories nem Destaques; Stories públicos
+continuam exclusivamente no extrator Save Insta existente.
+
+Na VPS, instale o novo pacote no venv do bot antes de reiniciar:
+```bash
+/root/Bot-Download/venv/bin/pip install 'parth-dl==1.2.1'
+```
+O teste inicial confirmado na VPS pelo usuário baixou duas imagens 1080×1350
+do post `DfcIKMLjNKh` via parth-dl, sem login.
 
 Validação isolada, sem iniciar o bot nem conectar ao banco:
 
 ```bash
 python3 -m unittest discover -s tests -p test_instagram_saveinsta.py -v
+python3 -m unittest discover -s tests -p test_instagram_parth.py -v
 ```
