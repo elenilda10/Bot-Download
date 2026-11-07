@@ -176,12 +176,30 @@ class SaveInstaTests(unittest.TestCase):
 class PipelineTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
-        # Extraction routing does not require Telegram, a database or HTTP clients.
+        # Import the media service without a running bot, database or network.
         config = types.ModuleType("config")
         config.COBALT_API_KEY = ""
         config.COBALT_API_URL = ""
+
         cobalt = types.ModuleType("utils.cobalt_client")
-        cobalt.fetch_cobalt_data = AsyncMock()
+        cobalt.fetch_cobalt_data = AsyncMock(return_value=None)
+
+        httpx = types.ModuleType("httpx")
+        class RejectingClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def post(self, *args, **kwargs):
+                return types.SimpleNamespace(status_code=503)
+
+        httpx.AsyncClient = RejectingClient
+
         spec = importlib.util.spec_from_file_location(
             "_instagram_media_tests", Path(__file__).resolve().parents[1]
             / "services/platforms/instagram_media.py",
@@ -189,73 +207,170 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         cls.service = importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules, {
             spec.name: cls.service, "config": config,
-            "httpx": types.ModuleType("httpx"), "utils.cobalt_client": cobalt,
+            "httpx": httpx, "utils.cobalt_client": cobalt,
             "services.platforms.instagram_saveinsta": source,
         }):
             spec.loader.exec_module(cls.service)
 
-    async def test_gallery_success_preserves_caption_without_saveinsta(self):
+    async def test_saveinsta_first_and_caption_from_embed(self):
         service = self.service
-        original = service.InstagramVideo("abc", "original caption", "alice", [service.InstagramMedia("file", "photo")])
+        items = [
+            {"url": "photo.jpg", "type": "photo", "index": 0},
+            {"url": "video.mp4", "type": "video", "index": 1},
+        ]
         with tempfile.TemporaryDirectory() as folder:
-            with patch.object(service, "_run_gallery_dl", return_value=original), patch.object(service, "download_saveinsta") as save:
-                result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
-        self.assertIs(result, original)
-        save.assert_not_called()
-
-    async def test_saveinsta_album_uses_existing_media_contract(self):
-        service = self.service
-        items = [{"url": "photo.jpg", "type": "photo", "index": 0}, {"url": "video.mp4", "type": "video", "index": 1}]
-        with tempfile.TemporaryDirectory() as folder:
-            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "1"}), patch.object(service, "_run_gallery_dl", return_value=None), patch.object(service, "download_saveinsta", return_value=items), patch.object(service, "fetch_post_metadata", return_value={"description": "caption", "author": "alice"}), patch.object(service, "_run_ytdlp") as ytdlp:
-                result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
+            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "1"}):
+                with patch.object(service, "download_saveinsta", return_value=items) as save:
+                    with patch.object(service, "download_parth") as parth:
+                        with patch.object(service, "_run_gallery_dl") as gallery:
+                            with patch.object(service, "fetch_post_metadata", return_value={"description": "caption", "author": "alice"}):
+                                result = await service.fetch_instagram_media(
+                                    "https://www.instagram.com/p/abc/", folder
+                                )
         self.assertEqual([item.type for item in result.media_list], ["photo", "video"])
         self.assertEqual(result.description, "caption")
         self.assertEqual(result.author, "alice")
-        ytdlp.assert_not_called()
+        save.assert_called_once()
+        parth.assert_not_called()
+        gallery.assert_not_called()
 
-    async def test_metadata_failure_keeps_successful_media(self):
+    async def test_saveinsta_failure_parth_second_and_caption_recovered(self):
+        service = self.service
+        items = [
+            {"url": "photo_01.jpg", "type": "photo", "index": 0},
+            {"url": "photo_02.jpg", "type": "photo", "index": 1},
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "1", "INSTAGRAM_PARTH_ENABLED": "1"}):
+                with patch.object(service, "download_saveinsta", side_effect=ValueError("private")) as save:
+                    with patch.object(service, "download_parth", return_value=items) as parth:
+                        with patch.object(service, "_run_gallery_dl") as gallery:
+                            with patch.object(service, "fetch_post_metadata", return_value={"description": "full caption", "author": "realracingclub"}):
+                                result = await service.fetch_instagram_media(
+                                    "https://www.instagram.com/p/DfcIKMLjNKh/", folder
+                                )
+        save.assert_called_once()
+        parth.assert_called_once()
+        gallery.assert_not_called()
+        self.assertEqual(result.description, "full caption")
+        self.assertEqual(result.author, "realracingclub")
+        self.assertEqual([item.index for item in result.media_list], [0, 1])
+
+    async def test_gallery_last_only_after_all_public_fallbacks(self):
+        service = self.service
+        calls = []
+        last = service.InstagramVideo(
+            "abc", "gallery caption", "alice",
+            [service.InstagramMedia("file", "photo")]
+        )
+
+        def save(*args):
+            calls.append("save")
+            return []
+
+        def parth(*args):
+            calls.append("parth")
+            return []
+
+        async def cobalt(*args, **kwargs):
+            calls.append("cobalt_local")
+            return None
+
+        async def public_post(*args, **kwargs):
+            calls.append("cobalt_public")
+            return types.SimpleNamespace(status_code=503)
+
+        def ytdlp(*args):
+            calls.append("ytdlp")
+            return None
+
+        def gallery(*args):
+            calls.append("gallery")
+            return last
+
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "1", "INSTAGRAM_PARTH_ENABLED": "1"}):
+                with patch.object(service, "PUBLIC_COBALT_INSTANCES", ["https://example.invalid"]):
+                    with patch.object(service, "download_saveinsta", side_effect=save):
+                        with patch.object(service, "download_parth", side_effect=parth):
+                            with patch.object(service, "fetch_cobalt_data", side_effect=cobalt):
+                                with patch.object(service.httpx.AsyncClient, "post", side_effect=public_post):
+                                    with patch.object(service, "_run_ytdlp", side_effect=ytdlp):
+                                        with patch.object(service, "_run_gallery_dl", side_effect=gallery):
+                                            result = await service.fetch_instagram_media(
+                                                "https://www.instagram.com/p/abc/", folder
+                                            )
+        self.assertIs(result, last)
+        self.assertEqual(
+            calls, ["save", "parth", "cobalt_local", "cobalt_public", "ytdlp", "gallery"]
+        )
+
+    async def test_saveinsta_disabled_keeps_parth_enabled(self):
         service = self.service
         with tempfile.TemporaryDirectory() as folder:
-            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "1"}), patch.object(service, "_run_gallery_dl", return_value=None), patch.object(service, "download_saveinsta", return_value=[{"url": "video.mp4", "type": "video"}]), patch.object(service, "fetch_post_metadata", side_effect=TimeoutError):
-                result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
+            with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": "0", "INSTAGRAM_PARTH_ENABLED": "1"}):
+                with patch.object(service, "download_saveinsta") as save:
+                    with patch.object(service, "download_parth", return_value=[
+                        {"url": "photo.jpg", "type": "photo"}
+                    ]) as parth:
+                        with patch.object(service, "fetch_post_metadata", return_value={}):
+                            result = await service.fetch_instagram_media(
+                                "https://www.instagram.com/p/abc/", folder
+                            )
+        self.assertEqual(len(result.media_list), 1)
+        save.assert_not_called()
+        parth.assert_called_once()
+
+    async def test_metadata_error_does_not_discard_download(self):
+        service = self.service
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(service, "download_saveinsta", return_value=[
+                {"url": "video.mp4", "type": "video"}
+            ]):
+                with patch.object(service, "fetch_post_metadata", side_effect=TimeoutError):
+                    result = await service.fetch_instagram_media(
+                        "https://www.instagram.com/p/abc/", folder
+                    )
         self.assertEqual(len(result.media_list), 1)
         self.assertEqual(result.description, "")
 
-    async def test_gallery_without_caption_also_recovers_metadata(self):
-        service = self.service
-        original = service.InstagramVideo("abc", "", "instagram_user", [service.InstagramMedia("file", "photo")])
-        with tempfile.TemporaryDirectory() as folder:
-            with patch.object(service, "_run_gallery_dl", return_value=original), patch.object(service, "fetch_post_metadata", return_value={"description": "recovered", "author": "alice"}):
-                result = await service.fetch_instagram_media("https://www.instagram.com/p/abc/", folder)
-        self.assertEqual(result.description, "recovered")
-        self.assertEqual(result.author, "alice")
-
-    async def test_failure_disabled_and_story_continue_to_existing_fallback(self):
-        service = self.service
-        original = service.InstagramVideo("abc", "caption", "alice", [service.InstagramMedia("file", "video")])
-        cases = [
-            ("https://www.instagram.com/p/abc/", "1", 1),
-            ("https://www.instagram.com/p/abc/", "0", 0),
-        ]
-        for url, enabled, calls in cases:
-            with self.subTest(url=url, enabled=enabled), tempfile.TemporaryDirectory() as folder:
-                with patch.dict("os.environ", {"INSTAGRAM_SAVEINSTA_ENABLED": enabled}), patch.object(service, "_run_gallery_dl", return_value=None), patch.object(service, "download_saveinsta", side_effect=RuntimeError("upstream")) as save, patch.object(service, "_run_ytdlp", return_value=original):
-                    result = await service.fetch_instagram_media(url, folder)
-                self.assertIs(result, original)
-                self.assertEqual(save.call_count, calls)
-
-    async def test_story_route_bypasses_gallery_and_firefox(self):
+    async def test_story_bypasses_other_extractors(self):
         service = self.service
         handler = types.ModuleType("services.platforms.instagram_stories")
         handler.fetch_public_instagram_story = AsyncMock(return_value=None)
-        with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules, {handler.__name__: handler}):
-            with patch.object(service, "_run_gallery_dl") as gallery, patch.object(service, "_run_ytdlp") as ytdlp:
-                result = await service.fetch_instagram_media("https://www.instagram.com/stories/alice/456/", folder)
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict(sys.modules, {handler.__name__: handler}):
+                with patch.object(service, "download_saveinsta") as save:
+                    with patch.object(service, "download_parth") as parth:
+                        with patch.object(service, "_run_gallery_dl") as gallery:
+                            result = await service.fetch_instagram_media(
+                                "https://www.instagram.com/stories/alice/456/", folder
+                            )
         self.assertIsNone(result)
         handler.fetch_public_instagram_story.assert_awaited_once()
+        save.assert_not_called()
+        parth.assert_not_called()
         gallery.assert_not_called()
-        ytdlp.assert_not_called()
+
+    async def test_cookie_free_extractor_flags(self):
+        service = self.service
+        def command_result(cmd, **kwargs):
+            return types.SimpleNamespace(returncode=1, stderr="login required", stdout="")
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(service.subprocess, "run", side_effect=command_result) as runner:
+                service._run_gallery_dl("https://www.instagram.com/p/abc/", folder, "abc")
+                gallery_cmd = runner.call_args.args[0]
+                self.assertIn("--config-ignore", gallery_cmd)
+                self.assertNotIn("--cookies", gallery_cmd)
+                self.assertNotIn("--cookies-from-browser", gallery_cmd)
+
+            with patch.object(service.subprocess, "run", side_effect=command_result) as runner:
+                service._run_ytdlp("https://www.instagram.com/p/abc/", folder, "abc")
+                meta_cmd = runner.call_args_list[0].args[0]
+                self.assertIn("--ignore-config", meta_cmd)
+                self.assertIn("--no-cookies", meta_cmd)
+                self.assertIn("--no-cookies-from-browser", meta_cmd)
+                self.assertNotIn("--cookies", meta_cmd)
 
 
 if __name__ == "__main__":
