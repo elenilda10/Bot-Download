@@ -14,6 +14,7 @@ from services.platforms.reddit_json import (
     RedditImageError, fetch_reddit_post, gallery_sources, single_image_sources,
     native_video_source, download_reddit_gallery,
 )
+from services.platforms.reddit_text import text_post
 from services.platforms.reddit_native import RedditVideoError, download_native_video
 from services.links.reddit import is_reddit_media_url, normalize_reddit_url
 from services.platforms.universal_extractor import download_universal_media
@@ -28,7 +29,7 @@ async def _notify_kind(callback, kind, count):
 
 
 @download_attempt
-async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int, on_kind=None):
+async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int, on_kind=None, allow_text=False):
     if not is_reddit_media_url(url):
         return None
     started = time.monotonic()
@@ -60,6 +61,11 @@ async def download_reddit_media(url: str, *, output_dir: str, max_file_size: int
             logging.info('Reddit native video: seconds=%.2f audio=%s',
                          time.monotonic() - started, result.media_list[0].has_audio)
         else:
+            if allow_text:
+                text = text_post(info['post'])
+                if text is not None:
+                    logging.info('Reddit post delivered as text candidate')
+                    return text
             # External or unsupported post types keep the legacy fallback.
             async with asyncio.timeout(420):
                 result = await download_universal_media(
