@@ -31,6 +31,7 @@ from services.logger import logger as logging
 from services.media.delivery import send_audio_with_thumbnail
 from services.media.video_metadata import build_video_send_kwargs
 from services.platforms.firefox_cookies import firefox_profile
+from services.platforms.reddit_text import RedditText, message_chunks
 from services.platforms.reddit_download import download_reddit_media
 from utils.media_cache import build_media_cache_key
 
@@ -152,12 +153,17 @@ async def _try_cache(message, url, settings, lang, bot_url, scope):
         return False
 
 
-async def _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=None):
+async def _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=None, *, allow_text=False):
     async def on_kind(kind, count):
         await safe_edit_text(status_message, _download_status(lang, settings, kind, count), parse_mode='HTML')
-    result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE, on_kind=on_kind)
+    result = await download_reddit_media(url, output_dir=directory, max_file_size=MAX_FILE_SIZE, on_kind=on_kind, allow_text=allow_text)
     if not result:
         return False
+    if isinstance(result, RedditText):
+        for chunk in message_chunks(result.text):
+            await message.answer(chunk, parse_mode=None, disable_web_page_preview=True,
+                                 reply_to_message_id=message.message_id, allow_sending_without_reply=True)
+        return True
     await safe_edit_text(status_message, bm.uploading_status(lang=lang, platform='Reddit'), parse_mode='HTML')
     entries = [{'kind': item.type, 'path': item.url} for item in result.media_list]
     if len(entries) > 100:
@@ -211,7 +217,7 @@ async def process_reddit(message: types.Message, direct_url: str | None = None):
                                           reply_to_message_id=message.message_id, allow_sending_without_reply=True)
         Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
         directory = tempfile.mkdtemp(prefix='reddit-', dir=OUTPUT_DIR)
-        if await _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=status):
+        if await _fresh(message, url, settings, lang, bot_url, scope, directory, status_message=status, allow_text=True):
             lease.mark_success()
             await maybe_delete_user_message(message, settings.get('delete_message'))
         else:
