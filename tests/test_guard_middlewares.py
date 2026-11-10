@@ -398,3 +398,23 @@ async def test_private_chat_guard_does_not_recreate_same_pending_request(monkeyp
     bot.delete_message.assert_not_awaited()
     event.reply.assert_not_awaited()
     handler.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_private_chat_guard_ignores_channel_auto_forwards():
+    """A channel post mirrored to a discussion supergroup must be silent."""
+    middleware = private_chat_guard.PrivateChatGuardMiddleware()
+    handler = AsyncMock(return_value="handled")
+    event = Mock(spec=Message)
+    event.chat = SimpleNamespace(type=ChatType.SUPERGROUP)
+    event.from_user = SimpleNamespace(id=42, is_bot=False)
+    event.is_automatic_forward = True
+    event.text = "https://www.youtube.com/watch?v=demo"
+    event.caption = None
+    event.answer = AsyncMock()
+    bot = SimpleNamespace(send_chat_action=AsyncMock())
+
+    assert await middleware(handler, event, {"bot": bot}) is None
+    handler.assert_not_awaited()
+    bot.send_chat_action.assert_not_awaited()
+    event.answer.assert_not_awaited()

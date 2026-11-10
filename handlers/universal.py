@@ -9,7 +9,7 @@ import time
 from typing import Optional, Any
 
 from aiogram import F, Router, types
-from aiogram.enums import ChatAction, ParseMode
+from aiogram.enums import ChatAction, ChatType, ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo, URLInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -20,6 +20,7 @@ from config import OUTPUT_DIR, MAX_FILE_SIZE, ADMIN_ID
 from handlers import commands as cmd_mod
 from handlers.linkedin import DIRECT_LINK_HINT, process_linkedin
 from services.links.linkedin import LINKEDIN_URL, LinkedInRedirectError
+from services.links.universal_guard import select_group_download_url
 from handlers.request_dedupe import claim_message_request
 from handlers.utils import (
     get_bot_avatar_thumbnail,
@@ -331,11 +332,18 @@ async def process_universal_link(
     ):
         return
 
-    request_url_match = re.search(_UNIVERSAL_LINK_REGEX, text or "")
-    if not request_url_match:
-        return
-
-    url = request_url_match.group(0).strip()
+    # Ordinary group posts must not trigger downloads of unrelated links
+    # (stores, channels, promotions, etc.). Private chats and delegated
+    # direct_url requests preserve the existing universal fallback.
+    if direct_url is None and message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
+        url = select_group_download_url(text)
+        if url is None:
+            return
+    else:
+        request_url_match = re.search(_UNIVERSAL_LINK_REGEX, text or "")
+        if not request_url_match:
+            return
+        url = request_url_match.group(0).strip()
     platform = "LinkedIn" if LINKEDIN_URL.fullmatch(url) else "Link"
     request_lease = await claim_message_request(message, service="universal", url=url)
     if request_lease is None:
