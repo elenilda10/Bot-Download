@@ -51,10 +51,12 @@ _CHANNEL_NEW = '''        # Channel posts mirrored into their linked discussion 
 def _replace_or_verify(source: str, before: str, after: str, filename: str) -> str:
     old_count = source.count(before)
     new_count = source.count(after)
-    if old_count == 1 and new_count == 0:
-        return source.replace(before, after, 1)
-    if old_count == 0 and new_count == 1:
+    # The original import is a prefix of its expanded form. Check the
+    # patched anchor first so rerunning the installer remains idempotent.
+    if new_count == 1:
         return source
+    if old_count == 1:
+        return source.replace(before, after, 1)
     raise RuntimeError(f"Conteúdo inesperado em {filename}; arquivo preservado.")
 
 
