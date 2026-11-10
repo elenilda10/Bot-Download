@@ -27,8 +27,10 @@ class PrivateChatGuardMiddleware(BaseMiddleware):
         if not isinstance(event, Message):
             return await handler(event, data)
 
-        # Ignora completamente mensagens/publicacoes de canais
-        if event.chat.type == ChatType.CHANNEL:
+        # Channel posts mirrored into their linked discussion groups arrive
+        # as automatic forwards (chat.type == SUPERGROUP). Never download
+        # links from these broadcasts or reply in their comment threads.
+        if event.chat.type == ChatType.CHANNEL or getattr(event, "is_automatic_forward", False) is True:
             return None
 
         if event.chat.type == ChatType.PRIVATE:
