@@ -41,6 +41,7 @@ def _make_target(tmp_path):
     channel = target / "middlewares/private_chat_guard.py"
     for path in (universal, channel):
         path.parent.mkdir(parents=True, exist_ok=True)
+    (target / "services/links").mkdir(parents=True, exist_ok=True)
     universal.write_text(OLD_UNIVERSAL)
     channel.write_text(OLD_MIDDLEWARE)
     return target, universal, channel
