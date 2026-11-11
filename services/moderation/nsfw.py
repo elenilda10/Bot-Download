@@ -179,7 +179,8 @@ async def _extract_frame(source, destination, position):
 
 async def _scan(job, sensitivity):
     upper = PHOTO_LIMIT if job.kind == "photo" else VIDEO_LIMIT
-    if job.size > upper:
+    if job.size <= 0 or job.size > upper:
+        # Reject unknown sizes rather than download an unbounded file.
         return None
     if job.kind == "photo":
         buf = io.BytesIO()
