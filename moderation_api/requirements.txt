@@ -1,2 +1,0 @@
-aiohttp>=3.12,<4
-nudenet==3.4.2

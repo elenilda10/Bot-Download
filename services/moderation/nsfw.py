@@ -4,17 +4,17 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import io
+import importlib.util
 import os
 from pathlib import Path
 import tempfile
 import time
-from urllib.parse import urlsplit
+import threading
 
 from aiogram import BaseMiddleware, Router
 from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.filters import Command
 from aiogram.types import Message
-import httpx
 from sqlalchemy import text
 
 from app_context import db
@@ -22,13 +22,11 @@ from services.logger import logger as logging
 from .policy import find_violation
 
 router = Router(name="nsfw")
-API_URL = os.getenv("NSFW_API_URL", "").strip()
-API_KEY = os.getenv("NSFW_API_KEY", "").strip()
-_url = urlsplit(API_URL)
-READY = bool(API_KEY and API_URL and (
-    _url.scheme == "https" or
-    (_url.scheme == "http" and _url.hostname in {"127.0.0.1", "localhost", "::1"})
-))
+# Explicit opt-in; installing NudeNet alone never enables group moderation.
+LOCAL_ENABLED = os.getenv("NSFW_LOCAL_ENABLED", "0").lower() in {"1", "true", "yes", "on"}
+READY = LOCAL_ENABLED and importlib.util.find_spec("nudenet") is not None
+_detector = None
+_detector_lock = threading.Lock()
 PHOTO_LIMIT = 8 * 1024 * 1024
 VIDEO_LIMIT = 20 * 1024 * 1024
 BAN_THRESHOLD = 3
@@ -36,7 +34,6 @@ TTL_SECONDS = 20
 _settings_cache = {}
 _queue = None
 _workers = []
-_client = None
 _bot = None
 
 
@@ -148,17 +145,19 @@ class NSFWGroupMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+def _detect_sync(image_bytes):
+    """Run NudeNet in a background thread, never on aiogram's event loop."""
+    global _detector
+    with _detector_lock:
+        if _detector is None:
+            from nudenet import NudeDetector
+            _detector = NudeDetector()
+    return _detector.detect(image_bytes)
+
+
 async def _detect(image_bytes):
-    response = await _client.post(
-        API_URL, content=image_bytes,
-        headers={"Authorization": "Bearer " + API_KEY,
-                 "Content-Type": "application/octet-stream"}
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict) or not isinstance(data.get("detections"), list):
-        raise ValueError("Invalid NSFW detector response")
-    return data["detections"]
+    # Reuse the same model across images; a timed-out scan does not kill its thread.
+    return await asyncio.to_thread(_detect_sync, image_bytes)
 
 
 async def _extract_frame(source, destination, position):
@@ -244,13 +243,12 @@ async def _worker():
 
 
 async def start_nsfw(bot):
-    global _queue, _workers, _bot, _client
+    global _queue, _workers, _bot
     if not READY or _queue is not None:
         return
     _bot = bot
-    _client = httpx.AsyncClient(timeout=httpx.Timeout(12, connect=5), trust_env=False)
     _queue = asyncio.Queue(maxsize=80)
-    _workers = [asyncio.create_task(_worker(), name="nsfw-" + str(n)) for n in range(2)]
+    _workers = [asyncio.create_task(_worker(), name="nsfw-0")]
 
 
 async def stop_nsfw():
@@ -259,9 +257,7 @@ async def stop_nsfw():
         task.cancel()
     if _workers:
         await asyncio.gather(*_workers, return_exceptions=True)
-    if _client:
-        await _client.aclose()
-    _workers, _queue, _bot, _client = [], None, None, None
+    _workers, _queue, _bot = [], None, None
 
 
 @router.message(Command("nsfw"))
@@ -281,7 +277,7 @@ async def nsfw_settings(message: Message):
         is_on = cmd == "on"
         if is_on:
             if not READY:
-                await message.reply("Detector indisponível: configure NSFW_API_URL e NSFW_API_KEY no servidor.")
+                await message.reply("Detector local indisponível: instale requirements-nsfw.txt e defina NSFW_LOCAL_ENABLED=1.")
                 return
             member = await message.bot.get_chat_member(message.chat.id, message.bot.id)
             if not getattr(member, "can_delete_messages", False):
