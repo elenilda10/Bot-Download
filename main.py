@@ -35,6 +35,7 @@ from config import (
 from services.download.queue import shutdown_download_queue
 from services.logger import logger as logging
 from services.runtime.analytics_status import record_drop as record_analytics_drop
+from services.runtime.telegram_deleted_reply import DeletedReplyFallbackMiddleware
 from services.storage.db import AnalyticsEvent, DataBase
 from utils.download_manager import close_download_http_clients
 from utils.http_client import close_http_session
@@ -82,6 +83,9 @@ def create_app(
         api=TelegramAPIServer.from_base(api_url),
         timeout=session_timeout,
     )
+    # All outgoing Telegram messages, including media and albums, survive
+    # deletion of the link by a group anti-spam bot.
+    session.middleware(DeletedReplyFallbackMiddleware())
     default = DefaultBotProperties(parse_mode=ParseMode.HTML)
     bot = Bot(token=bot_token, default=default, session=session)
     dispatcher = Dispatcher()
