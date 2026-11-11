@@ -10,7 +10,7 @@ import tempfile
 import time
 from urllib.parse import urlsplit
 
-from aiogram import BaseMiddleware, Bot, Router
+from aiogram import BaseMiddleware, Router
 from aiogram.enums import ChatMemberStatus, ChatType
 from aiogram.filters import Command
 from aiogram.types import Message
