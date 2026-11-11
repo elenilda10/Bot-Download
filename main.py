@@ -33,6 +33,7 @@ from config import (
     WEBHOOK_URL,
 )
 from services.download.queue import shutdown_download_queue
+from services.moderation.nsfw import start_nsfw, stop_nsfw, NSFWGroupMiddleware
 from services.logger import logger as logging
 from services.runtime.analytics_status import record_drop as record_analytics_drop
 from services.storage.db import AnalyticsEvent, DataBase
@@ -353,6 +354,7 @@ async def main():
             logging.event("bot_startup", bot_username=bot_me.username)
             set_app_context(bot=bot, db=db, send_analytics=send_analytics)
             await db.init_db()
+            await start_nsfw(bot)
             await start_analytics_workers()
             analytics_started = True
 
@@ -364,6 +366,7 @@ async def main():
                 os.makedirs(OUTPUT_DIR)
 
             dp.include_router(handlers.router)
+            dp.message.outer_middleware(NSFWGroupMiddleware())
 
             for middleware_cls in middlewares.__all__:
                 middleware = getattr(middlewares, middleware_cls)() if isinstance(middleware_cls, str) else middleware_cls()
@@ -429,6 +432,8 @@ async def main():
             if analytics_started:
                 with suppress(Exception):
                     await stop_analytics_workers()
+            with suppress(Exception):
+                await stop_nsfw()
             with suppress(Exception):
                 await shutdown_download_queue()
             with suppress(Exception):
