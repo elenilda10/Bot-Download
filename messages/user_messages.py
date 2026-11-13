@@ -215,7 +215,7 @@ def downloading_file_status(lang: str = DEFAULT_LANG):
 
 
 def uploading_file_status(lang: str = DEFAULT_LANG):
-    emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
+    emoji = '<tg-emoji emoji-id="5454217366198073702">⚡️</tg-emoji>'
     return (
         f"{emoji} Enviando arquivo para o Telegram..."
         if _normalize_lang(lang) == "pt"
@@ -243,7 +243,7 @@ def downloading_video_status(lang: str = DEFAULT_LANG):
 
 
 def uploading_status(lang: str = DEFAULT_LANG):
-    emoji = '<tg-emoji emoji-id="5866355487255039002">🚀</tg-emoji>'
+    emoji = '<tg-emoji emoji-id="5454217366198073702">⚡️</tg-emoji>'
     return f"{emoji} Enviando arquivo para o Telegram..." if _normalize_lang(lang) == "pt" else f"{emoji} Uploading file to Telegram..."
 
 

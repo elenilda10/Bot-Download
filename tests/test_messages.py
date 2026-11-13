@@ -78,6 +78,14 @@ def test_get_field_text_returns_expected_descriptions(field, expected):
     assert expected in bm.get_field_text(field)
 
 
+@pytest.mark.parametrize("lang", ["pt", "en"])
+@pytest.mark.parametrize("factory", [bm.uploading_file_status, bm.uploading_status])
+def test_uploading_status_uses_lightning_custom_emoji(factory, lang):
+    output = factory(lang)
+    assert '<tg-emoji emoji-id="5454217366198073702">⚡️</tg-emoji>' in output
+    assert ("Enviando arquivo para o Telegram..." if lang == "pt" else "Uploading file to Telegram...") in output
+
+
 def test_user_message_formatters_include_dynamic_values():
     assert "3/5" in bm.retrying_again_status(3, 5)
     assert "My Chat" in bm.join_group("My Chat")
